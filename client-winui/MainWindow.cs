@@ -6,7 +6,9 @@ using Microsoft.Web.WebView2.Core;
 using ResumeStudio.Services;
 using System.Diagnostics;
 using System.Text.Json;
+using Windows.Graphics.Imaging;
 using Windows.Storage.Pickers;
+using Windows.Storage.Streams;
 
 namespace ResumeStudio;
 
@@ -40,10 +42,12 @@ public sealed partial class MainWindow : Window
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1440,960));
         SystemBackdrop=new Microsoft.UI.Xaml.Media.MicaBackdrop();
         preferences=AppPreferences.Load(api.DataDirectory); BuildContentHost(); BuildShell();
+        if(Environment.GetCommandLineArgs().Contains("--appearance-review")) Title="拾简 · 界面材质验证（数据隔离）";
         var catalogue=Path.Combine(AppContext.BaseDirectory,"Assets","TemplateCatalog.json");
         if(File.Exists(catalogue)) templates=JsonSerializer.Deserialize<List<Template>>(File.ReadAllText(catalogue),BackendClient.Json)??[];
         if(templates.Count>0) ShowTemplates();
         Content=shell;
+        Activated+=(_,_)=> { if(haruStyle) NativeWindowGlass.Enable(WinRT.Interop.WindowNative.GetWindowHandle(this),darkStyle); };
         shell.Loaded+=async (_,_)=>await Run(Initialize);
         editTimer.Tick+=async (_,_)=> { editTimer.Stop(); await Run(SaveCurrent); };
         previewTimer.Tick+=async (_,_)=> { previewTimer.Stop(); if(currentPage=="editor") await Run(RenderPreview); };
@@ -64,7 +68,7 @@ public sealed partial class MainWindow : Window
     private static TextBlock Text(string text,double size=14,bool bold=false) => new() { Text=text,FontSize=size,FontFamily=new FontFamily(haruStyle?"MiSans":"Segoe UI"),FontWeight=bold?Microsoft.UI.Text.FontWeights.SemiBold:Microsoft.UI.Text.FontWeights.Normal,Foreground=Brush(Ink),TextWrapping=TextWrapping.Wrap };
     private static StackPanel Stack(double spacing=12) => new() { Spacing=spacing };
     private static StackPanel Row(double spacing=10) => new() { Orientation=Orientation.Horizontal,Spacing=spacing };
-    private static Border Card(UIElement child,Thickness? padding=null) => new() { Child=child,Padding=padding??new Thickness(22),Background=Brush(Surface),BorderBrush=Brush(Stroke),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(haruStyle?14:12) };
+    private static Border Card(UIElement child,Thickness? padding=null) => new() { Child=child,Padding=padding??new Thickness(22),Background=PanelMaterial,BorderBrush=EdgeMaterial,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(haruStyle?14:12) };
     private Button Button(string label,Func<Task> action,bool primary=false)
     {
         var b=new Button { Content=label,Padding=new Thickness(15,9,15,9),CornerRadius=new CornerRadius(haruStyle?12:7),FontFamily=new FontFamily(haruStyle?"MiSans":"Segoe UI") };
@@ -107,7 +111,7 @@ public sealed partial class MainWindow : Window
             var b=Button(item.Label,()=>Navigate(key)); b.Tag=key; b.HorizontalAlignment=HorizontalAlignment.Stretch; b.HorizontalContentAlignment=HorizontalAlignment.Left; b.Foreground=Brush("#CBD7EB"); b.Background=new SolidColorBrush(Colors.Transparent); b.BorderThickness=new Thickness(0); b.Padding=new Thickness(14,13,14,13); navigation.Add(b); menu.Children.Add(b);
         }
         Grid.SetRow(menu,1); side.Children.Add(menu);
-        var footer=Stack(8); var tagline=Text("把经历写清楚\n让机会更靠近",13); tagline.Foreground=Brush("#A9BEDC"); footer.Children.Add(tagline); var v=Text("v0.4.0  ·  Windows 桌面版",10); v.Foreground=Brush("#7189AE"); footer.Children.Add(v); Grid.SetRow(footer,2); side.Children.Add(footer); shell.Children.Add(side);
+        var footer=Stack(8); var tagline=Text("把经历写清楚\n让机会更靠近",13); tagline.Foreground=Brush("#A9BEDC"); footer.Children.Add(tagline); var v=Text($"v{typeof(MainWindow).Assembly.GetName().Version?.ToString(3)}  ·  Windows 桌面版",10); v.Foreground=Brush("#7189AE"); footer.Children.Add(v); Grid.SetRow(footer,2); side.Children.Add(footer); shell.Children.Add(side);
     }
     private async Task Navigate(string page)
     {
@@ -207,8 +211,19 @@ public sealed partial class MainWindow : Window
     {
         var picker=new FileOpenPicker(); picker.FileTypeFilter.Add(".png"); picker.FileTypeFilter.Add(".jpg"); picker.FileTypeFilter.Add(".jpeg"); InitPicker(picker); var file=await picker.PickSingleFileAsync(); if(file is null||current is null) return;
         if(new FileInfo(file.Path).Length>600_000) throw new IOException("请选择小于 600 KB 的 PNG/JPEG 照片。");
-        var bytes=await File.ReadAllBytesAsync(file.Path); bool png=bytes.Length>8&&bytes.Take(8).SequenceEqual(new byte[]{137,80,78,71,13,10,26,10}); bool jpeg=bytes.Length>3&&bytes[0]==255&&bytes[1]==216&&bytes[2]==255;
-        if(!png&&!jpeg) throw new IOException("文件不是有效的 PNG/JPEG 图片。"); current.Photo="data:image/"+(png?"png":"jpeg")+";base64,"+Convert.ToBase64String(bytes); Changed();
+        var sourceFile=await Windows.Storage.StorageFile.GetFileFromPathAsync(file.Path);
+        using var input=await sourceFile.OpenAsync(Windows.Storage.FileAccessMode.Read);
+        var decoder=await BitmapDecoder.CreateAsync(input);
+        double scale=Math.Min(1d,Math.Min(480d/decoder.OrientedPixelWidth,640d/decoder.OrientedPixelHeight));
+        uint width=(uint)Math.Max(1,Math.Round(decoder.OrientedPixelWidth*scale)),height=(uint)Math.Max(1,Math.Round(decoder.OrientedPixelHeight*scale));
+        var transform=new BitmapTransform { ScaledWidth=width,ScaledHeight=height,InterpolationMode=BitmapInterpolationMode.Fant };
+        var pixels=await decoder.GetPixelDataAsync(BitmapPixelFormat.Bgra8,BitmapAlphaMode.Ignore,transform,ExifOrientationMode.RespectExifOrientation,ColorManagementMode.DoNotColorManage);
+        using var output=new InMemoryRandomAccessStream();
+        var encoder=await BitmapEncoder.CreateAsync(BitmapEncoder.JpegEncoderId,output);
+        encoder.SetPixelData(BitmapPixelFormat.Bgra8,BitmapAlphaMode.Ignore,width,height,96,96,pixels.DetachPixelData());
+        await encoder.FlushAsync(); output.Seek(0);
+        using var reader=new DataReader(output.GetInputStreamAt(0)); await reader.LoadAsync((uint)output.Size); var bytes=new byte[(int)output.Size]; reader.ReadBytes(bytes);
+        current.Photo="data:image/jpeg;base64,"+Convert.ToBase64String(bytes); Changed();
     }
     private void InitPicker(object picker) => WinRT.Interop.InitializeWithWindow.Initialize(picker,WinRT.Interop.WindowNative.GetWindowHandle(this));
     private static string SafeName(string text) => string.Join("_",text.Split(Path.GetInvalidFileNameChars(),StringSplitOptions.RemoveEmptyEntries));
@@ -221,8 +236,9 @@ public sealed partial class MainWindow : Window
         var c=Stack(12); c.Children.Add(Text(j.Title,20,true)); c.Children.Add(Text($"{j.Company}  ·  {j.Location}  ·  {j.Experience}",13)); c.Children.Add(Text($"{j.Source}  ·  {(string.IsNullOrEmpty(j.PublishedAt)?j.InfoStatus:"更新："+j.PublishedAt)}  ·  {j.Salary}",11));
         if(!string.IsNullOrWhiteSpace(j.Notes)) c.Children.Add(Text("备注："+j.Notes,12));
         var description=Text(j.Description,13); description.MaxHeight=145; description.TextTrimming=TextTrimming.CharacterEllipsis; c.Children.Add(description);
+        c.Children.Add(JobLink(j));
         var actions=Row(); actions.Children.Add(Button("详情",async ()=> { var content=Stack(); content.Children.Add(Text(j.Company+" · "+j.Location,14,true)); content.Children.Add(Text(j.Description,14)); var dialog=new ContentDialog { XamlRoot=shell.XamlRoot,Title=j.Title,Content=new ScrollViewer { Content=content,MaxHeight=480 },PrimaryButtonText="前往投递",CloseButtonText="返回" }; if(await dialog.ShowAsync()==ContentDialogResult.Primary) await OpenJob(j); })); actions.Children.Add(Button("前往投递 ↗",()=>OpenJob(j),true));
-        actions.Children.Add(Button(favorite?"取消收藏":"收藏职位",async ()=> { if(favorite) { await api.Delete("favorites/"+j.Id); await Navigate("favorites"); } else { await api.Save("favorites",j); Success("已收藏",j.Title); } })); if(favorite) actions.Children.Add(Button("编辑收藏",()=>EditFavorite(j,false))); c.Children.Add(actions); return Card(c);
+        actions.Children.Add(Button(favorite?"取消收藏":"收藏职位",async ()=> { if(favorite) { await api.Delete("favorites/"+j.Id); await Navigate("favorites"); } else { await api.Save("favorites",j); Success("已收藏",j.Title); } })); if(favorite) { actions.Children.Add(Button("编辑收藏",()=>EditFavorite(j,false))); actions.Children.Add(Button("自动补全",()=>ResolveFavorite(j))); } actions.Children.Add(Button("复制链接",()=>CopyJobLink(j))); c.Children.Add(actions); return Card(c);
     }
     private async Task OpenJob(Job job)
     {
@@ -257,7 +273,7 @@ public sealed partial class MainWindow : Window
     private void ShowAbout()
     {
         Heading("使用说明","简历制作与求职跟进，在一个桌面工作区完成。"); var content=Stack(22);
-        foreach(var item in new[] {("01  GitHub 高星模板","8 套岗位适配，覆盖前端、后端、嵌入式与通用型，来自 Awesome-CV、billryan/resume、Deedy-Resume 和 Jake’s Resume。卡片显示仓库来源、核实星数和许可。版式从原仓库 LaTeX 模板移植为中文 A4，原文件与许可随应用保存。6 套旧模板保留以兼容已有简历。"),("02  制作与辅助","填写信息与经历 → 调整模块顺序和样式 → 检查模块状态与规则建议 → 查看 A4 内容余量 → 导出 PDF。支持 Markdown 表格与标题日期。AI 提示词按钮只复制规则与当前简历，不连接在线模型。"),("03  招聘与跨平台收藏","21个公司来源可在发现职位汇总查询，支持腾讯及 Greenhouse、Lever、Ashby、SmartRecruiters、Workday；可添加国内外公司官网并查看真实接入状态。BOSS、猎聘、智联、前程无忧、拉勾、牛客和企业官网职位可复制详情链接收藏到拾简，补充描述、薪资与备注，并按平台筛选。相同链接的跟踪参数会归一化去重。平台账号收藏不会自动同步。"),("04  直接采集的范围","当前自动获取的是公开职位源。BOSS 搜索页依赖脚本和访问状态，robots 限制搜索参数路径，当前未实现其匿名批量采集；可正常打开原站登录浏览后复制职位链接和描述。未实现验证码绕过、Cookie 读取或自动投递。"),("05  投递与数据","“前往投递”打开原页面并记录“已打开”；实际投递在原站完成，再手动更新进度。简历、收藏、投递记录由本地 Java 服务保存。上一版文档保留 .bak，JSON 备份含个人信息。"),("06  技术与来源","客户端为原生 WinUI 3 / .NET 8，后端 Java 21，WebView2 用于预览和 PDF。开源模板与 resume-helper 功能来源说明见安装目录 THIRD_PARTY_NOTICES.md。")}) { var s=Stack(); s.Children.Add(Text(item.Item1,20,true)); s.Children.Add(Text(item.Item2,15)); content.Children.Add(Card(s)); }
+        foreach(var item in new[] {("01  GitHub 高星模板","8 套岗位适配，覆盖前端、后端、嵌入式与通用型，来自 Awesome-CV、billryan/resume、Deedy-Resume 和 Jake’s Resume。卡片显示仓库来源、核实星数和许可。版式从原仓库 LaTeX 模板移植为中文 A4，原文件与许可随应用保存。6 套旧模板保留以兼容已有简历。"),("02  制作与辅助","填写信息与经历 → 调整模块顺序和样式 → 检查模块状态与规则建议 → 查看 A4 内容余量 → 导出 PDF。支持 Markdown 表格与标题日期。AI 提示词按钮只复制规则与当前简历，不连接在线模型。"),("03  招聘与跨平台收藏","21个公司来源可在发现职位汇总查询，支持腾讯及 Greenhouse、Lever、Ashby、SmartRecruiters、Workday；可添加国内外公司官网并查看真实接入状态。BOSS、猎聘、智联、前程无忧、拉勾、牛客和企业官网职位可粘贴详情链接，尝试自动解析公开信息后收藏。也可正常浏览详情并读取可见职位内容。原始链接保留访问参数，规范地址单独去重，可按平台筛选。平台账号收藏不会自动同步。"),("04  直接采集的范围","当前自动获取的是公开职位源。BOSS 搜索页依赖脚本和访问状态，robots 限制搜索参数路径，当前未实现其匿名批量采集；单个公开详情可尝试直接解析，受限页面可在“浏览并读取”中正常完成验证后读取可见内容。未实现验证码绕过、外部浏览器 Cookie 读取或自动投递。"),("05  投递与数据","“前往投递”打开原页面并记录“已打开”；实际投递在原站完成，再手动更新进度。简历、收藏、投递记录由本地 Java 服务保存。上一完整版本以压缩 JSON 备份，设置页提供存储占用和预览缓存清理。"),("06  技术与来源","客户端为原生 WinUI 3 / .NET 8，后端 Java 21，WebView2 用于预览和 PDF。开源模板与 resume-helper 功能来源说明见安装目录 THIRD_PARTY_NOTICES.md。")}) { var s=Stack(); s.Children.Add(Text(item.Item1,20,true)); s.Children.Add(Text(item.Item2,15)); content.Children.Add(Card(s)); }
         content.Children.Add(Card(Text("本机数据目录：\n"+api.DataDirectory,13))); content.Children.Add(Button("打开数据目录",()=> { Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList={api.DataDirectory},UseShellExecute=true }); return Task.CompletedTask; })); FillScroll(content);
     }
     private async Task SelfTest()

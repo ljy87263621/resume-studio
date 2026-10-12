@@ -62,6 +62,9 @@ public sealed partial class MainWindow
         if(modernNavigation is null||AppPreferences.Load(api.DataDirectory).InterfaceStyle!="haru") throw new Exception("Native appearance selection not persisted");
         iterationChecks.Add("native interface selector and settings persistence");
         preferences.Theme="light"; await ApplyPreferences(); await Navigate("templates"); await SaveNativePreview(Path.Combine(output,"haru-templates-light.png"));
+        if(!nativeGlass && SystemBackdrop is not DesktopAcrylicBackdrop || shell.Background is not SolidColorBrush baseBrush || baseBrush.Color.A==255 || headerFrame?.Background is not LinearGradientBrush glass || glass.GradientStops.Any(s=>s.Color.A==255))
+            throw new Exception("Haru glass window/header material missing or covered by an opaque root");
+        iterationChecks.Add("whole-window acrylic, translucent root and glass header");
         await OpenEditor(); editorParts!.SelectedIndex=2; await SaveNativePreview(Path.Combine(output,"haru-editor-light.png"));
         preferences.Theme="dark"; await ApplyPreferences(); await SaveNativePreview(Path.Combine(output,"haru-editor-dark.png"));
         if(shell.RequestedTheme!=ElementTheme.Dark||preview!=originalWeb) throw new Exception("Dark theme or WebView reuse failed");
@@ -73,13 +76,56 @@ public sealed partial class MainWindow
 
         preferences.LivePreview=false; await preferences.SaveAsync(api.DataDirectory); editorParts.SelectedIndex=2; await Task.Delay(150);
         var content=FindTextField(body,"内容")!; content.Text+="\n- 关闭实时预览后，PDF 仍必须同步。"; await Task.Delay(100); await SaveCurrent();
-        await PrintPdf(Path.Combine(output,"manual-preview-latest.pdf"));
+        AppWindow.Hide();
+        try { await PrintPdf(Path.Combine(output,"manual-preview-latest.pdf")); }
+        finally { AppWindow.Show(); }
         if((await preview!.CoreWebView2.ExecuteScriptAsync("document.querySelector('article').textContent.includes('PDF 仍必须同步')"))!="true") throw new Exception("Manual preview export stale");
         iterationChecks.Add("manual preview preserves autosave and fresh PDF export");
+        iterationChecks.Add("PDF export completes while the window is hidden");
+        await VerifyVisibleJobCapture(output);
 
         preferences.InterfaceStyle="classic"; preferences.LivePreview=true; await ApplyPreferences(); await Navigate("templates"); await SaveNativePreview(Path.Combine(output,"classic-templates.png"));
         if(haruStyle||AppPreferences.Load(api.DataDirectory).InterfaceStyle!="classic") throw new Exception("Classic restoration failed");
         iterationChecks.Add("classic interface restoration with shared data");
         await File.WriteAllTextAsync(Path.Combine(output,"iteration-result.json"),JsonSerializer.Serialize(new {status="passed",checks=iterationChecks,startup=timings,webInitializations,previewNavigations,previewPatches},BackendClient.Json));
+    }
+    private async Task VerifyVisibleJobCapture(string output)
+    {
+        var browser=new WebView2 {Width=560,Height=350}; body.Children.Add(browser);
+        Dictionary<string,string> fields;
+        try
+        {
+            await browser.EnsureCoreWebView2Async(await webEnvironment!);
+            var loaded=new TaskCompletionSource<bool>();
+            browser.CoreWebView2!.NavigationCompleted+=(_,e)=>loaded.TrySetResult(e.IsSuccess);
+            browser.NavigateToString("<div class='job-banner'><div class='name'><h1>芯片验证工程师</h1><span class='salary'>20–30K</span></div></div><div class='company-info'><a><img alt='图标'></a><h3><a>验证用示例公司</a></h3></div><span class='job-area'>深圳</span><div class='job-sec-text'>验证芯片功能<br>开发测试工具</div>");
+            if(!await loaded.Task.WaitAsync(TimeSpan.FromSeconds(12))) throw new Exception("Job browser fixture failed to load");
+            using var parsed=JsonDocument.Parse(await browser.CoreWebView2.ExecuteScriptAsync(ReadVisibleJobScript));
+            fields=JsonSerializer.Deserialize<Dictionary<string,string>>(parsed.RootElement.GetProperty("fields").GetRawText(),BackendClient.Json)!;
+            if(fields["title"]!="芯片验证工程师"||fields["company"]!="验证用示例公司"||fields["salary"]!="20–30K"||!fields["description"].Contains("开发测试工具")) throw new Exception("Visible job browser extraction lost fields");
+        }
+        finally { body.Children.Remove(browser); browser.Close(); }
+        const string original="https://www.zhipin.com/job_detail/browser-fixture.html?securityId=retain-for-opening&ka=share";
+        var capture=await api.Post<CapturePreview>("capture-preview",new {text=original,visibleFields=fields});
+        if(capture.Job.Url!=original||capture.Job.CanonicalUrl.Contains("securityId")) throw new Exception("Original and dedup job URLs were mixed");
+        var favorite=await api.Save("favorites",capture.Job); await Navigate("favorites");
+        // Native virtualized containers are not realized while a verification window is minimized.
+        if(AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter && presenter.State==Microsoft.UI.Windowing.OverlappedPresenterState.Minimized) presenter.Restore();
+        Activate();
+        var items=(visibleJobList!.ItemsSource as IEnumerable<Job>)!.ToList();
+        var item=items.FirstOrDefault(j=>j.Id==favorite.Id)??throw new Exception($"Favorite filter omitted saved item: saved={favorite.Id}, shown={string.Join(',',items.Select(j=>j.Id))}, persisted={string.Join(',',(await api.Get<List<Job>>("favorites")).Select(j=>j.Id))}");
+        visibleJobList.ScrollIntoView(item); visibleJobList.UpdateLayout(); await Task.Delay(400);
+        bool FoundLink(DependencyObject parent)
+        {
+            for(int i=0;i<VisualTreeHelper.GetChildrenCount(parent);i++) {
+                var child=VisualTreeHelper.GetChild(parent,i);
+                if(child is HyperlinkButton link && link.Content is TextBlock text && text.Text==original) return true;
+                if(FoundLink(child)) return true;
+            }
+            return false;
+        }
+        if(!FoundLink(body)) throw new Exception($"Saved job link is not displayed in the native favorite card: root={shell.ActualWidth}x{shell.ActualHeight}, container={visibleJobList.ContainerFromIndex(0)?.GetType().Name??"missing"}");
+        await SaveNativePreview(Path.Combine(output,"favorites-with-visible-link.png"));
+        iterationChecks.Add("visible browser job fields, original access URL persistence and native favorite link display");
     }
 }

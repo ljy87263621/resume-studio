@@ -61,7 +61,7 @@ public sealed partial class MainWindow
         if(File.Exists(path))
         {
             if(!thumbnails.TryGetValue(t.Id,out var image)) { image=new BitmapImage { DecodePixelWidth=360,UriSource=new Uri(path) }; thumbnails[t.Id]=image; }
-            return new Border { Background=Brush(darkStyle?"#30303A":"#EFF3F9"),Padding=new Thickness(8),CornerRadius=new CornerRadius(haruStyle?12:8),Child=new Image { Source=image,Height=250,Stretch=Microsoft.UI.Xaml.Media.Stretch.Uniform } };
+            return new Border { Background=haruStyle?Brush(darkStyle?"#2910101A":"#38FFFFFF"):Brush("#EFF3F9"),Padding=new Thickness(8),CornerRadius=new CornerRadius(haruStyle?12:8),Child=new Image { Source=image,Height=250,Stretch=Microsoft.UI.Xaml.Media.Stretch.Uniform } };
         }
         var page=Stack(8); page.Children.Add(Text("你的姓名",18,true)); page.Children.Add(Text("求职意向 · 联系方式",9));
         foreach(string title in t.Sections.Take(3))
@@ -92,7 +92,8 @@ public sealed partial class MainWindow
     {
         var web=new WebView2 { Width=720,Height=560 };
         var dialog=new ContentDialog { XamlRoot=shell.XamlRoot,Title=t.Name,Content=web,PrimaryButtonText="使用模板",CloseButtonText="返回",DefaultButton=ContentDialogButton.Primary };
-        dialog.Opened+=async (_,_)=>await Run(async ()=> { await InitializeWeb(web); web.NavigateToString(ResumeRenderer.Html(Demo(t),t)); });
+        web.DefaultBackgroundColor=haruStyle?Microsoft.UI.Colors.Transparent:Microsoft.UI.Colors.White;
+        dialog.Opened+=async (_,_)=>await Run(async ()=> { await InitializeWeb(web); web.NavigateToString(PreviewHtml(Demo(t),t)); });
         var result=await dialog.ShowAsync(); web.Close(); if(result==ContentDialogResult.Primary) await CreateResume(t);
     }
 }

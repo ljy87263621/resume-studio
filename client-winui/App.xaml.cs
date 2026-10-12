@@ -10,7 +10,7 @@ public partial class App : Application
         InitializeComponent();
         UnhandledException += (_, e) =>
         {
-            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ResumeStudio");
+            var dir = Services.BackendClient.DefaultDataDirectory;
             Directory.CreateDirectory(dir);
             File.AppendAllText(Path.Combine(dir, "client-error.log"), $"{DateTimeOffset.Now}: {e.Exception}\n");
         };

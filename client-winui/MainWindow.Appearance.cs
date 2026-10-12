@@ -2,6 +2,7 @@ using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.Web.WebView2.Core;
 using ResumeStudio.Services;
 using Windows.UI.ViewManagement;
 
@@ -55,21 +56,19 @@ public sealed partial class MainWindow
                 var style=new Style(type); style.Setters.Add(new Setter(Control.CornerRadiusProperty,new CornerRadius(12))); style.Setters.Add(new Setter(Control.FontFamilyProperty,new FontFamily("MiSans"))); contentHost.Resources.Add(type,style);
             }
         }
-        shell.Background=Brush(darkStyle?"#1B1B22":haruStyle?"#F7F7F9":"#F5F7FB");
+        ConfigureWindowMaterial();
         contentHost!.Margin=haruStyle?new Thickness(22,18,22,18):new Thickness(30,26,30,22);
         pageTitle.Foreground=Brush(Ink); pageSubtitle.Foreground=Brush(darkStyle?"#B1B1C3":"#697086"); saveState.Foreground=Brush(darkStyle?"#9FB2E5":"#167D78");
         headerFrame!.Padding=haruStyle?new Thickness(20,15,20,15):new Thickness(0);
         headerFrame.CornerRadius=new CornerRadius(haruStyle?22:0);
-        headerFrame.BorderThickness=new Thickness(haruStyle?1:0); headerFrame.BorderBrush=Brush(Stroke);
-        headerFrame.Background=haruStyle?new LinearGradientBrush {
-            StartPoint=new Windows.Foundation.Point(0,0),EndPoint=new Windows.Foundation.Point(0,1),
-            GradientStops={new GradientStop { Color=((SolidColorBrush)Brush(darkStyle?"#E62B2B36":"#EFFFFFFF")).Color,Offset=0 },new GradientStop { Color=((SolidColorBrush)Brush(darkStyle?"#CC24242D":"#CCF4F4F8")).Color,Offset=1 }}
-        }:new SolidColorBrush(Colors.Transparent);
+        headerFrame.BorderThickness=new Thickness(haruStyle?1:0); headerFrame.BorderBrush=EdgeMaterial;
+        headerFrame.Background=haruStyle?PanelMaterial:new SolidColorBrush(Colors.Transparent);
         previewTimer.Interval=TimeSpan.FromMilliseconds(preferences.PreviewDelayMs);
         if(haruStyle)
         {
             Grid.SetColumn(contentHost,0);
             modernNavigation=new NavigationView { IsBackButtonVisible=NavigationViewBackButtonVisible.Collapsed,IsSettingsVisible=false,OpenPaneLength=210,CompactPaneLength=48,PaneDisplayMode=NavigationViewPaneDisplayMode.Auto,Content=contentHost };
+            ConfigureGlassNavigation(modernNavigation);
             modernNavigation.PaneTitle="拾简";
             foreach(var page in Pages)
             {
@@ -85,6 +84,7 @@ public sealed partial class MainWindow
             BuildSidebar(); Grid.SetColumn(contentHost,1); shell.Children.Add(contentHost);
         }
         UpdateNavigation(currentPage);
+        ConfigureGlassTitleBar();
     }
     private void UpdateNavigation(string page)
     {
@@ -105,11 +105,11 @@ public sealed partial class MainWindow
         Heading("设置","切换界面外观与预览节奏，简历和求职记录共用同一份本机数据。");
         var panel=Stack(18);
         var appearance=Stack(14); appearance.Children.Add(Text("界面与主题",20,true));
-        var style=new ComboBox { Header="界面版本",ItemsSource=new[] {"经典界面 · 当前默认","Haru 界面 · haruphoto 设计语言"},SelectedIndex=haruStyle?1:0,HorizontalAlignment=HorizontalAlignment.Stretch };
+        var style=new ComboBox { Header="界面版本",ItemsSource=new[] {"经典界面 · 当前默认","Haru 玻璃界面 · haruphoto 整体亚克力"},SelectedIndex=haruStyle?1:0,HorizontalAlignment=HorizontalAlignment.Stretch };
         style.SelectionChanged+=async (_,_)=>await Run(async ()=> { preferences.InterfaceStyle=style.SelectedIndex==1?"haru":"classic"; await ApplyPreferences(); }); appearance.Children.Add(style);
         var theme=new ComboBox { Header="Haru 界面主题",ItemsSource=new[] {"跟随系统","浅色","深色"},SelectedIndex=preferences.Theme=="light"?1:preferences.Theme=="dark"?2:0,IsEnabled=haruStyle,HorizontalAlignment=HorizontalAlignment.Stretch };
         theme.SelectionChanged+=async (_,_)=>await Run(async ()=> { preferences.Theme=theme.SelectedIndex==1?"light":theme.SelectedIndex==2?"dark":"system"; await ApplyPreferences(); }); appearance.Children.Add(theme);
-        appearance.Children.Add(Text("Haru 使用柔和蓝紫色、原生侧边导航、圆角卡片和轻玻璃顶栏。经典界面保持原有外观。切换无需重启。",13)); panel.Children.Add(Card(appearance));
+        appearance.Children.Add(Text("Haru 的整窗背景、侧栏、顶栏和内容卡片使用亚克力玻璃与高光描边，透出窗口背后的模糊颜色。Windows 关闭透明效果或高对比度模式下会自动回退为清晰底色。切换无需重启。",13)); panel.Children.Add(Card(appearance));
         var performance=Stack(14); performance.Children.Add(Text("编辑与性能",20,true));
         var live=new ToggleSwitch { Header="实时预览",IsOn=preferences.LivePreview };
         live.Toggled+=async (_,_)=>await Run(async ()=> { preferences.LivePreview=live.IsOn; if(!live.IsOn) previewTimer.Stop(); await preferences.SaveAsync(api.DataDirectory); }); performance.Children.Add(live);
@@ -119,5 +119,51 @@ public sealed partial class MainWindow
         var diagnostics=Stack(10); diagnostics.Children.Add(Text("本次会话",18,true));
         diagnostics.Children.Add(Text($"模板首屏：{timings.GetValueOrDefault("firstPageReady"):0} ms · 本地服务：{timings.GetValueOrDefault("backendReady"):0} ms\n编辑预览实例：{webInitializations} · 整页加载：{previewNavigations} · 文档更新：{previewPatches}",13));
         diagnostics.Children.Add(Text("耗时从窗口创建起计算，供比较同机启动表现；不包含启动进程前的磁盘与系统调度时间。",11)); panel.Children.Add(Card(diagnostics)); FillScroll(panel);
+        var storage=Stack(12); storage.Children.Add(Text("本机存储",20,true));
+        var storageInfo=Text(StorageUsage(),13); storage.Children.Add(storageInfo);
+        storage.Children.Add(Text("简历、职位收藏和投递记录保存在本机。编辑备份只保留上一版并压缩；预览磁盘缓存可随时重建。",12));
+        var actions=Row(8);
+        actions.Children.Add(Button("清理预览磁盘缓存",async ()=> { await ClearPreviewDiskCache(); storageInfo.Text=StorageUsage(); Success("缓存已清理","只清除了预览磁盘缓存，简历、备份、职位收藏和投递记录均保留。"); }));
+        actions.Children.Add(Button("刷新占用",()=> { storageInfo.Text=StorageUsage(); return Task.CompletedTask; })); storage.Children.Add(actions);
+        panel.Children.Add(Card(storage));
+    }
+    private string StorageUsage()
+    {
+        string root=api.DataDirectory;
+        if(!Directory.Exists(root)) return "当前数据目录尚未创建。";
+        long records=0,backups=0,logs=0,cache=0,other=0;
+        var pending=new Stack<string>(); pending.Push(root);
+        while(pending.Count>0)
+        {
+            string directory=pending.Pop(); string[] files,subdirectories;
+            try { files=Directory.GetFiles(directory); subdirectories=Directory.GetDirectories(directory); } catch(IOException) { continue; } catch(UnauthorizedAccessException) { continue; }
+            foreach(string child in subdirectories) pending.Push(child);
+            foreach(string path in files)
+            {
+                long size; try { size=new FileInfo(path).Length; } catch(IOException) { continue; } catch(UnauthorizedAccessException) { continue; }
+                string relative=Path.GetRelativePath(root,path);
+                if(relative.StartsWith("WebView2"+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)) cache+=size;
+                else if(Path.GetFileName(path).EndsWith(".bak",StringComparison.OrdinalIgnoreCase)||Path.GetFileName(path).EndsWith(".bak.gz",StringComparison.OrdinalIgnoreCase)) backups+=size;
+                else if(Path.GetFileName(path).StartsWith("backend.log",StringComparison.OrdinalIgnoreCase)) logs+=size;
+                else if(Path.GetExtension(path).Equals(".json",StringComparison.OrdinalIgnoreCase)) records+=size;
+                else other+=size;
+            }
+        }
+        static string Size(long bytes)=>bytes<1024?$"{bytes} B":bytes<1024*1024?$"{bytes/1024d:0.0} KB":$"{bytes/1024d/1024d:0.00} MB";
+        return $"数据目录：{root}\n简历与求职记录：{Size(records)}  ·  压缩备份：{Size(backups)}\n预览缓存：{Size(cache)}  ·  日志：{Size(logs)}  ·  设置与临时文件：{Size(other)}\n合计：{Size(records+backups+cache+logs+other)}";
+    }
+    private async Task ClearPreviewDiskCache()
+    {
+        var core=preview?.CoreWebView2;
+        if(core is not null) { await core.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.DiskCache); return; }
+        var temporary=new Microsoft.UI.Xaml.Controls.WebView2 { Width=1,Height=1,Visibility=Microsoft.UI.Xaml.Visibility.Collapsed };
+        body.Children.Add(temporary);
+        try
+        {
+            webEnvironment??=CreateWebEnvironment();
+            await temporary.EnsureCoreWebView2Async(await webEnvironment);
+            await temporary.CoreWebView2!.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.DiskCache);
+        }
+        finally { body.Children.Remove(temporary); temporary.Close(); }
     }
 }

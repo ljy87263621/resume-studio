@@ -1,6 +1,8 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.ApplicationModel.DataTransfer;
+using System.Text.Json;
+using ResumeStudio.Services;
 
 namespace ResumeStudio;
 
@@ -11,26 +13,65 @@ public sealed partial class MainWindow
         string clipboard="";
         var clipboardData=Clipboard.GetContent();
         if(clipboardData.Contains(StandardDataFormats.Text)) clipboard=await clipboardData.GetTextAsync();
-        var content=Stack(14); content.Children.Add(Text("复制 BOSS、猎聘、智联、前程无忧、拉勾、牛客或企业官网的职位详情链接；可同时粘贴职位名称和描述。",14));
-        var input=new TextBox { Header="职位链接 / 分享文本",Text=clipboard.Contains("https://")?clipboard:"",AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,MinHeight=160,MaxHeight=300,MaxLength=50000 }; content.Children.Add(input);
+        var content=Stack(14); content.Children.Add(Text("粘贴职位详情链接后会尝试自动读取公开信息；BOSS 等页面需要正常浏览时，可选择“浏览并读取”。也支持粘贴完整分享文本。",14));
+        var input=new TextBox { Header="职位链接 / 分享文本",AcceptsReturn=true,Text=clipboard.Contains("https://")?clipboard:"",TextWrapping=TextWrapping.Wrap,MinHeight=160,MaxHeight=300,MaxLength=50000 }; content.Children.Add(input);
         content.Children.Add(Text("收藏保存到拾简。平台账号里的收藏需要在原站操作。",12));
-        var pasted=await new ContentDialog { XamlRoot=shell.XamlRoot,Title="从链接收藏职位",Content=content,PrimaryButtonText="识别链接",CloseButtonText="取消" }.ShowAsync();
+        var pasted=await new ContentDialog { XamlRoot=shell.XamlRoot,Title="从链接收藏职位",Content=content,PrimaryButtonText="自动解析",CloseButtonText="取消" }.ShowAsync();
         if(pasted!=ContentDialogResult.Primary) return;
-        var captured=await api.Post<CapturePreview>("capture-preview",new {text=input.Text});
+        var captured=await ResolveJobLink(input.Text);
         await EditFavorite(captured.Job,true,captured.Message);
     }
     private async Task EditFavorite(Job job,bool create,string message="")
     {
+        job=JsonSerializer.Deserialize<Job>(JsonSerializer.Serialize(job,BackendClient.Json),BackendClient.Json)!;
         var content=Stack(12); if(!string.IsNullOrEmpty(message)) content.Children.Add(Text(message,12));
-        var title=new TextBox { Header="职位名称",Text=job.Title,MaxLength=250 }; var company=new TextBox { Header="公司",Text=job.Company,MaxLength=200 }; var location=new TextBox { Header="城市 / 地点",Text=job.Location,MaxLength=200 }; var salary=new TextBox { Header="薪资",Text=job.Salary,MaxLength=100 }; var url=new TextBox { Header="职位详情链接",Text=job.Url,MaxLength=3000 }; var description=new TextBox { Header="职位描述（可从原站复制）",Text=job.Description,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,MinHeight=100,MaxLength=30000 }; var notes=new TextBox { Header="备注",Text=job.Notes,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,MinHeight=60,MaxLength=5000 };
+        var title=new TextBox { Header="职位名称",Text=job.Title,MaxLength=250 }; var company=new TextBox { Header="公司",Text=job.Company,MaxLength=200 }; var location=new TextBox { Header="城市 / 地点",Text=job.Location,MaxLength=200 }; var salary=new TextBox { Header="薪资",Text=job.Salary,MaxLength=100 }; var url=new TextBox { Header="职位详情链接",Text=job.Url,MaxLength=3000 }; var description=new TextBox { Header="职位描述（可从原站复制）",AcceptsReturn=true,Text=job.Description,TextWrapping=TextWrapping.Wrap,MinHeight=100,MaxLength=30000 }; var notes=new TextBox { Header="备注",AcceptsReturn=true,Text=job.Notes,TextWrapping=TextWrapping.Wrap,MinHeight=60,MaxLength=5000 };
         foreach(var field in new[] {title,company,location,salary,url,description,notes}) content.Children.Add(field);
-        var dialog=new ContentDialog { XamlRoot=shell.XamlRoot,Title=create?"核对并收藏职位":"编辑收藏",Content=new ScrollViewer { Content=content,MaxHeight=570 },PrimaryButtonText="保存收藏",CloseButtonText="取消" };
-        if(await dialog.ShowAsync()!=ContentDialogResult.Primary) return;
+        var dialog=new ContentDialog { XamlRoot=shell.XamlRoot,Title=create?"核对并收藏职位":"编辑收藏",Content=new ScrollViewer { Content=content,MaxHeight=570 },PrimaryButtonText="保存收藏",SecondaryButtonText="浏览并读取",CloseButtonText="取消" };
+        var choice=await dialog.ShowAsync();
+        if(choice==ContentDialogResult.Secondary)
+        {
+            job.Url=url.Text; job.Title=title.Text; job.Company=company.Text; job.Location=location.Text; job.Salary=salary.Text; job.Description=description.Text; job.Notes=notes.Text;
+            var read=await ReadVisibleJob(job);
+            await EditFavorite(read??job,create,read is null?"未读取职位内容，可以继续编辑，或重新浏览页面。":"已读取浏览页面上的可见职位信息，请核对后收藏。"); return;
+        }
+        if(choice!=ContentDialogResult.Primary) return;
         var normalized=await api.Post<CapturePreview>("capture-preview",new {text=url.Text});
         if(string.IsNullOrWhiteSpace(title.Text)) throw new InvalidOperationException("请填写职位名称");
-        job.Title=title.Text.Trim(); job.Company=company.Text.Trim(); job.Location=location.Text.Trim(); job.Salary=salary.Text.Trim(); job.Url=normalized.Job.Url; job.Description=description.Text; job.Notes=notes.Text;
+        job.Title=title.Text.Trim(); job.Company=company.Text.Trim(); job.Location=location.Text.Trim(); job.Salary=salary.Text.Trim(); job.Url=normalized.Job.Url; job.CanonicalUrl=normalized.Job.CanonicalUrl; job.Description=description.Text; job.Notes=notes.Text;
         // Only external links use the canonical URL identifier; live provider IDs remain unchanged.
         if(create||job.Id.StartsWith("external-")) { var oldId=job.Id; job.Id=normalized.Job.Id; job.Source=normalized.Job.Source; if(!create&&oldId!=job.Id) { await api.Save("favorites",job); await api.Delete("favorites/"+oldId); } }
         job.InfoStatus="用户核对"; await api.Save("favorites",job); await Navigate("favorites"); Success("职位已收藏",job.Title);
+    }
+    private HyperlinkButton JobLink(Job job)
+    {
+        var text=Text(job.Url,12); text.MaxLines=2; text.TextTrimming=TextTrimming.CharacterEllipsis; text.Foreground=Brush(darkStyle?"#B5C9FF":Accent);
+        var link=new HyperlinkButton {Content=text,Padding=new Thickness(0),HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Left,IsEnabled=!string.IsNullOrWhiteSpace(job.Url)};
+        ToolTipService.SetToolTip(link,job.Url); link.Click+=async (_,_)=>await Run(()=>Launch(job.Url)); return link;
+    }
+    private Task CopyJobLink(Job job)
+    {
+        var data=new DataPackage(); data.SetText(job.Url); Clipboard.SetContent(data); Success("链接已复制","已复制保留访问参数的完整职位链接。"); return Task.CompletedTask;
+    }
+    private async Task<CapturePreview> ResolveJobLink(string text)
+    {
+        notice.Title="正在读取职位详情"; notice.Message="尝试解析公开详情页…"; notice.Severity=InfoBarSeverity.Informational; notice.IsOpen=true;
+        try { return await api.Post<CapturePreview>("capture-preview",new {text,resolve=true}); }
+        finally { notice.IsOpen=false; }
+    }
+    private async Task ResolveFavorite(Job job)
+    {
+        var result=await ResolveJobLink(job.Url);
+        var updated=JsonSerializer.Deserialize<Job>(JsonSerializer.Serialize(job,BackendClient.Json),BackendClient.Json)!;
+        if(result.Status=="parsed")
+        {
+            var r=result.Job;
+            if(!string.IsNullOrWhiteSpace(r.Title)) updated.Title=r.Title;
+            if(!string.IsNullOrWhiteSpace(r.Company)) updated.Company=r.Company;
+            if(!string.IsNullOrWhiteSpace(r.Location)) updated.Location=r.Location;
+            if(!string.IsNullOrWhiteSpace(r.Salary)) updated.Salary=r.Salary;
+            if(!string.IsNullOrWhiteSpace(r.Description)) updated.Description=r.Description;
+        }
+        await EditFavorite(updated,false,result.Message);
     }
 }

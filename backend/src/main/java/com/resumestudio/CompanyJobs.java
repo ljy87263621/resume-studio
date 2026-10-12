@@ -101,8 +101,8 @@ public final class CompanyJobs {
     }
     private static Map<String,Object> result(List<?> jobs,int total,String status,String message,int page) { return new LinkedHashMap<>(Map.of("items",jobs,"total",total,"status",status,"message",message,"fetchedAt",Instant.now().toString(),"cached",false,"page",page)); }
     private Object json(String url) throws Exception { return Json.parse(get(URI.create(url))); }
-    private String get(URI url) throws Exception { return request(url,null); }
-    private String request(URI url,String payload) throws Exception {
+    private static String get(URI url) throws Exception { return request(url,null); }
+    private static String request(URI url,String payload) throws Exception {
         checkPublic(url);
         var builder=HttpRequest.newBuilder(url).timeout(Duration.ofSeconds(18)).header("User-Agent","ResumeStudio/0.3 (+public-career-reader)").header("Accept","application/json,text/html;q=0.9");
         if(payload==null) builder.GET(); else builder.header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(payload));
@@ -120,7 +120,7 @@ public final class CompanyJobs {
         public void onError(Throwable error) { delegate.onError(error); }
         public void onComplete() { delegate.onComplete(); }
     }
-    private String webpage(URI url) throws Exception {
+    static String webpage(URI url) throws Exception {
         String robots;
         try { robots=get(URI.create("https://"+url.getHost()+"/robots.txt")); } catch(Exception e) { robots=""; }
         if(!robotsAllowed(robots,url.getRawPath()+(url.getRawQuery()==null?"":"?"+url.getRawQuery()))) throw new IllegalStateException("官网 robots 限制当前路径；可打开官网浏览");

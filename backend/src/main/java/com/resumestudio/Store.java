@@ -2,10 +2,12 @@ package com.resumestudio;
 
 import java.nio.file.*;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.time.Instant;
 import java.util.*;
+import java.util.zip.GZIPOutputStream;
 
-/** Each document is atomically replaced. The previous complete revision is kept as .bak. */
+/** Each document is atomically replaced. One compressed previous revision is kept for recovery. */
 public final class Store {
     private final Path root;
     public Store(Path root) throws IOException { this.root=root.toAbsolutePath(); Files.createDirectories(this.root); }
@@ -18,7 +20,13 @@ public final class Store {
         String id=Json.str(doc,"id"); if (id.isBlank()) id=UUID.randomUUID().toString();
         Map<String,Object> copy=new LinkedHashMap<>(doc); copy.put("id",id); copy.put("updatedAt",Instant.now().toString());
         Path p=path(kind,id), temp=p.resolveSibling(p.getFileName()+".tmp");
-        if (Files.exists(p)) Files.copy(p,p.resolveSibling(p.getFileName()+".bak"),StandardCopyOption.REPLACE_EXISTING);
+        Path backup=p.resolveSibling(p.getFileName()+".bak.gz"), backupTemp=p.resolveSibling(p.getFileName()+".bak.gz.tmp");
+        if (Files.exists(p)) {
+            try (OutputStream out=new GZIPOutputStream(Files.newOutputStream(backupTemp))) { Files.copy(p,out); }
+            try { Files.move(backupTemp,backup,StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE); }
+            catch(AtomicMoveNotSupportedException e) { Files.move(backupTemp,backup,StandardCopyOption.REPLACE_EXISTING); }
+            Files.deleteIfExists(p.resolveSibling(p.getFileName()+".bak"));
+        }
         Files.writeString(temp,Json.write(copy));
         try { Files.move(temp,p,StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE); }
         catch(AtomicMoveNotSupportedException e) { Files.move(temp,p,StandardCopyOption.REPLACE_EXISTING); }
@@ -32,6 +40,6 @@ public final class Store {
         docs.sort(Comparator.comparing((Map<String,Object> m)->Json.str(m,"updatedAt")).reversed()); return docs;
     }
     public synchronized void delete(String kind,String id) throws IOException {
-        Path p=path(kind,id); Files.deleteIfExists(p); Files.deleteIfExists(p.resolveSibling(p.getFileName()+".bak"));
+        Path p=path(kind,id); Files.deleteIfExists(p); Files.deleteIfExists(p.resolveSibling(p.getFileName()+".bak")); Files.deleteIfExists(p.resolveSibling(p.getFileName()+".bak.gz"));
     }
 }

@@ -18,13 +18,16 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PublishReadyToRun>false</PublishReadyToRun>
     <PublishTrimmed>false</PublishTrimmed>
-    <Version>0.4.0</Version>
+    <Version>0.4.2</Version>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="Assets\Templates\*.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\TemplateCatalog.json" CopyToOutputDirectory="PreserveNewest" />
     <Manifest Include="$(ApplicationManifest)" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
+    <!-- Reference only the WinUI stack; the umbrella package also ships unused AI/ML and Widgets runtimes. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="1.8.260224000" />
   </ItemGroup>
 </Project>

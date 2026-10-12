@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 
 namespace ResumeStudio.Services;
@@ -9,12 +10,14 @@ namespace ResumeStudio.Services;
 /// <summary>The desktop client owns one local Java process; no external account is needed.</summary>
 public sealed class BackendClient : IDisposable
 {
+    private const long MaxLogBytes = 256 * 1024;
+    private static readonly object LogLock = new();
     public static string DefaultDataDirectory { get; } = ResolveDataDirectory();
     private static string ResolveDataDirectory()
     {
         var specified=Environment.GetEnvironmentVariable("RESUMESTUDIO_TEST_DATA");
         if(!string.IsNullOrWhiteSpace(specified)) return specified;
-        bool test=Environment.GetCommandLineArgs().Any(arg=>arg is "--self-test" or "--benchmark" or "--iteration-test");
+        bool test=Environment.GetCommandLineArgs().Any(arg=>arg is "--self-test" or "--benchmark" or "--iteration-test" or "--appearance-review");
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),test?"ResumeStudioVerification":"ResumeStudio",test?Guid.NewGuid().ToString("N"):"");
     }
     public static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true, WriteIndented = true };
@@ -46,7 +49,25 @@ public sealed class BackendClient : IDisposable
         }
         throw new IOException("Java 后端启动超时");
     }
-    private void Log(string line) { try { File.AppendAllText(Path.Combine(DataDirectory,"backend.log"),$"{DateTimeOffset.Now}: {line}\n"); } catch(IOException) { } }
+    private void Log(string line)
+    {
+        try
+        {
+            lock(LogLock)
+            {
+                Directory.CreateDirectory(DataDirectory);
+                string path=Path.Combine(DataDirectory,"backend.log"),previous=path+".1";
+                string entry=$"{DateTimeOffset.Now}: {line}{Environment.NewLine}";
+                if(File.Exists(path)&&new FileInfo(path).Length+Encoding.UTF8.GetByteCount(entry)>MaxLogBytes)
+                {
+                    File.Delete(previous); File.Move(path,previous);
+                }
+                File.AppendAllText(path,entry,Encoding.UTF8);
+            }
+        }
+        catch(IOException) { }
+        catch(UnauthorizedAccessException) { }
+    }
     public async Task<T> Get<T>(string path,CancellationToken cancellationToken=default)
     {
         await StartAsync().WaitAsync(cancellationToken);

@@ -51,13 +51,13 @@ try {
     $imported=Post capture-preview @{text="Java 后端工程师`nhttps://www.zhipin.com/job_detail/abc123456.html?ka=share&utm_source=copy"}
     Assert ($imported.job.source -eq 'BOSS直聘' -and $imported.job.title -eq 'Java 后端工程师') 'BOSS shared link recognition'
     $duplicate=Post capture-preview @{text='https://www.zhipin.com/job_detail/abc123456.html?sid=other'}
-    Assert ($duplicate.job.id -eq $imported.job.id -and $imported.job.url -eq 'https://www.zhipin.com/job_detail/abc123456.html') 'Canonical link duplicate detection'
+    Assert ($duplicate.job.id -eq $imported.job.id -and $imported.job.canonicalUrl -eq 'https://www.zhipin.com/job_detail/abc123456.html') 'Canonical duplicate detection preserves original link'
     $external=Post favorites $imported.job
     $duplicate.job.title='补充后的职位名称'; $null=Post favorites $duplicate.job
     $externalList=Invoke-RestMethod "$base/favorites" -Headers $headers -NoProxy
     Assert ($externalList.Count -eq 1 -and $externalList[0].title -eq '补充后的职位名称') 'External favorite create/update'
     $null=Invoke-RestMethod "$base/favorites/$($external.id)" -Method Delete -Headers $headers -NoProxy
-    Assert (Test-Path (Join-Path $dir "resumes\$($saved.id).json.bak")) 'Previous revision backup'
+    Assert (Test-Path (Join-Path $dir "resumes\$($saved.id).json.bak.gz")) 'Compressed previous revision backup'
     $server.Kill($true); $server.WaitForExit(); Start-Backend
     $list=Invoke-RestMethod "$base/resumes" -Headers $headers -NoProxy
     Assert ($list[0].profile.name -eq '中文姓名') 'Persistence after server restart'
@@ -100,6 +100,6 @@ try {
     Assert ($blocked.status -in @('ok','error') -and $null -ne $blocked.items) 'Optional provider exposes state'
     $null=Invoke-RestMethod "$base/resumes/$($saved.id)" -Method Delete -Headers $headers -NoProxy
     $list=Invoke-RestMethod "$base/resumes" -Headers $headers -NoProxy
-    Assert ($list.Count -eq 0 -and !(Test-Path (Join-Path $dir "resumes\$($saved.id).json.bak"))) 'Resume delete including backup'
+    Assert ($list.Count -eq 0 -and !(Test-Path (Join-Path $dir "resumes\$($saved.id).json.bak.gz"))) 'Resume delete including compressed backup'
     @{status='passed';checks=$checks;liveJobCount=$jobs.items.Count;sampleJobUrl=$jobs.items[0].url;employers=$employers;aggregateJobCount=$aggregate.items.Count;aggregateSources=$aggregate.sources;optionalProviderStatus=$blocked.status;time=(Get-Date).ToString('o')}|ConvertTo-Json -Depth 10|Set-Content (Join-Path $root 'artifacts\backend-result.json') -Encoding utf8
 } finally { if($server -and !$server.HasExited) { $server.Kill($true); $server.WaitForExit() } }

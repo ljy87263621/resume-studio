@@ -2,6 +2,18 @@
 
 Java 后端 + 原生 WinUI 3 Windows 客户端，支持简历制作、PDF 导出、企业官网职位查询、收藏和投递进度管理。GitHub 高星简历模板已移植到桌面编辑与导出流程。来源、固定提交、星数核实时间与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
+## v0.4.2 安装体积、整体玻璃与职位链接解析
+
+- 按需引用 WinUI 组件，不再随包携带未使用的 AI / ML / Widgets 组件；继续自包含 Java、.NET 和 WinUI，用户无需额外安装这些运行环境。
+- 可选 Haru 界面使用整窗 Desktop Acrylic、透明标题栏、半透明侧栏和内容卡片、高光描边；整个窗口透出背景的模糊颜色。简历纸张与 PDF 保持白底。经典界面仍默认，可在设置中切换。
+- 职位卡片直接显示原始链接，支持点击与复制。用于去重的地址单独保存，打开页面时保留 `securityId` 等访问参数。
+- 粘贴详情链接后尝试解析公开 JSON-LD 和网页元数据，自动填入可获取的职位、公司、地点、薪资和描述。访问验证 / 登录页不会被当成职位；可选择“浏览并读取”，在正常浏览后读取可见内容再核对收藏。
+- 修复多行分享文本预填时丢失链接和后续描述的问题；已有收藏可使用“自动补全”。
+
+## v0.4.1 本机存储优化
+
+压缩上一版本地文档备份、限制日志占用、缩小导入照片，并在设置页查看占用和清理预览缓存。详见 [v0.4.1 迭代记录](docs/ITERATION-0.4.1.md)。
+
 ## v0.4.0 性能与双界面
 
 - 默认保持经典界面，在“设置 → 界面版本”切换 Haru 界面；沿用 haruphoto 的低饱和度蓝紫色、原生导航、圆角卡片与轻玻璃顶栏，支持浅色、深色和跟随系统。切换即时生效，数据共用，设置持久化在本机。
@@ -38,7 +50,7 @@ Java 后端 + 原生 WinUI 3 Windows 客户端，支持简历制作、PDF 导出
 
 ## 运行
 
-从 [GitHub Releases](https://github.com/scj040921/resume-studio/releases) 下载 `ResumeStudio-v0.4.0-windows-x64.zip`，解压后双击目录中的 `ResumeStudio.exe`。必须保留整个目录，含自包含 .NET / Windows App SDK 及精简 Java 21 运行时。客户端自动启动本地 Java 服务并在关闭窗口时结束该服务，无需手动安装 Java 或 .NET。需要 Windows 10 2004 或更新的 x64 系统及 Microsoft Edge WebView2 Runtime。不要在压缩包内直接运行。
+从 [GitHub Releases](https://github.com/scj040921/resume-studio/releases) 下载 `ResumeStudio-v0.4.2-windows-x64.zip`，解压后双击目录中的 `ResumeStudio.exe`。必须保留整个目录，含自包含 .NET / Windows App SDK 及精简 Java 21 运行时。客户端自动启动本地 Java 服务并在关闭窗口时结束该服务，无需手动安装 Java 或 .NET。需要 Windows 10 2004 或更新的 x64 系统及 Microsoft Edge WebView2 Runtime。不要在压缩包内直接运行。
 
 发布附带 `SHA256SUMS.txt`。OpenJDK 源码归档属于运行组件的对应源码，普通用户只需下载应用 ZIP。原创应用代码采用 [MIT](LICENSE)，模板及运行组件保留各自许可，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 和 [RUNTIME_NOTICES.md](RUNTIME_NOTICES.md)。
 
@@ -55,7 +67,7 @@ Java 后端 + 原生 WinUI 3 Windows 客户端，支持简历制作、PDF 导出
 - BOSS、猎聘、智联、前程无忧、拉勾、牛客、企业官网的职位详情链接可直接粘贴导入，核对并填写公司、地点、薪资、描述与备注后收藏。跟踪参数归一化后，相同链接更新同一收藏。收藏支持编辑、关键词和平台筛选。这是拾简本地收藏，不同步平台账号收藏。
 - BOSS直聘、牛客和腾讯招聘平台入口。BOSS直聘与牛客目前没有接入职位列表抓取。
 
-当前是单机版，无账号登录、云端同步或在线 AI 润色。BOSS 等平台目前采用用户复制详情链接 / 文本导入，并未实现匿名批量抓取；不绕过登录和验证码、不读取浏览器 Cookie。公开职位源如腾讯可以自动查询。简历、收藏、投递记录持久化在 `%LOCALAPPDATA%/ResumeStudio`；上一完整版本保存为 `.json.bak`。数据为本机明文文件，可在应用“使用说明”打开数据目录。删除文档会同时删除该文档的备份。
+当前是单机版，拾简没有自身账号系统、云端同步或在线 AI 润色；招聘网站的访问验证与登录由用户在正常详情页完成。BOSS 等平台目前采用用户复制详情链接 / 文本导入，并未实现匿名批量抓取；不绕过登录和验证码、不读取浏览器 Cookie。公开职位源如腾讯可以自动查询。简历、收藏、投递记录持久化在 `%LOCALAPPDATA%/ResumeStudio`；上一完整版本以 `.json.bak.gz` 压缩保存，设置页显示数据占用并可清理可重建的预览磁盘缓存，后端日志最多保留当前与一份轮转文件。数据为本机明文文件，可在应用“使用说明”打开数据目录。删除文档会同时删除该文档的备份。
 
 ## 源码结构
 

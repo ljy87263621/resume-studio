@@ -26,7 +26,7 @@ public sealed partial class MainWindow
         Heading("简历工作台","选择模块编辑，右侧保留预览；自动保存与预览独立运行。"); UpdateNavigation("editor");
         body.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto }); body.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) });
         body.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(480) }); body.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(16) }); body.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(1,GridUnitType.Star) });
-        var toolbar=new CommandBar { DefaultLabelPosition=CommandBarDefaultLabelPosition.Right,IsOpen=false,Margin=new Thickness(0,0,0,12),Background=Brush(Surface) };
+        var toolbar=new CommandBar { DefaultLabelPosition=CommandBarDefaultLabelPosition.Right,IsOpen=false,Margin=new Thickness(0,0,0,12),Background=PanelMaterial };
         toolbar.PrimaryCommands.Add(EditorAction("我的简历",Symbol.Back,()=>Navigate("resumes")));
         toolbar.PrimaryCommands.Add(EditorAction("保存",Symbol.Save,SaveCurrent));
         toolbar.PrimaryCommands.Add(EditorAction("导出 PDF",Symbol.Download,ExportPdf));
@@ -42,7 +42,7 @@ public sealed partial class MainWindow
         var form=new Grid { ColumnSpacing=12 };
         form.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(136) }); form.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(1,GridUnitType.Star) });
         var moduleColumn=Stack(10); moduleColumn.Children.Add(Text("内容目录",14,true));
-        editorParts=new ListBox { HorizontalAlignment=HorizontalAlignment.Stretch,BorderThickness=new Thickness(0),Background=Brush(Surface) };
+        editorParts=new ListBox { HorizontalAlignment=HorizontalAlignment.Stretch,BorderThickness=new Thickness(0),Background=PanelMaterial };
         var labels=new List<string> { "基本信息","排版设置" }; labels.AddRange(current.Sections.Select(s=>s.Title+(s.Visible?"":" · 隐藏")));
         editorParts.ItemsSource=labels;
         editorParts.SelectionChanged+=(_,_)=> { if(editorParts.SelectedIndex>=0) { selectedEditorPart=editorParts.SelectedIndex; ShowEditorPart(); } }; moduleColumn.Children.Add(editorParts);
@@ -53,6 +53,7 @@ public sealed partial class MainWindow
         editorParts.SelectedIndex=Math.Clamp(selectedEditorPart,0,labels.Count-1);
 
         preview??=new WebView2 { HorizontalAlignment=HorizontalAlignment.Stretch,VerticalAlignment=VerticalAlignment.Stretch };
+        preview.DefaultBackgroundColor=haruStyle?Microsoft.UI.Colors.Transparent:Microsoft.UI.Colors.White;
         var previewPanel=new Grid(); previewPanel.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto }); previewPanel.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) });
         capacityText=Text("正在估算 A4 内容容量…",11); capacityText.Margin=new Thickness(12,9,12,9); previewPanel.Children.Add(capacityText); Grid.SetRow(preview,1); previewPanel.Children.Add(preview);
         previewHost=previewPanel;

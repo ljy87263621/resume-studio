@@ -11,6 +11,11 @@ public sealed partial class MainWindow
     private readonly SemaphoreSlim renderLock = new(1,1);
     private string lastRenderedHtml = "";
     private Grid? previewHost;
+    private static string PreviewHtml(Resume resume,Template template)
+    {
+        string html=Services.ResumeRenderer.Html(resume,template);
+        return haruStyle?html.Replace("body{margin:0;background:#e9edf4","body{margin:0;background:transparent"):html;
+    }
     private void DetachPreview()
     {
         // Parent can be null while an unloaded Grid still owns the child logically.
@@ -36,7 +41,7 @@ public sealed partial class MainWindow
         try
         {
             var web=preview; var core=web.CoreWebView2;
-            string html=Services.ResumeRenderer.Html(current,templates.First(t=>t.Id==current.TemplateId));
+            string html=PreviewHtml(current,templates.First(t=>t.Id==current.TemplateId));
             if(html==lastRenderedHtml) return;
             string marker=Guid.NewGuid().ToString("N"); renderMarker=marker;
             if(lastRenderedHtml.Length==0)
@@ -68,7 +73,10 @@ public sealed partial class MainWindow
                   const marker={{JsonSerializer.Serialize(marker)}};meta.content='';meta.dataset.pending=marker;
                   scrollTo(x,y);
                   Promise.all([document.fonts.ready,...Array.from(document.images).map(i=>i.decode().catch(()=>{}))])
-                    .then(()=>requestAnimationFrame(()=>{if(meta.dataset.pending===marker)meta.content=marker;}));
+                    .then(()=>{if(meta.dataset.pending===marker){
+                      // Flush layout without requestAnimationFrame: hidden/minimized WebViews suspend frame callbacks.
+                      document.querySelector('article').getBoundingClientRect();meta.content=marker;
+                    } });
                   return true;
                 })()
                 """;

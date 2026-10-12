@@ -16,15 +16,18 @@ if ($LASTEXITCODE -ne 0) { throw 'Template catalogue generation failed' }
 $jar = Join-Path $root 'backend\build\resume-backend.jar'
 & (Join-Path $jdk 'bin\jar.exe') --create --file $jar --main-class com.resumestudio.Server -C $classes .
 if ($LASTEXITCODE -ne 0) { throw 'Java package failed' }
-& $dotnet build (Join-Path $root 'client-winui\ResumeStudio.csproj') -c $Configuration -p:Platform=x64 --ignore-failed-sources
+& $dotnet build (Join-Path $root 'client-winui\ResumeStudio.csproj') -t:Rebuild -c $Configuration -p:Platform=x64 --ignore-failed-sources
 if ($LASTEXITCODE -ne 0) { throw 'WinUI build failed' }
 $output = Join-Path $root "client-winui\bin\x64\$Configuration\net8.0-windows10.0.26100.0\win-x64"
-$release = if ($ReleaseDirectory) { [IO.Path]::GetFullPath($ReleaseDirectory) } else { Join-Path $root 'release\ResumeStudio' }
+$destination = if ($ReleaseDirectory) { [IO.Path]::GetFullPath($ReleaseDirectory) } else { Join-Path $root 'release\ResumeStudio' }
+# Assemble into an empty, app-owned staging folder so removed NuGet dependencies cannot linger in packages.
+$release = Join-Path $root ('artifacts\distribution-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force $release | Out-Null
 Copy-Item -Path (Join-Path $output '*') -Destination $release -Recurse -Force
 New-Item -ItemType Directory -Force (Join-Path $release 'backend') | Out-Null
 Copy-Item -LiteralPath $jar -Destination (Join-Path $release 'backend\resume-backend.jar') -Force
 $runtime = Join-Path $release 'runtime'
+if(Test-Path (Join-Path $destination 'runtime\bin\java.exe')) { Copy-Item -LiteralPath (Join-Path $destination 'runtime') -Destination $release -Recurse }
 if (!(Test-Path (Join-Path $runtime 'bin\java.exe'))) {
     & (Join-Path $jdk 'bin\jlink.exe') --add-modules java.base,java.net.http,jdk.httpserver,jdk.crypto.ec --strip-debug --no-header-files --no-man-pages --compress=2 --output $runtime
     if ($LASTEXITCODE -ne 0) { throw 'Java runtime creation failed' }
@@ -59,4 +62,12 @@ foreach ($libraryName in ($licensePackages | Select-Object -Unique)) {
 # Runtime pack ships .NET's license and third-party notices; do not use machine SDK stubs.
 $dotnetLicenses = Get-ChildItem (Join-Path $release 'licenses') -Directory | Where-Object { $_.Name -like 'Microsoft.NETCore.App.Runtime.win-x64-*' -or $_.Name -like 'microsoft.netcore.app.runtime.win-x64-*' }
 if (!$dotnetLicenses) { throw 'Missing .NET runtime redistribution notices' }
-Write-Output "Ready: $release\ResumeStudio.exe"
+$manifest=@(Get-ChildItem -LiteralPath $release -File -Recurse|ForEach-Object {
+    [ordered]@{path=[IO.Path]::GetRelativePath($release,$_.FullName);sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
+})
+[IO.File]::WriteAllText((Join-Path $release 'distribution-manifest.json'),(@{files=$manifest}|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
+& (Join-Path $PSScriptRoot 'sync-distribution.ps1') -SourceDirectory $release -DestinationDirectory $destination
+$staging=[IO.Path]::GetFullPath($release)
+if(!$staging.StartsWith([IO.Path]::GetFullPath((Join-Path $root 'artifacts'))+'\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe staging cleanup path' }
+Remove-Item -LiteralPath $staging -Recurse -Force
+Write-Output "Ready: $destination\ResumeStudio.exe"

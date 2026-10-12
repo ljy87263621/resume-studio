@@ -7,6 +7,20 @@ $source = if ($SourceDirectory) { [IO.Path]::GetFullPath($SourceDirectory) } els
 foreach ($required in @('ResumeStudio.exe','ResumeStudio.dll','backend\resume-backend.jar','runtime\bin\java.exe','LICENSE','THIRD_PARTY_NOTICES.md','RUNTIME_NOTICES.md')) {
     if (!(Test-Path (Join-Path $source $required))) { throw "Missing release file: $required" }
 }
+$manifestPath=Join-Path $source 'distribution-manifest.json'
+if(!(Test-Path -LiteralPath $manifestPath)){throw 'Distribution manifest is missing; rebuild into a fresh release directory'}
+$manifest=Get-Content -LiteralPath $manifestPath -Raw|ConvertFrom-Json
+$owned=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+[void]$owned.Add('distribution-manifest.json')
+foreach($file in $manifest.files){
+    $path=[IO.Path]::GetFullPath((Join-Path $source $file.path))
+    if(!$path.StartsWith($source.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Invalid distribution manifest path'}
+    if((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $file.sha256){throw "Distribution changed: $($file.path)"}
+    [void]$owned.Add($file.path)
+}
+foreach($file in Get-ChildItem -LiteralPath $source -Recurse -File){
+    if(!$owned.Contains([IO.Path]::GetRelativePath($source,$file.FullName))){throw "Unowned file would be packaged: $($file.Name)"}
+}
 if (!(Test-Path (Join-Path $source 'runtime\legal\java.base\LICENSE'))) { throw 'Missing OpenJDK license' }
 # Personal documents and test logs are never part of a distributable app directory.
 $unexpected = @(Get-ChildItem -LiteralPath $source -Recurse -File | Where-Object { $_.Name -match '\.(bak|log|pfx|key)$' -or $_.Name -eq 'result.json' })

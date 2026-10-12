@@ -59,6 +59,7 @@ public sealed class Job
     public string Location { get; set; } = "";
     public string Description { get; set; } = "";
     public string Url { get; set; } = "";
+    public string CanonicalUrl { get; set; } = "";
     public string Source { get; set; } = "";
     public string PublishedAt { get; set; } = "";
     public string Experience { get; set; } = "";
@@ -82,6 +83,7 @@ public sealed class CapturePreview
 {
     public Job Job { get; set; } = new();
     public string Message { get; set; } = "";
+    public string Status { get; set; } = "";
 }
 public sealed class ApplicationRecord
 {
