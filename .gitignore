@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+backend/build/
+release/
+artifacts/
+.vs/
+*.user
+data/
+.env
+.env.*
+*.pfx
+*.key
