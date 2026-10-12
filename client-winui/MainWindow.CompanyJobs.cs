@@ -20,42 +20,55 @@ public sealed partial class MainWindow
     }
     private Func<int,Task>? companySearch;
     private JobResult? shownCompanyJobs;
+    private CancellationTokenSource? jobCancellation;
+    private int queryGeneration;
+    private void CancelJobSearch() { queryGeneration++; jobCancellation?.Cancel(); jobCancellation?.Dispose(); jobCancellation=null; }
     private async Task ShowJobs()
     {
         Heading("发现职位","汇总企业官网公开岗位，可添加公司、筛选来源、收藏与跳转投递。");
         var companies=await api.Get<List<CompanySource>>("job-sources");
+        if(currentPage!="jobs") return;
         body.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto }); body.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) });
         var controls=Stack(11); var filters=Row();
         var keyword=new TextBox { PlaceholderText="关键词：Java / embedded / 前端",Text=jobKeyword,Width=260 }; var city=new TextBox { PlaceholderText="城市 / 地点",Text=jobCity,Width=155 };
         var choices=new List<CompanySource> { new() { Id="all",Name="全部启用的企业官网" } }; choices.AddRange(companies);
         var provider=new ComboBox { ItemsSource=choices,SelectedItem=choices.FirstOrDefault(x=>x.Id==jobProvider)??choices[0],Width=210 };
         filters.Children.Add(keyword); filters.Children.Add(city); filters.Children.Add(provider);
-        var status=Text($"已配置 {companies.Count} 个来源。公共招聘系统可直接返回岗位，动态官网可能需要专用适配。",12); var results=Stack(14); var sourcePanel=Stack(7);
+        var status=Text($"已配置 {companies.Count} 个来源。公共招聘系统可直接返回岗位，动态官网可能需要专用适配。",12); var sourcePanel=Stack(7);
+        var results=CreateJobList(false); visibleJobList=results;
+        void ShowResult(JobResult r)
+        {
+            status.Text=$"{r.Message}\n第 {r.Page} 页 / 本页 {r.Items.Count} 条 · 来源返回数量 {r.Total} · {LocalDate(r.FetchedAt)} "+(r.Cached?"（缓存）":"");
+            results.ItemsSource=r.Items;
+            sourcePanel.Children.Clear();
+            foreach(var s in r.Sources)
+            {
+                var line=Stack(4); var caption=Text($"{s.Name} · {(s.Status=="ok"?"成功":s.Status=="unsupported"?"需专用适配":"未获取")} · {s.LastCount} 条",12,true); caption.Foreground=Brush(s.Status=="ok"?"#167D78":"#A56A05"); line.Children.Add(caption); line.Children.Add(Text(s.Message,11)); line.Children.Add(Button("打开招聘官网 ↗",()=>Launch(s.Url))); sourcePanel.Children.Add(Card(line,new Thickness(12)));
+            }
+            if(r.Items.Count==0) status.Text+="\n当前没有匹配职位，可清空关键词或选择其他公司。";
+        }
         async Task Search(int page)
         {
-            if(searching) return; searching=true;
+            CancelJobSearch(); int generation=queryGeneration; jobCancellation=new CancellationTokenSource(); var token=jobCancellation.Token;
             try
             {
                 jobPage=page; jobKeyword=keyword.Text.Trim(); jobCity=city.Text.Trim(); jobProvider=((CompanySource)provider.SelectedItem).Id; status.Text="正在查询企业官网…（并发采集，本轮最多30秒）";
-                var r=await api.Get<JobResult>($"jobs?provider={Uri.EscapeDataString(jobProvider)}&keyword={Uri.EscapeDataString(jobKeyword)}&city={Uri.EscapeDataString(jobCity)}&page={page}");
-                if(currentPage!="jobs") return;
+                var r=await api.Get<JobResult>($"jobs?provider={Uri.EscapeDataString(jobProvider)}&keyword={Uri.EscapeDataString(jobKeyword)}&city={Uri.EscapeDataString(jobCity)}&page={page}",token);
+                if(currentPage!="jobs"||generation!=queryGeneration) return;
                 shownCompanyJobs=r;
-                status.Text=$"{r.Message}\n第 {page} 页 / 本页 {r.Items.Count} 条 · 来源返回数量 {r.Total}（部分源仅为当前页） · {LocalDate(r.FetchedAt)} "+(r.Cached?"（缓存）":"");
-                results.Children.Clear(); foreach(var job in r.Items) results.Children.Add(JobCard(job,false));
-                if(r.Items.Count==0) results.Children.Add(Card(Text("当前没有匹配职位。可清空关键词与城市、选择其他公司，或在来源状态中打开官网。",15)));
-                sourcePanel.Children.Clear();
-                foreach(var s in r.Sources)
-                {
-                    var line=Stack(4); var caption=Text($"{s.Name} · {(s.Status=="ok"?"成功":s.Status=="unsupported"?"需专用适配":"未获取")} · {s.LastCount} 条",12,true); caption.Foreground=Brush(s.Status=="ok"?"#167D78":"#A56A05"); line.Children.Add(caption); line.Children.Add(Text(s.Message,11)); line.Children.Add(Button("打开招聘官网 ↗",()=>Launch(s.Url))); sourcePanel.Children.Add(Card(line,new Thickness(12)));
-                }
+                ShowResult(r);
             }
-            finally { searching=false; }
+            catch(OperationCanceledException) when(token.IsCancellationRequested) { }
         }
         companySearch=Search;
-        filters.Children.Add(Button("查询官网职位",()=>Search(1),true)); controls.Children.Add(filters);
+        keyword.TextChanged+=(_,_)=>jobKeyword=keyword.Text; city.TextChanged+=(_,_)=>jobCity=city.Text;
+        provider.SelectionChanged+=(_,_)=>jobProvider=((CompanySource)provider.SelectedItem).Id;
+        filters.Children.Add(Button("查询官网职位",()=>Search(1),true)); filters.Children.Add(Button("取消",()=> { CancelJobSearch(); status.Text="已取消本次等待。已显示的结果保留；后台官网请求会在限定时间内结束。"; return Task.CompletedTask; })); controls.Children.Add(filters);
         var actions=Row(); actions.Children.Add(Button("公司来源管理",()=>Navigate("sources"))); actions.Children.Add(Button("添加公司官网",()=>EditCompanySource(new CompanySource()))); actions.Children.Add(Button("BOSS直聘 ↗",()=>Launch("https://www.zhipin.com/web/geek/job?query="+Uri.EscapeDataString(keyword.Text)))); actions.Children.Add(Button("牛客校招 ↗",()=>Launch("https://www.nowcoder.com/jobs"))); controls.Children.Add(actions); controls.Children.Add(status); controls.Margin=new Thickness(0,0,0,15); body.Children.Add(controls);
-        var list=Stack(15); list.Children.Add(new Expander { Header="本次各公司来源状态",Content=sourcePanel,HorizontalAlignment=HorizontalAlignment.Stretch }); list.Children.Add(results); var paging=Row(); paging.Children.Add(Button("上一页",()=>Search(Math.Max(1,jobPage-1)))); paging.Children.Add(Button("下一页",()=>Search(Math.Min(100,jobPage+1)))); list.Children.Add(paging);
-        var scroll=new ScrollViewer { Content=list,HorizontalScrollMode=ScrollMode.Disabled,HorizontalContentAlignment=HorizontalAlignment.Stretch }; scroll.SizeChanged+=(_,e)=>list.Width=Math.Max(0,e.NewSize.Width-16); Grid.SetRow(scroll,1); body.Children.Add(scroll);
+        var list=new Grid { RowSpacing=10 }; list.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto }); list.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) }); list.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto });
+        list.Children.Add(new Expander { Header="本次各公司来源状态",Content=new ScrollViewer {Content=sourcePanel,MaxHeight=240},HorizontalAlignment=HorizontalAlignment.Stretch }); Grid.SetRow(results,1); list.Children.Add(results);
+        var paging=Row(); paging.Children.Add(Button("上一页",()=>Search(Math.Max(1,jobPage-1)))); paging.Children.Add(Button("下一页",()=>Search(Math.Min(100,jobPage+1)))); Grid.SetRow(paging,2); list.Children.Add(paging); Grid.SetRow(list,1); body.Children.Add(list);
+        if(shownCompanyJobs is not null) ShowResult(shownCompanyJobs);
         keyword.KeyDown+=async (_,e)=> { if(e.Key==Windows.System.VirtualKey.Enter) await Run(()=>Search(1)); };
     }
     private async Task ShowCompanySources()

@@ -10,6 +10,9 @@ New-Item -ItemType Directory -Force $classes | Out-Null
 $sources = @(Get-ChildItem (Join-Path $root 'backend\src\main\java') -Recurse -Filter '*.java' | ForEach-Object FullName)
 & (Join-Path $jdk 'bin\javac.exe') -encoding UTF-8 -Xlint:all -Werror --release 21 --add-modules jdk.httpserver -d $classes @sources
 if ($LASTEXITCODE -ne 0) { throw 'Java compile failed' }
+$catalog = & (Join-Path $jdk 'bin\java.exe') -cp $classes com.resumestudio.TemplateCatalog
+if ($LASTEXITCODE -ne 0) { throw 'Template catalogue generation failed' }
+[IO.File]::WriteAllText((Join-Path $root 'client-winui\Assets\TemplateCatalog.json'), ($catalog -join "`n"), [Text.UTF8Encoding]::new($false))
 $jar = Join-Path $root 'backend\build\resume-backend.jar'
 & (Join-Path $jdk 'bin\jar.exe') --create --file $jar --main-class com.resumestudio.Server -C $classes .
 if ($LASTEXITCODE -ne 0) { throw 'Java package failed' }
@@ -31,6 +34,7 @@ Copy-Item -LiteralPath (Join-Path $root 'THIRD_PARTY_NOTICES.md') -Destination $
 Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $release -Force
 Copy-Item -LiteralPath (Join-Path $root 'RUNTIME_NOTICES.md') -Destination $release -Force
 Copy-Item -LiteralPath (Join-Path $root 'ThirdParty') -Destination $release -Recurse -Force
+if(Test-Path (Join-Path $root 'docs')) { Copy-Item -LiteralPath (Join-Path $root 'docs') -Destination $release -Recurse -Force }
 # Preserve redistribution terms from the exact NuGet versions resolved by this build.
 $assets = Get-Content (Join-Path $root 'client-winui\obj\project.assets.json') -Raw | ConvertFrom-Json
 $packageRoots = @($assets.packageFolders.PSObject.Properties.Name)

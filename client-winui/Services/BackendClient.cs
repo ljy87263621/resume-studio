@@ -9,11 +9,21 @@ namespace ResumeStudio.Services;
 /// <summary>The desktop client owns one local Java process; no external account is needed.</summary>
 public sealed class BackendClient : IDisposable
 {
+    public static string DefaultDataDirectory { get; } = ResolveDataDirectory();
+    private static string ResolveDataDirectory()
+    {
+        var specified=Environment.GetEnvironmentVariable("RESUMESTUDIO_TEST_DATA");
+        if(!string.IsNullOrWhiteSpace(specified)) return specified;
+        bool test=Environment.GetCommandLineArgs().Any(arg=>arg is "--self-test" or "--benchmark" or "--iteration-test");
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),test?"ResumeStudioVerification":"ResumeStudio",test?Guid.NewGuid().ToString("N"):"");
+    }
     public static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true, WriteIndented = true };
     private readonly HttpClient http = new(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(60) };
     private Process? process;
-    public string DataDirectory { get; } = Environment.GetEnvironmentVariable("RESUMESTUDIO_TEST_DATA") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ResumeStudio");
-    public async Task StartAsync()
+    private Task? startup;
+    public string DataDirectory { get; } = DefaultDataDirectory;
+    public Task StartAsync() => startup ??= StartCoreAsync();
+    private async Task StartCoreAsync()
     {
         Directory.CreateDirectory(DataDirectory);
         var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start();
@@ -37,20 +47,23 @@ public sealed class BackendClient : IDisposable
         throw new IOException("Java 后端启动超时");
     }
     private void Log(string line) { try { File.AppendAllText(Path.Combine(DataDirectory,"backend.log"),$"{DateTimeOffset.Now}: {line}\n"); } catch(IOException) { } }
-    public async Task<T> Get<T>(string path)
+    public async Task<T> Get<T>(string path,CancellationToken cancellationToken=default)
     {
-        using var res = await http.GetAsync(path); await Ensure(res); return await res.Content.ReadFromJsonAsync<T>(Json) ?? throw new IOException("后端响应为空");
+        await StartAsync().WaitAsync(cancellationToken);
+        using var res = await http.GetAsync(path,cancellationToken); await Ensure(res); return await res.Content.ReadFromJsonAsync<T>(Json,cancellationToken) ?? throw new IOException("后端响应为空");
     }
     public async Task<T> Save<T>(string path,T document)
     {
+        await StartAsync();
         using var res = await http.PostAsJsonAsync(path,document,Json); await Ensure(res); return await res.Content.ReadFromJsonAsync<T>(Json) ?? throw new IOException("保存响应为空");
     }
     public async Task<T> Post<T>(string path,object document)
     {
+        await StartAsync();
         using var res=await http.PostAsJsonAsync(path,document,Json); await Ensure(res);
         return await res.Content.ReadFromJsonAsync<T>(Json)??throw new IOException("后端响应为空");
     }
-    public async Task Delete(string path) { using var res = await http.DeleteAsync(path); await Ensure(res); }
+    public async Task Delete(string path) { await StartAsync(); using var res = await http.DeleteAsync(path); await Ensure(res); }
     private static async Task Ensure(HttpResponseMessage response)
     {
         if(!response.IsSuccessStatusCode) throw new IOException($"后端请求失败 ({(int)response.StatusCode})：{await response.Content.ReadAsStringAsync()}");

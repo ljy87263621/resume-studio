@@ -8,12 +8,14 @@ import java.util.concurrent.*;
 
 /** Provider errors remain visible; empty or blocked feeds are never replaced with fabricated jobs. */
 public final class Jobs {
-    private final HttpClient http=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NEVER).build();
+    private static final class Network {
+        private static final HttpClient HTTP=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NEVER).build();
+    }
     private record Cached(Instant time,Map<String,Object> result) {}
     private final Map<String,Cached> cache=new ConcurrentHashMap<>();
     private Map<String,Object> fetch(String url) throws Exception {
         HttpRequest req=HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(18)).header("User-Agent","ResumeStudio/0.1").header("Accept","application/json").GET().build();
-        var response=http.send(req,HttpResponse.BodyHandlers.ofInputStream());
+        var response=Network.HTTP.send(req,HttpResponse.BodyHandlers.ofInputStream());
         try(var body=response.body()) {
             if(response.statusCode()!=200) throw new IllegalStateException("HTTP "+response.statusCode());
             byte[] bytes=body.readNBytes(4_000_001); if(bytes.length>4_000_000) throw new IllegalStateException("Feed too large");

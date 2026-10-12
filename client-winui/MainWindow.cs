@@ -21,6 +21,7 @@ public sealed partial class MainWindow : Window
     private readonly InfoBar notice = new() { IsClosable=true, Margin=new Thickness(0,0,0,12) };
     private readonly List<Button> navigation = [];
     private readonly DispatcherTimer editTimer = new() { Interval=TimeSpan.FromMilliseconds(650) };
+    private readonly DispatcherTimer previewTimer = new();
     private readonly SemaphoreSlim saveLock = new(1,1);
     private List<Template> templates = [];
     private Resume? current;
@@ -30,7 +31,7 @@ public sealed partial class MainWindow : Window
     private string currentPage="templates";
     private string jobKeyword="",jobCity="",jobProvider="all";
     private int jobPage=1;
-    private bool searching;
+    private int navigationRevision;
     private string renderMarker="";
 
     public MainWindow()
@@ -38,41 +39,36 @@ public sealed partial class MainWindow : Window
         Title="拾简 Resume Studio";
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1440,960));
         SystemBackdrop=new Microsoft.UI.Xaml.Media.MicaBackdrop();
-        shell.RequestedTheme=ElementTheme.Light;
-        shell.Background=Brush("#F5F7FB");
-        shell.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(222) });
-        shell.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(1,GridUnitType.Star) });
-        BuildSidebar();
-        var content=new Grid { Margin=new Thickness(30,26,30,22) };
-        content.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto });
-        content.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto });
-        content.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) });
-        var header=new Grid { Margin=new Thickness(0,0,0,22) };
-        var heading=Stack(5); heading.Children.Add(pageTitle); heading.Children.Add(pageSubtitle); header.Children.Add(heading);
-        saveState.HorizontalAlignment=HorizontalAlignment.Right; saveState.VerticalAlignment=VerticalAlignment.Center; saveState.Foreground=Brush("#167D78"); header.Children.Add(saveState);
-        content.Children.Add(header); Grid.SetRow(notice,1); content.Children.Add(notice); Grid.SetRow(body,2); content.Children.Add(body); Grid.SetColumn(content,1); shell.Children.Add(content);
+        preferences=AppPreferences.Load(api.DataDirectory); BuildContentHost(); BuildShell();
+        var catalogue=Path.Combine(AppContext.BaseDirectory,"Assets","TemplateCatalog.json");
+        if(File.Exists(catalogue)) templates=JsonSerializer.Deserialize<List<Template>>(File.ReadAllText(catalogue),BackendClient.Json)??[];
+        if(templates.Count>0) ShowTemplates();
         Content=shell;
         shell.Loaded+=async (_,_)=>await Run(Initialize);
-        editTimer.Tick+=async (_,_)=> { editTimer.Stop(); await Run(async ()=> { await RenderPreview(); await SaveCurrent(); }); };
+        editTimer.Tick+=async (_,_)=> { editTimer.Stop(); await Run(SaveCurrent); };
+        previewTimer.Tick+=async (_,_)=> { previewTimer.Stop(); if(currentPage=="editor") await Run(RenderPreview); };
+        systemSettings.ColorValuesChanged+=(_,_)=>DispatcherQueue.TryEnqueue(()=> { if(preferences.InterfaceStyle=="haru"&&preferences.Theme=="system") _=Run(ApplyPreferences); });
         AppWindow.Closing+=(sender,args)=>
         {
             if(closing) return;
             args.Cancel=true;
-            _=Run(async ()=> { editTimer.Stop(); await SaveCurrent(); closing=true; api.Dispose(); Close(); });
+            _=Run(async ()=> { editTimer.Stop(); previewTimer.Stop(); CancelJobSearch(); await SaveCurrent(); closing=true; preview?.Close(); api.Dispose(); Close(); });
         };
     }
     private static SolidColorBrush Brush(string hex)
     {
-        return new SolidColorBrush(Windows.UI.Color.FromArgb(255,Convert.ToByte(hex.Substring(1,2),16),Convert.ToByte(hex.Substring(3,2),16),Convert.ToByte(hex.Substring(5,2),16)));
+        if(darkStyle) hex=hex switch { "#167D78"=>"#8BD7C1","#A56A05"=>"#F0CB81","#77849A"=>"#ADB6CC",_=>hex };
+        string rgb=hex.TrimStart('#'); byte alpha=rgb.Length==8?Convert.ToByte(rgb[..2],16):(byte)255; if(rgb.Length==8) rgb=rgb[2..];
+        return new SolidColorBrush(Windows.UI.Color.FromArgb(alpha,Convert.ToByte(rgb[..2],16),Convert.ToByte(rgb.Substring(2,2),16),Convert.ToByte(rgb.Substring(4,2),16)));
     }
-    private static TextBlock Text(string text,double size=14,bool bold=false) => new() { Text=text,FontSize=size,FontWeight=bold?Microsoft.UI.Text.FontWeights.SemiBold:Microsoft.UI.Text.FontWeights.Normal,Foreground=Brush("#22304A"),TextWrapping=TextWrapping.Wrap };
+    private static TextBlock Text(string text,double size=14,bool bold=false) => new() { Text=text,FontSize=size,FontFamily=new FontFamily(haruStyle?"MiSans":"Segoe UI"),FontWeight=bold?Microsoft.UI.Text.FontWeights.SemiBold:Microsoft.UI.Text.FontWeights.Normal,Foreground=Brush(Ink),TextWrapping=TextWrapping.Wrap };
     private static StackPanel Stack(double spacing=12) => new() { Spacing=spacing };
     private static StackPanel Row(double spacing=10) => new() { Orientation=Orientation.Horizontal,Spacing=spacing };
-    private static Border Card(UIElement child,Thickness? padding=null) => new() { Child=child,Padding=padding??new Thickness(22),Background=Brush("#FFFFFF"),BorderBrush=Brush("#E3E8F1"),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(12) };
+    private static Border Card(UIElement child,Thickness? padding=null) => new() { Child=child,Padding=padding??new Thickness(22),Background=Brush(Surface),BorderBrush=Brush(Stroke),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(haruStyle?14:12) };
     private Button Button(string label,Func<Task> action,bool primary=false)
     {
-        var b=new Button { Content=label,Padding=new Thickness(15,9,15,9),CornerRadius=new CornerRadius(7) };
-        if(primary) { b.Background=Brush("#245AE8"); b.Foreground=Brush("#FFFFFF"); }
+        var b=new Button { Content=label,Padding=new Thickness(15,9,15,9),CornerRadius=new CornerRadius(haruStyle?12:7),FontFamily=new FontFamily(haruStyle?"MiSans":"Segoe UI") };
+        if(primary) { b.Background=Brush(Accent); b.Foreground=Brush("#FFFFFF"); }
         b.Click+=async (_,_)=>await Run(action); return b;
     }
     private async Task Run(Func<Task> action)
@@ -83,17 +79,20 @@ public sealed partial class MainWindow : Window
     private async Task Initialize()
     {
         if(ready) return;
+        Mark("shellLoaded");
+        if(templates.Count>0) Mark("firstPageReady");
         var area=Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(AppWindow.Id,Microsoft.UI.Windowing.DisplayAreaFallback.Nearest).WorkArea;
         var scale=shell.XamlRoot.RasterizationScale;
         AppWindow.Resize(new Windows.Graphics.SizeInt32(Math.Min((int)(1440*scale),area.Width-80),Math.Min((int)(920*scale),area.Height-60)));
-        await api.StartAsync(); templates=await api.Get<List<Template>>("templates"); ready=true; saveState.Text="本地服务已连接";
-        await Navigate("templates");
+        await api.StartAsync(); Mark("backendReady"); ready=true; saveState.Text="本地服务已连接";
+        if(templates.Count==0) { templates=await api.Get<List<Template>>("templates"); await Navigate("templates"); Mark("firstPageReady"); }
+        if(Environment.GetCommandLineArgs().Contains("--benchmark")) { await Benchmark(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--iteration-test")) { await IterationOnlyTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--self-test"))
         {
-            Title="拾简 · 自动验证窗口"; body.IsHitTestVisible=false;
-            foreach(var button in navigation) button.IsEnabled=false;
+            Title="拾简 · 自动验证窗口"; shell.IsHitTestVisible=false;
             try { await SelfTest(); }
-            finally { body.IsHitTestVisible=true; foreach(var button in navigation) button.IsEnabled=true; }
+            finally { shell.IsHitTestVisible=true; }
         }
     }
     private void BuildSidebar()
@@ -102,21 +101,23 @@ public sealed partial class MainWindow : Window
         side.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto }); side.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) }); side.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto });
         var brand=Stack(5); var name=Text("拾简",30,true); name.Foreground=Brush("#FFFFFF"); brand.Children.Add(name); var sub=Text("RESUME STUDIO",10); sub.CharacterSpacing=150; sub.Foreground=Brush("#8CA6D2"); brand.Children.Add(sub); side.Children.Add(brand);
         var menu=Stack(7); menu.Margin=new Thickness(0,35,0,0);
-        foreach(var item in new[] {("templates","▦   模板中心"),("resumes","▤   我的简历"),("jobs","⌕   发现职位"),("sources","◎   公司招聘官网"),("favorites","☆   职位收藏"),("applications","✓   投递记录"),("about","ⓘ   使用说明")})
+        foreach(var item in Pages)
         {
-            var key=item.Item1;
-            var b=Button(item.Item2,async ()=> { if(ready) await Navigate(key); }); b.Tag=key; b.HorizontalAlignment=HorizontalAlignment.Stretch; b.HorizontalContentAlignment=HorizontalAlignment.Left; b.Foreground=Brush("#CBD7EB"); b.Background=new SolidColorBrush(Colors.Transparent); b.BorderThickness=new Thickness(0); b.Padding=new Thickness(14,13,14,13); navigation.Add(b); menu.Children.Add(b);
+            var key=item.Key;
+            var b=Button(item.Label,()=>Navigate(key)); b.Tag=key; b.HorizontalAlignment=HorizontalAlignment.Stretch; b.HorizontalContentAlignment=HorizontalAlignment.Left; b.Foreground=Brush("#CBD7EB"); b.Background=new SolidColorBrush(Colors.Transparent); b.BorderThickness=new Thickness(0); b.Padding=new Thickness(14,13,14,13); navigation.Add(b); menu.Children.Add(b);
         }
         Grid.SetRow(menu,1); side.Children.Add(menu);
-        var footer=Stack(8); var tagline=Text("把经历写清楚\n让机会更靠近",13); tagline.Foreground=Brush("#A9BEDC"); footer.Children.Add(tagline); var v=Text("v0.3.0  ·  Windows 桌面版",10); v.Foreground=Brush("#7189AE"); footer.Children.Add(v); Grid.SetRow(footer,2); side.Children.Add(footer); shell.Children.Add(side);
+        var footer=Stack(8); var tagline=Text("把经历写清楚\n让机会更靠近",13); tagline.Foreground=Brush("#A9BEDC"); footer.Children.Add(tagline); var v=Text("v0.4.0  ·  Windows 桌面版",10); v.Foreground=Brush("#7189AE"); footer.Children.Add(v); Grid.SetRow(footer,2); side.Children.Add(footer); shell.Children.Add(side);
     }
     private async Task Navigate(string page)
     {
-        editTimer.Stop(); await SaveCurrent();
+        int version=++navigationRevision;
+        editTimer.Stop(); previewTimer.Stop(); CancelJobSearch(); await SaveCurrent();
+        if(version!=navigationRevision) return;
         currentPage=page; notice.IsOpen=false;
-        if(preview is not null) { preview.Close(); preview=null; }
+        DetachPreview();
         body.Children.Clear(); body.ColumnDefinitions.Clear(); body.RowDefinitions.Clear();
-        foreach(var b in navigation) b.Background=Brush((string)b.Tag==page?"#294267":"#14233F");
+        UpdateNavigation(page);
         switch(page)
         {
             case "templates": ShowTemplates(); break;
@@ -125,6 +126,7 @@ public sealed partial class MainWindow : Window
             case "sources": await ShowCompanySources(); break;
             case "favorites": await ShowFavorites(); break;
             case "applications": await ShowApplications(); break;
+            case "settings": ShowSettings(); break;
             default: ShowAbout(); break;
         }
     }
@@ -144,6 +146,7 @@ public sealed partial class MainWindow : Window
         Heading("我的简历","每个求职方向都可以有一份独立简历，编辑时自动保存。");
         var panel=Stack(18); var toolbar=Row(); toolbar.Children.Add(Button("＋ 新建简历",()=>Navigate("templates"),true)); toolbar.Children.Add(Button("导入备份",ImportResume)); panel.Children.Add(toolbar);
         var list=await api.Get<List<Resume>>("resumes");
+        if(currentPage!="resumes") return;
         if(list.Count==0) panel.Children.Add(Card(Text("还没有简历。从模板中心选择一套模板，开始填写你的经历。",16)));
         foreach(var r in list)
         {
@@ -152,52 +155,14 @@ public sealed partial class MainWindow : Window
         }
         FillScroll(panel);
     }
-    private async Task OpenEditor()
-    {
-        if(current is null) return;
-        if(preview is not null) { preview.Close(); preview=null; }
-        currentPage="editor"; body.Children.Clear(); body.ColumnDefinitions.Clear(); body.RowDefinitions.Clear();
-        Heading("简历工作台","左侧编辑内容，右侧实时预览。所有修改会自动保存到本机。");
-        foreach(var b in navigation) b.Background=Brush((string)b.Tag=="resumes"?"#294267":"#14233F");
-        body.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto }); body.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) });
-        body.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(410) }); body.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(20) }); body.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(1,GridUnitType.Star) });
-        var toolbar=Row(8); toolbar.Margin=new Thickness(0,0,0,15); toolbar.Children.Add(Button("← 我的简历",()=>Navigate("resumes"))); toolbar.Children.Add(Button("保存",SaveCurrent)); toolbar.Children.Add(Button("导出 PDF",ExportPdf,true)); toolbar.Children.Add(Button("备份 JSON",ExportJson)); toolbar.Children.Add(Button("查看打印版",async ()=> { await RenderPreview(); if(preview?.CoreWebView2 is not null) preview.CoreWebView2.ShowPrintUI(CoreWebView2PrintDialogKind.Browser); })); Grid.SetColumnSpan(toolbar,3); body.Children.Add(toolbar);
-        toolbar.Children.Add(Button("检查与建议",ShowResumeCheck)); toolbar.Children.Add(Button("AI 提示词",CopyAiPrompt));
-        var form=Stack(16);
-        var basic=Stack(12); basic.Children.Add(Text("基本信息",18,true));
-        basic.Children.Add(Field("简历名称",current.Title,v=>current.Title=v));
-        basic.Children.Add(Field("姓名",current.Profile.Name,v=>current.Profile.Name=v)); basic.Children.Add(Field("求职意向",current.Profile.Role,v=>current.Profile.Role=v));
-        basic.Children.Add(Field("电话",current.Profile.Phone,v=>current.Profile.Phone=v)); basic.Children.Add(Field("邮箱",current.Profile.Email,v=>current.Profile.Email=v)); basic.Children.Add(Field("城市",current.Profile.City,v=>current.Profile.City=v)); basic.Children.Add(Field("个人主页 / 作品链接",current.Profile.Link,v=>current.Profile.Link=v)); basic.Children.Add(Field("个人简介",current.Profile.Summary,v=>current.Profile.Summary=v,true));
-        var photo=Row(); photo.Children.Add(Button("添加证件照",ImportPhoto)); photo.Children.Add(Button("移除照片",()=> { current.Photo=""; Changed(); return Task.CompletedTask; })); basic.Children.Add(photo); form.Children.Add(Card(basic,new Thickness(18)));
-        var style=Stack(12); style.Children.Add(Text("排版设置",18,true));
-        var templateBox=new ComboBox { Header="模板",ItemsSource=templates,SelectedItem=templates.First(t=>t.Id==current.TemplateId),HorizontalAlignment=HorizontalAlignment.Stretch };
-        templateBox.SelectionChanged+=(_,_)=> { if(templateBox.SelectedItem is Template t) { current.TemplateId=t.Id; current.Color=t.Color; Changed(); } }; style.Children.Add(templateBox);
-        var colors=Row(8); foreach(string color in new[] {"#245AE8","#167D78","#353D59","#222222","#7955B4","#1E668A"}) { var c=Button("●",()=> { current.Color=color; Changed(); return Task.CompletedTask; }); c.Foreground=Brush(color); c.Padding=new Thickness(9,5,9,5); colors.Children.Add(c); } style.Children.Add(colors);
-        var size=new Slider { Header="正文字号",Minimum=10,Maximum=16,StepFrequency=0.5,Value=current.FontSize }; size.ValueChanged+=(_,_)=> { current.FontSize=size.Value; Changed(); }; style.Children.Add(size);
-        var spacing=new Slider { Header="行间距",Minimum=1.2,Maximum=2,StepFrequency=0.1,Value=current.LineHeight }; spacing.ValueChanged+=(_,_)=> { current.LineHeight=spacing.Value; Changed(); }; style.Children.Add(spacing); form.Children.Add(Card(style,new Thickness(18)));
-        var modules=Stack(12); modules.Children.Add(Text("内容模块",18,true)); modules.Children.Add(Text("支持：## 小标题 | 时间、- 列表、**加粗**、Markdown 表格。点击检查与建议查看完成状态和岗位填写重点。",11));
-        foreach(var section in current.Sections)
-        {
-            var block=Stack(10); block.Children.Add(Field("模块标题",section.Title,v=>section.Title=v)); block.Children.Add(Field("内容",section.Content,v=>section.Content=v,true,"## 项目 / 经历名称\n时间 · 角色\n- 使用的技术、承担的职责与成果"));
-            var actions=Row(5); var visible=new ToggleSwitch { Header="显示模块",IsOn=section.Visible }; visible.Toggled+=(_,_)=> { section.Visible=visible.IsOn; Changed(); }; actions.Children.Add(visible);
-            actions.Children.Add(Button("↑",async ()=> { int i=current.Sections.IndexOf(section); if(i>0) { current.Sections.RemoveAt(i); current.Sections.Insert(i-1,section); Changed(); await SaveCurrent(); await OpenEditor(); } }));
-            actions.Children.Add(Button("↓",async ()=> { int i=current.Sections.IndexOf(section); if(i<current.Sections.Count-1) { current.Sections.RemoveAt(i); current.Sections.Insert(i+1,section); Changed(); await SaveCurrent(); await OpenEditor(); } }));
-            actions.Children.Add(Button("移除",async ()=> { if(await Confirm("移除模块？",section.Title)) { current.Sections.Remove(section); Changed(); await SaveCurrent(); await OpenEditor(); } })); block.Children.Add(actions); modules.Children.Add(Card(block,new Thickness(15)));
-        }
-        modules.Children.Add(Button("＋ 添加模块",async ()=> { current.Sections.Add(new ResumeSection { Title="自定义模块" }); Changed(); await SaveCurrent(); await OpenEditor(); })); form.Children.Add(modules);
-        var scroll=new ScrollViewer { Content=form,VerticalScrollBarVisibility=ScrollBarVisibility.Auto }; Grid.SetRow(scroll,1); body.Children.Add(scroll);
-        preview=new WebView2 { HorizontalAlignment=HorizontalAlignment.Stretch,VerticalAlignment=VerticalAlignment.Stretch };
-        var previewPanel=new Grid(); previewPanel.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto }); previewPanel.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) });
-        capacityText=Text("正在估算 A4 内容容量…",11); capacityText.Margin=new Thickness(12,9,12,9); previewPanel.Children.Add(capacityText); Grid.SetRow(preview,1); previewPanel.Children.Add(preview);
-        var frame=Card(previewPanel,new Thickness(0)); Grid.SetColumn(frame,2); Grid.SetRow(frame,1); body.Children.Add(frame);
-        await InitializeWeb(preview); await RenderPreview();
-    }
     private TextBox Field(string label,string value,Action<string> setter,bool multiline=false,string placeholder="")
     {
-        var box=new TextBox { Header=label,Text=value,PlaceholderText=placeholder,AcceptsReturn=multiline,TextWrapping=multiline?TextWrapping.Wrap:TextWrapping.NoWrap,MinHeight=multiline?112:35,MaxLength=multiline?30000:300 };
-        box.TextChanged+=(_,_)=> { setter(box.Text.Replace("\r\n","\n").Replace('\r','\n')); Changed(); }; return box;
+        // AcceptsReturn must be set before assigning multi-line content. Initial field loading is not an edit.
+        var box=new TextBox { Header=label,PlaceholderText=placeholder,AcceptsReturn=multiline,TextWrapping=multiline?TextWrapping.Wrap:TextWrapping.NoWrap,MinHeight=multiline?112:35,MaxLength=multiline?30000:300 };
+        string lastValue=NormalizeLines(value); box.Text=value;
+        box.TextChanged+=(_,_)=> { string text=NormalizeLines(box.Text); if(text==lastValue) return; lastValue=text; setter(text); Changed(); }; return box;
     }
-    private void Changed() { dirty=true; revision++; saveState.Text="有未保存的修改…"; editTimer.Stop(); editTimer.Start(); }
+    private void Changed() { dirty=true; revision++; saveState.Text="有未保存的修改…"; editTimer.Stop(); editTimer.Start(); previewTimer.Stop(); if(preferences.LivePreview) previewTimer.Start(); }
     private async Task SaveCurrent()
     {
         await saveLock.WaitAsync();
@@ -213,49 +178,6 @@ public sealed partial class MainWindow : Window
             }
         }
         finally { saveLock.Release(); }
-    }
-    private async Task InitializeWeb(WebView2 web)
-    {
-        var environment=await CoreWebView2Environment.CreateWithOptionsAsync("",Path.Combine(api.DataDirectory,"WebView2"),new CoreWebView2EnvironmentOptions());
-        await web.EnsureCoreWebView2Async(environment);
-        web.CoreWebView2.Settings.AreDefaultContextMenusEnabled=false; web.CoreWebView2.Settings.AreDevToolsEnabled=false;
-        web.CoreWebView2.NewWindowRequested+=(_,e)=>e.Handled=true;
-        web.CoreWebView2.NavigationStarting+=(_,e)=>
-        {
-            // WinUI's wrapper implements NavigateToString through a data:text/html URL.
-            if(!e.Uri.StartsWith("about:",StringComparison.OrdinalIgnoreCase)&&!e.Uri.StartsWith("data:text/html",StringComparison.OrdinalIgnoreCase)) e.Cancel=true;
-            if(Environment.GetCommandLineArgs().Contains("--self-test")) File.AppendAllText(Path.Combine(api.DataDirectory,"preview-debug.log"),$"starting {e.Uri.Split(',')[0]} cancelled={e.Cancel}\n");
-        };
-        web.CoreWebView2.NavigationCompleted+=(sender,e)=>
-        {
-            if(Environment.GetCommandLineArgs().Contains("--self-test")) File.AppendAllText(Path.Combine(api.DataDirectory,"preview-debug.log"),$"completed {e.IsSuccess} {e.WebErrorStatus}\n");
-            if(e.IsSuccess&&web==preview) _=UpdateCapacity(web);
-        };
-    }
-    private Task RenderPreview()
-    {
-        if(current is not null&&preview?.CoreWebView2 is not null)
-        {
-            renderMarker=Guid.NewGuid().ToString("N");
-            string html=ResumeRenderer.Html(current,templates.First(t=>t.Id==current.TemplateId));
-            preview.NavigateToString(html.Replace("<head>",$"<head><meta name='resume-render-id' content='{renderMarker}'>"));
-        }
-        return Task.CompletedTask;
-    }
-    private async Task WaitForPreview()
-    {
-        if(preview?.CoreWebView2 is null) throw new InvalidOperationException("预览尚未就绪");
-        var web=preview; var core=web.CoreWebView2;
-        editTimer.Stop(); await RenderPreview();
-        for(int i=0;i<120;i++)
-        {
-            if(web!=preview) throw new OperationCanceledException("已切换页面，请返回工作台重新导出。");
-            var loaded=await core.ExecuteScriptAsync("document.readyState === 'complete' ? document.querySelector('meta[name=resume-render-id]')?.content : null");
-            if(loaded==JsonSerializer.Serialize(renderMarker)) return;
-            await Task.Delay(100);
-        }
-        var diagnostic=await core.ExecuteScriptAsync("JSON.stringify({state:document.readyState,meta:document.querySelector('meta[name=resume-render-id]')?.content})");
-        throw new IOException("预览加载超时："+diagnostic);
     }
     private async Task ExportPdf()
     {
@@ -314,18 +236,11 @@ public sealed partial class MainWindow : Window
         if(!Uri.TryCreate(url,UriKind.Absolute,out var uri)||uri.Scheme!="https"||string.IsNullOrEmpty(uri.Host)||!string.IsNullOrEmpty(uri.UserInfo)) throw new IOException("招聘链接无效");
         if(!await Windows.System.Launcher.LaunchUriAsync(uri)) throw new IOException("无法打开默认浏览器");
     }
-    private async Task ShowFavorites()
-    {
-        Heading("职位收藏","跨平台收藏到拾简，保留原始链接、职位描述和个人备注。"); var panel=Stack(16); var list=await api.Get<List<Job>>("favorites");
-        panel.Children.Add(Button("＋ 从 BOSS 等平台链接收藏",ImportExternalFavorite,true));
-        var filters=Row(); var query=new TextBox { PlaceholderText="职位 / 公司 / 备注",Width=280 }; var source=new ComboBox { ItemsSource=new[] {"全部平台"}.Concat(list.Select(j=>j.Source).Distinct()).ToList(),SelectedIndex=0,Width=180 }; filters.Children.Add(query); filters.Children.Add(source); panel.Children.Add(filters);
-        var cards=Stack(16); void Refresh() { cards.Children.Clear(); var found=list.Where(j=>(j.Title+" "+j.Company+" "+j.Notes).Contains(query.Text,StringComparison.OrdinalIgnoreCase)&&((string)source.SelectedItem=="全部平台"||j.Source==(string)source.SelectedItem)).ToList(); if(found.Count==0) cards.Children.Add(Card(Text("没有匹配的收藏。可从招聘平台复制职位详情链接添加。",16))); foreach(var j in found) cards.Children.Add(JobCard(j,true)); }
-        query.TextChanged+=(_,_)=>Refresh(); source.SelectionChanged+=(_,_)=>Refresh(); Refresh(); panel.Children.Add(cards); FillScroll(panel);
-    }
     private async Task ShowApplications()
     {
         Heading("投递记录","记录已打开、已投递、面试和录用进度。状态由你确认更新。"); var panel=Stack(18);
         var records=await api.Get<List<ApplicationRecord>>("applications");
+        if(currentPage!="applications") return;
         var stats=Row(16); foreach(string s in new[] {"已打开","已投递","面试中","已录用","已结束"}) stats.Children.Add(Card(Text($"{s}  {records.Count(r=>r.Status==s)}",15,true),new Thickness(16))); panel.Children.Add(stats);
         panel.Children.Add(Button("＋ 手动添加投递",async ()=> { var record=new ApplicationRecord { Status="已投递" }; var f=Stack(); var title=new TextBox { Header="职位名称" }; var company=new TextBox { Header="公司" }; var url=new TextBox { Header="招聘页面链接（HTTPS）" }; f.Children.Add(title); f.Children.Add(company); f.Children.Add(url); var dialog=new ContentDialog { XamlRoot=shell.XamlRoot,Title="添加投递记录",Content=f,PrimaryButtonText="保存",CloseButtonText="取消" }; if(await dialog.ShowAsync()==ContentDialogResult.Primary) { record.Title=title.Text; record.Company=company.Text; record.Url=url.Text; await api.Save("applications",record); await Navigate("applications"); } }));
         if(records.Count==0) panel.Children.Add(Card(Text("打开职位投递页面后，这里会自动生成一条“已打开”记录。",16)));
@@ -394,9 +309,10 @@ public sealed partial class MainWindow : Window
             await Navigate("jobs"); if(companySearch is null) throw new Exception("Company query UI did not initialize"); await companySearch(1);
             if(shownCompanyJobs is null||shownCompanyJobs.Sources.Count!=21||shownCompanyJobs.Items.Select(x=>x.Company).Distinct().Count()<3) throw new Exception("Multi-company native UI query failed");
             try { await SaveNativePreview(Path.Combine(output,"multi-company-jobs.png")); } catch(Exception) { /* Optional preview capture may be unavailable for a minimized window. */ }
+            await VerifyIteration(output);
             await File.WriteAllTextAsync(Path.Combine(output,"result.json"),JsonSerializer.Serialize(new { status="passed",savedResumeId=r.Id,jobCount=jobs.Items.Count,jobSource="腾讯招聘",sampleJobUrl=job.Url,templateCount=templates.Count,githubTemplateCount=templates.Count(t=>t.Origin=="github"),companySourceCount=shownCompanyJobs.Sources.Count,aggregateJobCount=shownCompanyJobs.Items.Count,companies=shownCompanyJobs.Items.Select(x=>x.Company).Distinct().ToList(),pdfBytes=new FileInfo(Path.Combine(output,"resume-preview.pdf")).Length,checks=new[] {"WinUI launch","Java startup","native TextBox editing and auto-save","resume create/update/read","WebView preview","PDF export","all 14 template PDFs","multipage PDF","HTML escaping","live recruitment","favorites persistence","application status update","module statuses and suggestions","native shared-link parsing","BOSS link local collection","tracking URL deduplication","Markdown tables","company registry native UI","multi-employer aggregation native UI"} },BackendClient.Json));
             saveState.Text="桌面链路验证通过";
         }
-        catch(Exception ex) { await File.WriteAllTextAsync(Path.Combine(output,"result.json"),JsonSerializer.Serialize(new {status="failed",error=ex.ToString()},BackendClient.Json)); throw; }
+        catch(Exception ex) { await File.WriteAllTextAsync(Path.Combine(output,"result.json"),JsonSerializer.Serialize(new {status="failed",error=ex.ToString()},BackendClient.Json)); try { await SaveNativePreview(Path.Combine(output,"failed-state.png")); } catch(Exception) { } throw; }
     }
 }

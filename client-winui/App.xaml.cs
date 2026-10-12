@@ -17,7 +17,7 @@ public partial class App : Application
     }
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        string data=Environment.GetEnvironmentVariable("RESUMESTUDIO_TEST_DATA")??"default";
+        string data=Services.BackendClient.DefaultDataDirectory;
         string key=Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(data)))[..16];
         instanceMutex=new Mutex(true,"Local\\ResumeStudio-"+key,out bool first);
         if(!first) { Exit(); return; }

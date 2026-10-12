@@ -1,8 +1,10 @@
+param([string]$ReleaseDirectory = '')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $dir=Join-Path $root ('artifacts\backend-test-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force $dir | Out-Null
-$java=Join-Path $root 'release\ResumeStudio\runtime\bin\java.exe'
+$application = if($ReleaseDirectory) { [IO.Path]::GetFullPath($ReleaseDirectory) } else { Join-Path $root 'release\ResumeStudio' }
+$java=Join-Path $application 'runtime\bin\java.exe'
 $jar=Join-Path $root 'backend\build\resume-backend.jar'
 $tcp=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,0)
 $tcp.Start(); $port=$tcp.LocalEndpoint.Port; $tcp.Stop()

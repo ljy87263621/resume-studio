@@ -1,6 +1,8 @@
-param([string]$Version = '0.3.0', [string]$SourceDirectory = '')
+param([string]$Version = '', [string]$SourceDirectory = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
+if(!$Version) { [xml]$project=Get-Content (Join-Path $root 'client-winui\ResumeStudio.csproj'); $Version=[string]$project.Project.PropertyGroup.Version }
+if($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version' }
 $source = if ($SourceDirectory) { [IO.Path]::GetFullPath($SourceDirectory) } else { Join-Path $root 'release\ResumeStudio' }
 foreach ($required in @('ResumeStudio.exe','ResumeStudio.dll','backend\resume-backend.jar','runtime\bin\java.exe','LICENSE','THIRD_PARTY_NOTICES.md','RUNTIME_NOTICES.md')) {
     if (!(Test-Path (Join-Path $source $required))) { throw "Missing release file: $required" }

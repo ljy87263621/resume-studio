@@ -7,6 +7,7 @@ namespace ResumeStudio;
 
 public sealed partial class MainWindow
 {
+    private readonly Dictionary<string,BitmapImage> thumbnails=[];
     private string templateCategory="全部",templateOrigin="github";
     private void ShowTemplates()
     {
@@ -54,10 +55,14 @@ public sealed partial class MainWindow
         var result=await new ContentDialog { XamlRoot=shell.XamlRoot,Title="模板来源",Content=new ScrollViewer { Content=content,MaxHeight=470 },PrimaryButtonText="打开原仓库",CloseButtonText="返回" }.ShowAsync();
         if(result==ContentDialogResult.Primary) await Launch(t.SourceUrl);
     }
-    private static Border Miniature(Template t)
+    private Border Miniature(Template t)
     {
         var path=Path.Combine(AppContext.BaseDirectory,"Assets","Templates",t.Id+".png");
-        if(File.Exists(path)) return new Border { Background=Brush("#EFF3F9"),Padding=new Thickness(8),CornerRadius=new CornerRadius(8),Child=new Image { Source=new BitmapImage(new Uri(path)),Height=250,Stretch=Microsoft.UI.Xaml.Media.Stretch.Uniform } };
+        if(File.Exists(path))
+        {
+            if(!thumbnails.TryGetValue(t.Id,out var image)) { image=new BitmapImage { DecodePixelWidth=360,UriSource=new Uri(path) }; thumbnails[t.Id]=image; }
+            return new Border { Background=Brush(darkStyle?"#30303A":"#EFF3F9"),Padding=new Thickness(8),CornerRadius=new CornerRadius(haruStyle?12:8),Child=new Image { Source=image,Height=250,Stretch=Microsoft.UI.Xaml.Media.Stretch.Uniform } };
+        }
         var page=Stack(8); page.Children.Add(Text("你的姓名",18,true)); page.Children.Add(Text("求职意向 · 联系方式",9));
         foreach(string title in t.Sections.Take(3))
         {

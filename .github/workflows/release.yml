@@ -17,6 +17,15 @@ jobs:
       - name: Install verified release JDK
         shell: pwsh
         run: ./scripts/setup-release-jdk.ps1
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$project=Get-Content client-winui/ResumeStudio.csproj
+          $version=[string]$project.Project.PropertyGroup.Version
+          if($version -notmatch '^\d+\.\d+\.\d+$'){throw 'Invalid release version'}
+          if(!(Test-Path ".github/release-notes/v$version.md")){throw 'Release notes missing'}
+          Add-Content $env:GITHUB_OUTPUT "version=$version" -Encoding utf8
       - name: Build and package
         shell: pwsh
         run: |
@@ -29,10 +38,12 @@ jobs:
           Invoke-WebRequest 'https://codeload.github.com/microsoft/openjdk-jdk21u/tar.gz/6f26c6b2b098814858e76ad2986c01d5e1c8987a' -OutFile $source
           $hash = (Get-FileHash $source -Algorithm SHA256).Hash.ToLowerInvariant()
           Add-Content release/SHA256SUMS.txt "$hash  microsoft-openjdk-jdk21u-6f26c6b2.tar.gz" -Encoding utf8
-      - name: Publish v0.3.0
+      - name: Publish release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          gh release create v0.3.0 release/ResumeStudio-v0.3.0-windows-x64.zip release/microsoft-openjdk-jdk21u-6f26c6b2.tar.gz release/SHA256SUMS.txt --target "$env:GITHUB_SHA" --title '拾简 v0.3.0 — Windows x64' --notes-file .github/release-notes/v0.3.0.md
+          $version=$env:RELEASE_VERSION
+          gh release create "v$version" "release/ResumeStudio-v$version-windows-x64.zip" release/microsoft-openjdk-jdk21u-6f26c6b2.tar.gz release/SHA256SUMS.txt --target "$env:GITHUB_SHA" --title "拾简 v$version — Windows x64" --notes-file ".github/release-notes/v$version.md"
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }

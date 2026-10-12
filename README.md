@@ -2,7 +2,19 @@
 
 Java 后端 + 原生 WinUI 3 Windows 客户端，支持简历制作、PDF 导出、企业官网职位查询、收藏和投递进度管理。GitHub 高星简历模板已移植到桌面编辑与导出流程。来源、固定提交、星数核实时间与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-## v0.3.0 企业官网招聘
+## v0.4.0 性能与双界面
+
+- 默认保持经典界面，在“设置 → 界面版本”切换 Haru 界面；沿用 haruphoto 的低饱和度蓝紫色、原生导航、圆角卡片与轻玻璃顶栏，支持浅色、深色和跟随系统。切换即时生效，数据共用，设置持久化在本机。
+- 模板元数据由 Java 模板源在构建时生成，首屏直接读取随应用分发的目录，不必等待本地 Java 服务或访问网络。需要写入数据的操作自动等待服务就绪。
+- 工作台采用模块目录，点击基本信息、排版或内容模块编辑，右侧持续展示整份简历。预览环境和 WebView2 跨模块、页面往返复用；输入后更新文档内容和样式，保留预览滚动位置。
+- 自动保存与预览分开：停止输入约 650 ms 保存；预览可选 350 / 900 / 1500 ms，亦可关闭实时预览后手动刷新。PDF 导出始终使用最新内容。支持 Ctrl+S 保存；命令栏将次要操作放入溢出菜单。
+- 职位和收藏使用原生虚拟化列表，减少长列表控件创建；返回职位页保留已查结果和查询条件。查询可取消等待，页面离开后的旧响应不会覆盖新页面。取消不会立即终止服务器已发出的官网请求，后台请求会按既定期限结束。
+
+“设置 → 本次会话”显示窗口创建后的首屏、服务就绪耗时和预览更新次数。`scripts/benchmark.ps1` 可在隔离目录重复测量，结果在 `artifacts/benchmarks/`；该测量不是系统冷启动或完整进程启动耗时。
+
+实测方法、性能比较和界面预览见 [v0.4.0 迭代记录](docs/ITERATION-0.4.0.md)。
+
+## 企业官网招聘
 
 发现职位默认查询全部启用的来源，增加“公司招聘官网”管理页。预设 **21 个来源**，可以添加、编辑、启用或关闭公司，按国内 / 全球筛选，查看每个来源的实际状态。预设数量不等于已成功接入数量：动态官网没有公开结构化职位时会明确显示“需专用适配”或请求错误。
 
@@ -26,7 +38,7 @@ Java 后端 + 原生 WinUI 3 Windows 客户端，支持简历制作、PDF 导出
 
 ## 运行
 
-从 [GitHub Releases](https://github.com/scj040921/resume-studio/releases) 下载 `ResumeStudio-v0.3.0-windows-x64.zip`，解压后双击目录中的 `ResumeStudio.exe`。必须保留整个目录，含自包含 .NET / Windows App SDK 及精简 Java 21 运行时。客户端自动启动本地 Java 服务并在关闭窗口时结束该服务，无需手动安装 Java 或 .NET。需要 Windows 10 2004 或更新的 x64 系统及 Microsoft Edge WebView2 Runtime。不要在压缩包内直接运行。
+从 [GitHub Releases](https://github.com/scj040921/resume-studio/releases) 下载 `ResumeStudio-v0.4.0-windows-x64.zip`，解压后双击目录中的 `ResumeStudio.exe`。必须保留整个目录，含自包含 .NET / Windows App SDK 及精简 Java 21 运行时。客户端自动启动本地 Java 服务并在关闭窗口时结束该服务，无需手动安装 Java 或 .NET。需要 Windows 10 2004 或更新的 x64 系统及 Microsoft Edge WebView2 Runtime。不要在压缩包内直接运行。
 
 发布附带 `SHA256SUMS.txt`。OpenJDK 源码归档属于运行组件的对应源码，普通用户只需下载应用 ZIP。原创应用代码采用 [MIT](LICENSE)，模板及运行组件保留各自许可，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 和 [RUNTIME_NOTICES.md](RUNTIME_NOTICES.md)。
 

@@ -1,6 +1,7 @@
+param([string]$SourceDirectory = '')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
-$source=Join-Path $root 'release\ResumeStudio'
+$source=if($SourceDirectory) { [IO.Path]::GetFullPath($SourceDirectory) } else { Join-Path $root 'release\ResumeStudio' }
 $destination=Join-Path $env:LOCALAPPDATA 'Programs\ResumeStudio'
 if(!(Test-Path (Join-Path $source 'ResumeStudio.exe'))) { throw 'Build the application first' }
 $running=@(Get-Process ResumeStudio -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq (Join-Path $destination 'ResumeStudio.exe') })

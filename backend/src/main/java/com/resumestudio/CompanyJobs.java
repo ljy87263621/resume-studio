@@ -12,7 +12,9 @@ import java.security.*;
 /** Employer public API adapters plus bounded JSON-LD extraction. Dynamic/login-only sites expose an explicit unavailable status. */
 public final class CompanyJobs {
     private final CompanySources registry; private final Jobs legacy=new Jobs();
-    private final HttpClient http=HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(6)).followRedirects(HttpClient.Redirect.NEVER).build();
+    private static final class Network {
+        private static final HttpClient HTTP=HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(6)).followRedirects(HttpClient.Redirect.NEVER).build();
+    }
     private final ExecutorService workers=Executors.newFixedThreadPool(4,r->{Thread t=new Thread(r,"employer-source");t.setDaemon(true);return t;});
     private record Cached(Instant time,Map<String,Object> value) {}
     private final Map<String,Cached> cache=new ConcurrentHashMap<>();
@@ -105,7 +107,7 @@ public final class CompanyJobs {
         var builder=HttpRequest.newBuilder(url).timeout(Duration.ofSeconds(18)).header("User-Agent","ResumeStudio/0.3 (+public-career-reader)").header("Accept","application/json,text/html;q=0.9");
         if(payload==null) builder.GET(); else builder.header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(payload));
         var req=builder.build();
-        var pending=http.sendAsync(req,info->new LimitedBody());
+        var pending=Network.HTTP.sendAsync(req,info->new LimitedBody());
         try { var response=pending.get(18,TimeUnit.SECONDS); if(response.statusCode()!=200) throw new IllegalStateException("HTTP "+response.statusCode()+"（官网可在浏览器中打开）"); return new String(response.body(),StandardCharsets.UTF_8); }
         catch(TimeoutException e) { pending.cancel(true); throw new IllegalStateException("官网请求超时"); }
     }
