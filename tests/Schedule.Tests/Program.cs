@@ -1,0 +1,24 @@
+using ResumeStudio;
+using ResumeStudio.Services;
+using System.Text.Json;
+int checks=0;void Check(bool ok,string label){if(!ok)throw new Exception(label);checks++;Console.WriteLine("PASS: "+label);}
+var now=DateTimeOffset.Parse("2026-10-13T10:00:00+08:00");
+var upcoming=new ScheduleItem {Id="manual",Title="Interview",Kind="面试",StartAt=now.AddHours(2).ToString("O"),ReminderMinutes=60,ApplicationId="linked"};
+var application=new ApplicationRecord {Id="linked",Company="Company",Title="Exam",EventKind="笔试",DueAt=now.AddHours(3).ToString("O"),Status="笔试中"};
+string before=JsonSerializer.Serialize(application);
+var entries=ScheduleService.Merge([upcoming],[application]);
+Check(entries.Count==2&&entries.Single(e=>e.Item is not null).Company=="Company","manual events and existing arrangements merge without copying");
+Check(JsonSerializer.Serialize(application)==before,"projection leaves application timeline and snapshot unchanged");
+Check(!ScheduleService.Reminders(entries,now).Any(e=>e.Item is not null),"custom advance time is respected");
+Check(ScheduleService.Reminders(entries,now.AddHours(1)).Any(e=>e.Item is not null),"reminder fires exactly at advance boundary");
+upcoming.ReminderEnabled=false;Check(!ScheduleService.Reminders(ScheduleService.Merge([upcoming],[]),now.AddDays(1)).Any(),"disabled reminder never fires");
+upcoming.ReminderEnabled=true;upcoming.Completed=true;Check(!ScheduleService.Reminders(ScheduleService.Merge([upcoming],[]),now.AddDays(1)).Any(),"completed event never fires");
+application.Status="已结束";Check(ScheduleService.Merge([], [application])[0].Completed,"closed applications suppress their arrangement reminders");
+application.Status="笔试中";application.ReminderDone=true;Check(ScheduleService.Merge([], [application])[0].Completed,"application completion is projected into calendar");
+Check(ScheduleService.ForDate(entries,upcoming.StartAt.Length>0?DateTimeOffset.Parse(upcoming.StartAt).LocalDateTime.Date:DateTime.Today).Any(e=>e.Item is not null),"date selection uses local date rather than UTC date");
+var day=now.LocalDateTime.Date;var allDay=new ScheduleItem {Id="all-day",Title="Deadline",Kind="投递截止",AllDay=true,StartAt=new DateTimeOffset(day,TimeZoneInfo.Local.GetUtcOffset(day)).ToString("O")};
+var full=ScheduleService.Merge([allDay],[])[0];Check(!full.Overdue(now),"all-day event stays pending for its whole local day");Check(full.Overdue(now.AddDays(1)),"all-day event becomes overdue on following day");
+upcoming.Completed=false;upcoming.StartAt=now.AddDays(31).ToString("O");Check(!ScheduleService.Upcoming(ScheduleService.Merge([upcoming],[]),now).Any(),"upcoming window excludes distant events");
+upcoming.StartAt=now.AddDays(-1).ToString("O");Check(ScheduleService.Merge([upcoming],[])[0].Overdue(now),"past incomplete event remains overdue");
+var orphan=ScheduleService.Merge([upcoming],[])[0];Check(orphan.Item is not null&&orphan.Company=="","deleting linked application retains independent schedule");
+Console.WriteLine($"PASS: {checks} schedule date, reminder and projection checks");

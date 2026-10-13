@@ -35,6 +35,7 @@ jobs:
           ./scripts/build.ps1 -Channel stable -BuildTag "v${{ steps.version.outputs.version }}"
           ./scripts/test-offline.ps1
           ./scripts/test-updater.ps1
+          ./scripts/test-schedule.ps1
           ./scripts/package.ps1
       - name: Sign update metadata
         shell: pwsh

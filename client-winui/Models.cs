@@ -20,6 +20,7 @@ public sealed class Template
     public string License { get; set; } = "";
     public string Adaptation { get; set; } = "";
     public List<string> SideTitles { get; set; } = [];
+    public bool SupportsPhoto { get; set; } = true;
     public override string ToString() => Name;
 }
 public sealed class Profile
@@ -46,6 +47,7 @@ public sealed class Resume
     public string Color { get; set; } = "#245AE8";
     public double FontSize { get; set; } = 12;
     public double LineHeight { get; set; } = 1.6;
+    public string FontFamily { get; set; } = "MiSans";
     public string Photo { get; set; } = "";
     public Profile Profile { get; set; } = new();
     public List<ResumeSection> Sections { get; set; } = [];
@@ -103,6 +105,20 @@ public sealed class ApplicationRecord
     public string DueAt { get; set; } = "";
     public bool ReminderDone { get; set; }
     public string Review { get; set; } = "";
+}
+public sealed class ScheduleItem
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Title { get; set; } = "";
+    public string Kind { get; set; } = "自定义";
+    public string StartAt { get; set; } = "";
+    public bool AllDay { get; set; }
+    public bool Completed { get; set; }
+    public bool ReminderEnabled { get; set; } = true;
+    public int ReminderMinutes { get; set; } = 1440;
+    public string Notes { get; set; } = "";
+    public string ApplicationId { get; set; } = "";
+    public string UpdatedAt { get; set; } = "";
 }
 public sealed class ApplicationEvent
 {

@@ -22,11 +22,11 @@ public sealed partial class MainWindow
     {
         if(checkingReminders||!ready||closing) return; checkingReminders=true;
         try {
-            var all=await api.Get<List<ApplicationRecord>>("applications");
-            var due=all.Where(Pending).Where(r=>DateTimeOffset.Parse(r.DueAt)<=DateTimeOffset.Now.AddHours(24)).OrderBy(r=>DateTimeOffset.Parse(r.DueAt)).ToList();
-            var unseen=due.Where(r=>seenReminders.Add(r.Id+"|"+r.DueAt+"|"+(DateTimeOffset.Parse(r.DueAt)<DateTimeOffset.Now?"due":"upcoming"))).ToList();
+            var now=DateTimeOffset.Now; var all=await ReadAgenda();
+            var due=ScheduleService.Reminders(all,now).ToList();
+            var unseen=due.Where(r=>seenReminders.Add(r.Id+"|"+r.At.ToString("O")+"|"+r.ReminderMinutes+"|"+(r.Overdue(now)?"due":"upcoming"))).ToList();
             if(unseen.Count==0) return;
-            notice.Title=$"求职安排提醒 · {due.Count} 项待处理"; notice.Message=string.Join("\n",unseen.Take(3).Select(r=>r.Company+" · "+r.Title+" · "+ScheduleLabel(r)))+"\n可在投递记录查看并标记已处理。"; notice.Severity=InfoBarSeverity.Warning; notice.IsOpen=true;
+            notice.Title=$"求职安排提醒 · {due.Count} 项待处理"; notice.Message=string.Join("\n",unseen.Take(3).Select(r=>r.Company+" · "+r.Title+" · "+r.Kind+" · "+r.When))+"\n可在求职日程查看并标记已完成。"; notice.Severity=InfoBarSeverity.Warning; notice.IsOpen=true;
         }
         finally {checkingReminders=false;}
     }
@@ -57,7 +57,7 @@ public sealed partial class MainWindow
         }
         query.TextChanged+=(_,_)=>Refresh(); stage.SelectionChanged+=(_,_)=>Refresh(); pending.Checked+=(_,_)=>Refresh(); pending.Unchecked+=(_,_)=>Refresh(); Refresh(); FillScroll(panel);
     }
-    private async Task EditApplication(ApplicationRecord original)
+    private async Task EditApplication(ApplicationRecord original,string returnPage="applications")
     {
         var r=JsonSerializer.Deserialize<ApplicationRecord>(JsonSerializer.Serialize(original,BackendClient.Json),BackendClient.Json)!;
         var resumes=await api.Get<List<Resume>>("resumes"); resumes.Insert(0,new Resume {Id="",Title="未绑定简历"});
@@ -83,7 +83,7 @@ public sealed partial class MainWindow
             if(r.Status=="已打开") throw new InvalidOperationException("仅打开页面尚未投递，请确认实际使用简历后更新为已投递或后续进度。");
             r.ResumeSnapshot=CloneResume(selected); r.ResumeTitle=selected.Title;
         }
-        await api.Save("applications",r); await Navigate("applications"); await CheckApplicationReminders();
+        await api.Save("applications",r); await Navigate(returnPage); await CheckApplicationReminders();
     }
     private async Task ShowApplicationSnapshot(ApplicationRecord r)
     {

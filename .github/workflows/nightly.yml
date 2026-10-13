@@ -53,6 +53,7 @@ jobs:
           ./scripts/build.ps1 -Channel nightly -BuildTag '${{ steps.source.outputs.tag }}'
           ./scripts/test-offline.ps1
           ./scripts/test-updater.ps1
+          ./scripts/test-schedule.ps1
           ./scripts/package.ps1 -PackageLabel '${{ steps.source.outputs.label }}'
       - name: Sign update metadata
         if: steps.source.outputs.changed == 'true'

@@ -87,6 +87,9 @@ public sealed partial class MainWindow
             fields.Children.Add(Text("排版设置",20,true));
             var choices=new ComboBox { Header="模板",ItemsSource=templates,SelectedItem=templates.First(t=>t.Id==resume.TemplateId),HorizontalAlignment=HorizontalAlignment.Stretch };
             choices.SelectionChanged+=(_,_)=> { if(choices.SelectedItem is Template t) { resume.TemplateId=t.Id; resume.Color=t.Color; Changed(); } }; fields.Children.Add(choices);
+            var font=new ComboBox {Header="简历字体",ItemsSource=ResumeTypography.Labels,SelectedIndex=Array.IndexOf(ResumeTypography.Names,ResumeTypography.Normalize(resume.FontFamily)),HorizontalAlignment=HorizontalAlignment.Stretch};
+            font.SelectionChanged+=(_,_)=> {if(font.SelectedIndex>=0){resume.FontFamily=ResumeTypography.Names[font.SelectedIndex];Changed();}};fields.Children.Add(font);
+            fields.Children.Add(Text("MiSans 随软件提供；其他字体使用本机字体。未安装时由系统选择替代字体。",11));
             var colors=Row(5); foreach(string color in new[] {"#245AE8","#167D78","#353D59","#222222","#7955B4","#1E668A"}) { var button=Button("●",()=> { resume.Color=color; Changed(); return Task.CompletedTask; }); button.Foreground=Brush(color); button.Padding=new Thickness(6,4,6,4); colors.Children.Add(button); } fields.Children.Add(colors);
             var size=new Slider { Header="正文字号",Minimum=10,Maximum=16,StepFrequency=0.5,Value=resume.FontSize }; size.ValueChanged+=(_,_)=> { resume.FontSize=size.Value; Changed(); }; fields.Children.Add(size);
             var spacing=new Slider { Header="行间距",Minimum=1.2,Maximum=2,StepFrequency=0.1,Value=resume.LineHeight }; spacing.ValueChanged+=(_,_)=> { resume.LineHeight=spacing.Value; Changed(); }; fields.Children.Add(spacing);

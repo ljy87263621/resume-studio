@@ -5,6 +5,7 @@
  <Application.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries>
   <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
  </ResourceDictionary.MergedDictionaries>
+ <FontFamily x:Key="ContentControlThemeFontFamily">ms-appx:///Assets/Fonts/MiSans-Regular.ttf#MiSans</FontFamily>
  <DataTemplate x:Key="JobCardTemplate"><local:JobCardPresenter /></DataTemplate>
  </ResourceDictionary></Application.Resources>
 </Application>

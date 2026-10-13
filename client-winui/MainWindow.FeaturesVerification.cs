@@ -111,6 +111,7 @@ public sealed partial class MainWindow
             Check(AppPreferences.Load(api.DataDirectory).UpdateRoute=="proxy","native proxy route selection persists"); route.SelectedIndex=0;
             Check(FeatureButton(body,"检查更新") is not null&&FeatureButton(body,"下载并安装") is not null,"native release update actions");
             await SaveNativePreview(Path.Combine(output,"settings.png"));
+            await VerifyNewFeatures(output,checks);
             await File.WriteAllTextAsync(Path.Combine(output,"feature-result.json"),JsonSerializer.Serialize(new {status="passed",checks,pages=pages.Count,multipage=many.Count},BackendClient.Json));
         }
         catch(Exception ex) {await File.WriteAllTextAsync(Path.Combine(output,"feature-result.json"),JsonSerializer.Serialize(new {status="failed",checks,error=ex.ToString()},BackendClient.Json)); await SaveNativePreview(Path.Combine(output,"failed.png"));}

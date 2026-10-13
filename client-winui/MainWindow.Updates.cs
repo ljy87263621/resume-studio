@@ -12,7 +12,7 @@ public sealed partial class MainWindow
     private AvailableUpdate? availableUpdate;
     private TextBlock? updateStatus;
     private Button? installUpdateButton;
-    private static bool VerificationSession=>Environment.GetCommandLineArgs().Any(a=>a is "--self-test" or "--feature-test" or "--iteration-test" or "--benchmark" or "--appearance-review");
+    private static bool VerificationSession=>Environment.GetCommandLineArgs().Any(a=>a is "--self-test" or "--feature-test" or "--iteration-test" or "--benchmark" or "--appearance-review" or "--template-assets");
     private ReleaseUpdate UpdateClient()=>new(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"Assets","UpdatePublicKey.pem")));
     private UIElement UpdateSettingsCard()
     {

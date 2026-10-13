@@ -11,9 +11,9 @@ public sealed partial class MainWindow
     private readonly SemaphoreSlim renderLock = new(1,1);
     private string lastRenderedHtml = "";
     private Grid? previewHost;
-    private static string PreviewHtml(Resume resume,Template template)
+    private static string PreviewHtml(Resume resume,Template template,bool photoPlaceholder=false)
     {
-        string html=Services.ResumeRenderer.Html(resume,template);
+        string html=Services.ResumeRenderer.Html(resume,template,photoPlaceholder);
         return haruStyle?html.Replace("body{margin:0;background:#e9edf4","body{margin:0;background:transparent"):html;
     }
     private void DetachPreview()
@@ -28,6 +28,7 @@ public sealed partial class MainWindow
         Directory.CreateDirectory(api.DataDirectory);
         webEnvironment??=CreateWebEnvironment();
         await web.EnsureCoreWebView2Async(await webEnvironment); webInitializations++;
+        web.CoreWebView2!.SetVirtualHostNameToFolderMapping("resumestudio.assets",Path.Combine(AppContext.BaseDirectory,"Assets"),CoreWebView2HostResourceAccessKind.Allow);
         web.CoreWebView2!.Settings.AreDefaultContextMenusEnabled=false; web.CoreWebView2.Settings.AreDevToolsEnabled=false;
         web.CoreWebView2.NewWindowRequested+=(_,e)=>e.Handled=true;
         web.CoreWebView2.NavigationStarting+=(_,e)=> {
@@ -54,6 +55,11 @@ public sealed partial class MainWindow
                     previewNavigations++;
                     web.NavigateToString(html.Replace("<head>",$"<head><meta name='resume-render-id' content='{marker}'>"));
                     if(!await completed.Task.WaitAsync(TimeSpan.FromSeconds(12))) throw new IOException("预览初始化失败");
+                    await core.ExecuteScriptAsync($$"""
+                    (()=>{const meta=document.querySelector('meta[name=resume-render-id]'),marker={{JsonSerializer.Serialize(marker)}};
+                      meta.content='';Promise.all([document.fonts.ready,...Array.from(document.images).map(i=>i.decode().catch(()=>{}))])
+                        .then(()=>{document.querySelector('article').getBoundingClientRect();meta.content=marker;});return true;})()
+                    """);
                 }
                 finally { core.NavigationCompleted-=Loaded; }
             }

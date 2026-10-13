@@ -10,20 +10,21 @@ import java.util.concurrent.*;
 public final class Server {
     private final Store store; private final CompanyJobs jobs; private final String token;
     private final HttpServer server;
+    private final ExecutorService executor=Executors.newFixedThreadPool(6);
     public Server(int port,Path data,String token) throws Exception {
         if(token.length()<16) throw new IllegalArgumentException("Provide a session token of at least 16 characters");
         this.token=token; store=new Store(data); jobs=new CompanyJobs(store);
         server=HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"),port),16);
-        server.setExecutor(Executors.newFixedThreadPool(6)); server.createContext("/api/",this::handle);
+        server.setExecutor(executor); server.createContext("/api/",this::handle);
     }
     public void start() { server.start(); }
     public int port() { return server.getAddress().getPort(); }
-    public void stop() { server.stop(0); }
+    public void stop() { server.stop(0); executor.shutdownNow(); }
     private void handle(HttpExchange e) {
         try {
             if(!token.equals(e.getRequestHeaders().getFirst("X-Resume-Token"))) { send(e,401,Map.of("error","Unauthorized")); return; }
             String path=e.getRequestURI().getPath().substring(5), method=e.getRequestMethod();
-            if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.6.3","java",System.getProperty("java.version"))); return; }
+            if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.7.0","java",System.getProperty("java.version"))); return; }
             if(path.equals("templates")&&method.equals("GET")) { send(e,200,Templates.all()); return; }
             if(path.equals("job-sources")&&method.equals("GET")) { send(e,200,jobs.sources()); return; }
             if(Set.of("resume-check","capture-preview").contains(path)&&method.equals("POST")) {
@@ -44,7 +45,7 @@ public final class Server {
                 if(parts.length==3&&method.equals("POST")) { store.checkpoint(parts[1],"手动保存"); send(e,200,Map.of("saved",true)); return; }
                 if(parts.length==4&&method.equals("GET")) { send(e,200,store.revision(parts[1],parts[3])); return; }
             }
-            if(Set.of("resumes","favorites","applications","sources").contains(kind)) {
+            if(Set.of("resumes","favorites","applications","sources","schedule").contains(kind)) {
                 if(parts.length==1&&method.equals("GET")) { send(e,200,store.list(kind)); return; }
                 if(parts.length==1&&method.equals("POST")) {
                     byte[] bytes=e.getRequestBody().readNBytes(2_000_001);
@@ -61,7 +62,19 @@ public final class Server {
     }
     static void validate(String kind,Map<String,Object> doc) {
         if(kind.equals("sources")) { CompanySources.validate(doc); return; }
+        if(kind.equals("schedule")) {
+            for(String field:List.of("title","kind","startAt","notes","applicationId")) if(doc.containsKey(field)&&!(doc.get(field) instanceof String)) throw new IllegalArgumentException("日程文本字段无效");
+            if(Json.str(doc,"title").isBlank()||Json.str(doc,"title").length()>200) throw new IllegalArgumentException("日程标题应为 1–200 个字符");
+            if(!Set.of("笔试","面试","投递截止","跟进","自定义").contains(Json.str(doc,"kind"))) throw new IllegalArgumentException("日程类型无效");
+            try { java.time.OffsetDateTime.parse(Json.str(doc,"startAt")); } catch(java.time.format.DateTimeParseException ex) { throw new IllegalArgumentException("日程日期和时间无效"); }
+            if(Json.str(doc,"notes").length()>10000) throw new IllegalArgumentException("日程备注过长");
+            for(String field:List.of("allDay","completed","reminderEnabled")) if(!(doc.get(field) instanceof Boolean)) throw new IllegalArgumentException("日程状态无效");
+            if(!(doc.get("reminderMinutes") instanceof Number minutes)||!Set.of(0,15,60,1440).contains(minutes.intValue())||minutes.doubleValue()!=minutes.intValue()) throw new IllegalArgumentException("提醒时间无效");
+            String linked=Json.str(doc,"applicationId"); if(!linked.isBlank()&&!linked.matches("[a-zA-Z0-9_-]{1,100}")) throw new IllegalArgumentException("关联投递记录无效");
+            return;
+        }
         if(kind.equals("resumes")) {
+            if(doc.containsKey("fontFamily")&&!Set.of("MiSans","Microsoft YaHei","SimSun","Arial","Times New Roman").contains(Json.str(doc,"fontFamily"))) throw new IllegalArgumentException("简历字体无效");
             if(Json.str(doc,"title").isBlank()) throw new IllegalArgumentException("简历名称不能为空");
             if(Templates.all().stream().noneMatch(t->Json.str(t,"id").equals(Json.str(doc,"templateId")))) throw new IllegalArgumentException("Unknown template");
             var profile=Json.object(doc.get("profile"));

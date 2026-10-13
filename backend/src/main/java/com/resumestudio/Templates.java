@@ -20,6 +20,7 @@ public final class Templates {
             template("minimal","极简 · 留白表达","通用 大学生 产品 运营","#222222","minimal","黑白排版，适合简洁、正式的求职场景。",List.of("教育背景","工作经历","项目经历","专业技能","自我评价")),
             template("creative","前端 · 轻盈色彩","前端 设计 实习 校招","#7955B4","band","色块标题与清晰分区，突出产品与开发实践。",List.of("教育背景","专业技能","项目经历","实习经历","个人作品")),
             template("research","算法 · 研究积累","AI Python 算法 研究 大模型","#1E668A","classic","覆盖科研经历、论文与工程实践。",List.of("教育背景","研究方向","科研经历","项目经历","论文与荣誉"))));
+        result.forEach(t->t.put("supportsPhoto",true));
         return result;
     }
     private static Map<String,Object> template(String id,String name,String tags,String color,String layout,String description,List<String> sections) {

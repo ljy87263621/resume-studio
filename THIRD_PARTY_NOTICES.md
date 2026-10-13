@@ -12,7 +12,7 @@ GitHub 星数由 GitHub API 于 **2026-10-12** 核实；星数是仓库星数，
 
 `ThirdParty/` 保留上述原始模板文件、功能参考源码与完整许可证。对应在线原始文件可按表中固定提交访问。用于桌面预览和 PDF 的代码在 `client-winui/Services/ResumeRenderer.cs`，为拾简维护的 HTML/CSS 移植版本；原始 LaTeX 文件保持原名和原内容，移植代码不冒充上游维护版本。
 
-适配变化：统一中文 A4、使用 Windows 系统字体，取消对本机 LaTeX 和上游字体包的运行依赖；支持本应用模块编辑、照片、颜色和行距；示例个人信息替换为明确的占位内容；Deedy 依其原有结构将教育、技能、作品与荣誉置于左栏，项目和工作经历置于右栏。不能保证与上游 LaTeX 字体或分页逐像素一致。
+适配变化：统一中文 A4、默认使用随包 MiSans，也可选择本机系统字体，取消对本机 LaTeX 和上游字体包的运行依赖；支持本应用模块编辑、照片、颜色和行距；示例个人信息替换为明确的占位内容；Deedy 依其原有结构将教育、技能、作品与荣誉置于左栏，项目和工作经历置于右栏。不能保证与上游 LaTeX 字体或分页逐像素一致。
 
 MIT 来源的版权与许可见各目录 `LICENSE`；Deedy 为 Apache-2.0，原作者 Debarghya Das 的署名与许可见源文件及 `LICENSE`；Awesome-CV 原作者 Claud D. Park，许可见 `LICENCE`。对这些模板的 HTML/CSS 移植由 Resume Studio 维护，2026-10-12 起。
 
@@ -25,3 +25,9 @@ resume-helper 的功能规则在 `ResumeAdvisor.java` 中重新适配本应用�
 腾讯招聘使用官网公开查询接口；Arbeitnow 为可选公共职位源，异常明确显示。BOSS 等平台的职位收藏由用户复制链接或文本导入，不读取平台账号收藏。BOSS 的 [robots.txt](https://www.zhipin.com/robots.txt) 当前限制搜索参数路径，搜索页的普通 HTML 主要为脚本页面，当前版本不实现其匿名批量采集、验证码绕过或登录 Cookie 抽取。
 
 v0.3.0 企业招聘系统接入依据官方公开资料：[Greenhouse Job Board API](https://docs.greenhouse.io/job-board.html)、[Lever Postings API](https://github.com/lever/postings-api)、[Ashby Public Job Postings](https://developers.ashbyhq.com/docs/public-job-posting-api)、[SmartRecruiters Posting API](https://developers.smartrecruiters.com/docs/posting-api)。Workday 接入验证于 NVIDIA 的公开职位板，只请求其公开岗位列表，不登录账号或提交申请。
+
+## MiSans 字体
+
+本软件使用由小米提供的 MiSans，原字体文件保持不变，随应用用于界面、简历预览和 PDF。字体许可独立于项目 MIT 许可证。官方来源：https://hyperos.mi.com/font/zh/download/ 。完整许可与字体来源见 Assets/Fonts/MiSans-License.pdf 和 Assets/Fonts/README.md。
+
+原始 MiSans-Regular.ttf 的 SHA-256：9c120f0a849bc0aa5048daae2a3c0f6eecd828b5b33fce682a9622833f5feea6。

@@ -67,13 +67,13 @@ public sealed partial class MainWindow : Window
         string rgb=hex.TrimStart('#'); byte alpha=rgb.Length==8?Convert.ToByte(rgb[..2],16):(byte)255; if(rgb.Length==8) rgb=rgb[2..];
         return new SolidColorBrush(Windows.UI.Color.FromArgb(alpha,Convert.ToByte(rgb[..2],16),Convert.ToByte(rgb.Substring(2,2),16),Convert.ToByte(rgb.Substring(4,2),16)));
     }
-    private static TextBlock Text(string text,double size=14,bool bold=false) => new() { Text=text,FontSize=size,FontFamily=new FontFamily(haruStyle?"MiSans":"Segoe UI"),FontWeight=bold?Microsoft.UI.Text.FontWeights.SemiBold:Microsoft.UI.Text.FontWeights.Normal,Foreground=Brush(Ink),TextWrapping=TextWrapping.Wrap };
+    private static TextBlock Text(string text,double size=14,bool bold=false) => new() { Text=text,FontSize=size,FontFamily=ResumeTypography.InterfaceFont,FontWeight=bold?Microsoft.UI.Text.FontWeights.SemiBold:Microsoft.UI.Text.FontWeights.Normal,Foreground=Brush(Ink),TextWrapping=TextWrapping.Wrap };
     private static StackPanel Stack(double spacing=12) => new() { Spacing=spacing };
     private static StackPanel Row(double spacing=10) => new() { Orientation=Orientation.Horizontal,Spacing=spacing };
     private static Border Card(UIElement child,Thickness? padding=null) => new() { Child=child,Padding=padding??new Thickness(22),Background=PanelMaterial,BorderBrush=EdgeMaterial,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(haruStyle?14:12) };
     private Button Button(string label,Func<Task> action,bool primary=false)
     {
-        var b=new Button { Content=label,Padding=new Thickness(15,9,15,9),CornerRadius=new CornerRadius(haruStyle?12:7),FontFamily=new FontFamily(haruStyle?"MiSans":"Segoe UI") };
+        var b=new Button { Content=label,Padding=new Thickness(15,9,15,9),CornerRadius=new CornerRadius(haruStyle?12:7),FontFamily=ResumeTypography.InterfaceFont };
         if(primary) { b.Background=Brush(Accent); b.Foreground=Brush("#FFFFFF"); }
         b.Click+=async (_,_)=>await Run(action); return b;
     }
@@ -98,6 +98,7 @@ public sealed partial class MainWindow : Window
         if(Environment.GetCommandLineArgs().Contains("--benchmark")) { await Benchmark(); return; }
         if(Environment.GetCommandLineArgs().Contains("--iteration-test")) { await IterationOnlyTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--feature-test")) { await FeatureTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--template-assets")) { await GenerateTemplateAssets(); return; }
         if(Environment.GetCommandLineArgs().Contains("--self-test"))
         {
             Title="拾简 · 自动验证窗口"; shell.IsHitTestVisible=false;
@@ -136,6 +137,7 @@ public sealed partial class MainWindow : Window
             case "sources": await ShowCompanySources(); break;
             case "favorites": await ShowFavorites(); break;
             case "applications": await ShowApplications(); break;
+            case "schedule": await ShowSchedule(); break;
             case "settings": ShowSettings(); break;
             default: ShowAbout(); break;
         }

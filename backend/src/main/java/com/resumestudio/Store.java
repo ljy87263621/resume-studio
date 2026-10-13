@@ -13,7 +13,7 @@ public final class Store {
     private final ResumeHistory history;
     public Store(Path root) throws IOException { this.root=root.toAbsolutePath(); Files.createDirectories(this.root); history=new ResumeHistory(this.root); }
     private Path path(String kind,String id) throws IOException {
-        if (!Set.of("resumes","favorites","applications","sources").contains(kind)) throw new IllegalArgumentException("Invalid collection");
+        if (!Set.of("resumes","favorites","applications","sources","schedule").contains(kind)) throw new IllegalArgumentException("Invalid collection");
         if (!id.matches("[a-zA-Z0-9_-]{1,100}")) throw new IllegalArgumentException("Invalid identifier");
         Path dir=root.resolve(kind); Files.createDirectories(dir); return dir.resolve(id+".json");
     }

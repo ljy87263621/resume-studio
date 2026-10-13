@@ -22,7 +22,7 @@ public sealed partial class MainWindow
         var sort=new ComboBox { Width=135,ItemsSource=new[] {"高星优先","名称排序"},SelectedIndex=0 };
         filters.Children.Add(search); filters.Children.Add(category); filters.Children.Add(origin); filters.Children.Add(sort); panel.Children.Add(filters);
         var count=Text("",12); panel.Children.Add(count);
-        var cards=new Grid { ColumnSpacing=18,RowSpacing=18 }; int columns=3;
+        var cards=new Grid { ColumnSpacing=18,RowSpacing=18 }; int columns=2;
         void Refresh()
         {
             templateCategory=(string?)category.SelectedItem??"全部"; templateOrigin=origin.SelectedIndex==0?"github":origin.SelectedIndex==1?"builtin":"all";
@@ -34,7 +34,7 @@ public sealed partial class MainWindow
             for(int i=0;i<(list.Count+columns-1)/columns;i++) cards.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto });
             for(int i=0;i<list.Count;i++)
             {
-                var t=list[i]; var c=Stack(11); c.Children.Add(Miniature(t)); c.Children.Add(Text(t.Name,17,true)); c.Children.Add(Text(t.Category+"  ·  "+(t.Origin=="github"?$"★ {t.Stars:N0}":"内置"),12,true)); c.Children.Add(Text(t.Description,12));
+                var t=list[i]; var c=Stack(11); c.Children.Add(TemplatePreviewPair(t)); c.Children.Add(Text(t.Name,17,true)); c.Children.Add(Text(t.Category+"  ·  "+(t.Origin=="github"?$"★ {t.Stars:N0}":"内置"),12,true)); c.Children.Add(Text(t.Description,12));
                 if(t.Origin=="github")
                 {
                     c.Children.Add(Text(t.SourceRepo+"  ·  "+t.License,11));
@@ -45,7 +45,7 @@ public sealed partial class MainWindow
             }
             if(list.Count==0) { cards.RowDefinitions.Add(new RowDefinition()); cards.Children.Add(Text("没有匹配的模板，试试其他分类或关键词。")); }
         }
-        cards.SizeChanged+=(_,e)=> { int next=e.NewSize.Width<630?1:e.NewSize.Width<970?2:3; if(next!=columns) { columns=next; Refresh(); } };
+        cards.SizeChanged+=(_,e)=> { int next=e.NewSize.Width<900?1:2; if(next!=columns) { columns=next; Refresh(); } };
         search.TextChanged+=(_,_)=>Refresh(); category.SelectionChanged+=(_,_)=>Refresh(); origin.SelectionChanged+=(_,_)=>Refresh(); sort.SelectionChanged+=(_,_)=>Refresh(); Refresh(); panel.Children.Add(cards); FillScroll(panel);
     }
     private async Task ShowTemplateSource(Template t)
@@ -55,12 +55,23 @@ public sealed partial class MainWindow
         var result=await new ContentDialog { XamlRoot=shell.XamlRoot,Title="模板来源",Content=new ScrollViewer { Content=content,MaxHeight=470 },PrimaryButtonText="打开原仓库",CloseButtonText="返回" }.ShowAsync();
         if(result==ContentDialogResult.Primary) await Launch(t.SourceUrl);
     }
-    private Border Miniature(Template t)
+    private UIElement TemplatePreviewPair(Template t)
     {
-        var path=Path.Combine(AppContext.BaseDirectory,"Assets","Templates",t.Id+".png");
+        if(!t.SupportsPhoto)return Miniature(t);
+        var pair=new Grid {ColumnSpacing=12}; pair.ColumnDefinitions.Add(new ColumnDefinition {Width=new GridLength(1,GridUnitType.Star)});pair.ColumnDefinitions.Add(new ColumnDefinition {Width=new GridLength(1,GridUnitType.Star)});
+        foreach(bool withPhoto in new[] {true,false}) {
+            var panel=Stack(7);panel.Children.Add(Text(withPhoto?"有证件照占位":"无证件照",12,true));panel.Children.Add(Miniature(t,withPhoto));
+            panel.Children.Add(Button(withPhoto?"预览带照片版":"预览无照片版",()=>PreviewTemplate(t,withPhoto)));
+            Grid.SetColumn(panel,withPhoto?0:1);pair.Children.Add(panel);
+        }
+        return pair;
+    }
+    private Border Miniature(Template t,bool withPhoto=false)
+    {
+        string key=t.Id+(withPhoto?"-photo":"");var path=Path.Combine(AppContext.BaseDirectory,"Assets","Templates",key+".png");
         if(File.Exists(path))
         {
-            if(!thumbnails.TryGetValue(t.Id,out var image)) { image=new BitmapImage { DecodePixelWidth=360,UriSource=new Uri(path) }; thumbnails[t.Id]=image; }
+            if(!thumbnails.TryGetValue(key,out var image)) { image=new BitmapImage { DecodePixelWidth=420,UriSource=new Uri(path) }; thumbnails[key]=image; }
             return new Border { Background=haruStyle?Brush(darkStyle?"#2910101A":"#38FFFFFF"):Brush("#EFF3F9"),Padding=new Thickness(8),CornerRadius=new CornerRadius(haruStyle?12:8),Child=new Image { Source=image,Height=250,Stretch=Microsoft.UI.Xaml.Media.Stretch.Uniform } };
         }
         var page=Stack(8); page.Children.Add(Text("你的姓名",18,true)); page.Children.Add(Text("求职意向 · 联系方式",9));
@@ -88,12 +99,12 @@ public sealed partial class MainWindow
         }
         return r;
     }
-    private async Task PreviewTemplate(Template t)
+    private async Task PreviewTemplate(Template t,bool withPhoto=false)
     {
         var web=new WebView2 { Width=720,Height=560 };
-        var dialog=new ContentDialog { XamlRoot=shell.XamlRoot,Title=t.Name,Content=web,PrimaryButtonText="使用模板",CloseButtonText="返回",DefaultButton=ContentDialogButton.Primary };
+        var dialog=new ContentDialog { XamlRoot=shell.XamlRoot,Title=t.Name+(withPhoto?" · 证件照占位预览":" · 无照片预览"),Content=web,PrimaryButtonText="使用模板",CloseButtonText="返回",DefaultButton=ContentDialogButton.Primary };
         web.DefaultBackgroundColor=haruStyle?Microsoft.UI.Colors.Transparent:Microsoft.UI.Colors.White;
-        dialog.Opened+=async (_,_)=>await Run(async ()=> { await InitializeWeb(web); web.NavigateToString(PreviewHtml(Demo(t),t)); });
+        dialog.Opened+=async (_,_)=>await Run(async ()=> { await InitializeWeb(web); web.NavigateToString(PreviewHtml(Demo(t),t,withPhoto)); });
         var result=await dialog.ShowAsync(); web.Close(); if(result==ContentDialogResult.Primary) await CreateResume(t);
     }
 }

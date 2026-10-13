@@ -19,7 +19,7 @@
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <PublishReadyToRun>false</PublishReadyToRun>
     <PublishTrimmed>false</PublishTrimmed>
-    <Version>0.6.3</Version>
+    <Version>0.7.0</Version>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
@@ -29,6 +29,9 @@
     <Content Include="Assets\UpdatePublicKey.pem" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\ReleaseIdentity.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Assets\ReleaseIdentity.json')" />
     <Content Include="Assets\Templates\*.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Fonts\*.pdf" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Fonts\*.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\TemplateCatalog.json" CopyToOutputDirectory="PreserveNewest" />
     <Manifest Include="$(ApplicationManifest)" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />

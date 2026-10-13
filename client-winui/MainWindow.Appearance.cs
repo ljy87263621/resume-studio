@@ -24,7 +24,7 @@ public sealed partial class MainWindow
     private static readonly (string Key,string Label,string Glyph)[] Pages = [
         ("templates","模板中心","\uE8A5"),("resumes","我的简历","\uE8A5"),("jobs","发现职位","\uE721"),
         ("sources","公司招聘官网","\uE774"),("favorites","职位收藏","\uE734"),("applications","投递记录","\uE73E"),
-        ("about","使用说明","\uE946"),("settings","设置","\uE713")
+        ("schedule","求职日程","\uE787"),("about","使用说明","\uE946"),("settings","设置","\uE713")
     ];
     private void BuildContentHost()
     {
@@ -55,7 +55,7 @@ public sealed partial class MainWindow
         {
             foreach(var type in new[] {typeof(TextBox),typeof(ComboBox)})
             {
-                var style=new Style(type); style.Setters.Add(new Setter(Control.CornerRadiusProperty,new CornerRadius(12))); style.Setters.Add(new Setter(Control.FontFamilyProperty,new FontFamily("MiSans"))); contentHost.Resources.Add(type,style);
+                var style=new Style(type); style.Setters.Add(new Setter(Control.CornerRadiusProperty,new CornerRadius(12))); style.Setters.Add(new Setter(Control.FontFamilyProperty,ResumeTypography.InterfaceFont)); contentHost.Resources.Add(type,style);
             }
         }
         ConfigureWindowMaterial();
@@ -109,6 +109,7 @@ public sealed partial class MainWindow
         panel.Children.Add(UpdateSettingsCard());
         panel.Children.Add(AiSettingsCard());
         var appearance=Stack(14); appearance.Children.Add(Text("界面与主题",20,true));
+        appearance.Children.Add(Text("界面字体：MiSans，由小米提供，随软件分发。",12));
         var style=new ComboBox { Header="界面版本",ItemsSource=new[] {"经典界面 · 当前默认","Haru 玻璃界面 · haruphoto 整体亚克力"},SelectedIndex=haruStyle?1:0,HorizontalAlignment=HorizontalAlignment.Stretch };
         style.SelectionChanged+=async (_,_)=>await Run(async ()=> { preferences.InterfaceStyle=style.SelectedIndex==1?"haru":"classic"; await ApplyPreferences(); }); appearance.Children.Add(style);
         var theme=new ComboBox { Header="Haru 界面主题",ItemsSource=new[] {"跟随系统","浅色","深色"},SelectedIndex=preferences.Theme=="light"?1:preferences.Theme=="dark"?2:0,IsEnabled=haruStyle,HorizontalAlignment=HorizontalAlignment.Stretch };
