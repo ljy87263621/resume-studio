@@ -26,9 +26,9 @@ public final class JobCapture {
         String status="link_only",message="已保留原始链接。收藏前可核对 / 补充职位信息。";
         if(Boolean.TRUE.equals(request.get("resolve"))) {
             try {
-                var fields=extractHtml(CompanyJobs.webpage(URI.create(url)),URI.create(url));
+                var fields=extractHtml(CompanyJobs.webpage(URI.create(original)),URI.create(original));
                 if(!fields.isEmpty()) { merge(job,fields); status="parsed"; job.put("infoStatus","公开详情自动解析，待核对"); message="已从公开详情页自动填入可读取的信息，请核对后收藏。"; }
-                else { status="unavailable"; message="详情页没有可公开读取的职位信息，可能需要登录或正常完成访问验证。可以使用“浏览并读取”，或粘贴详情文本。"; }
+                else { status="unavailable"; message="已读取网页，但未识别出明确的职位正文。可以使用“浏览并读取”加载完整页面，或粘贴详情文本后核对收藏。"; }
             } catch(Exception e) { status="unavailable"; message="未能自动读取详情（"+Objects.toString(e.getMessage(),"网络不可用")+"）。可使用“浏览并读取”，或粘贴详情文本；原始链接已保留。"; }
         }
         if(request.get("visibleFields") instanceof Map<?,?> fields) {
@@ -70,9 +70,10 @@ public final class JobCapture {
             try { var found=posting(Json.parse(scripts.group(1).trim())); if(found!=null&&!Json.str(found,"title").isBlank()) return postingFields(found); }
             catch(IllegalArgumentException ignored) { }
         }
+        var publicBody=JobPageText.fields(html,base);if(!publicBody.isEmpty())return publicBody;
         var result=new LinkedHashMap<String,Object>();
         String title=meta(html,"og:title"); if(title.isBlank()) title=element(html,"h1"); if(title.isBlank()) title=element(html,"title");
-        if(title.isBlank()||title.matches("(?is).*(请稍候|安全验证|页面不存在|404|访问受限|登录验证).*")) return result;
+        if(title.isBlank()||title.matches("(?is).*(请稍候|安全验证|人机验证|页面不存在|404|访问受限|登录验证|登录注册|Access denied|Checking your browser|Just a moment|captcha).*")) return result;
         var boss=Pattern.compile("【(.+?)招聘】[_\\-－]*(.+?)招聘[_\\-－]BOSS直聘").matcher(title);
         if(boss.find()) { result.put("title",boss.group(1)); result.put("company",boss.group(2)); }
         else result.put("title",title);

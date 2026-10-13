@@ -16,13 +16,18 @@ public sealed partial class MainWindow
           }
         }return '';
       };
-      const title=pick(['.job-banner .name h1','.job-name h1','.job-title','h1[itemprop="title"]','h1']);
-      const company=pick(['.company-info .name','.company-info a','.company-name a','.company-name','[itemprop="hiringOrganization"]']);
-      const salary=pick(['.job-banner .salary','.job-salary','.salary']);
-      const location=pick(['.job-area','.job-location','[itemprop="addressLocality"]']);
-      const description=pick(['.job-sec-text','.job-description','.job-detail .text','[itemprop="description"]']);
-      const text=(document.querySelector('.job-detail')||document.querySelector('main'))?.innerText||description;
-      return {url:window.location.href,text:text.slice(0,40000),fields:{title,company,salary,location,description}};
+      const title=pick(['.job-banner .name h1','.job-name h1','.job-title','main h1','article h1','h1[itemprop="title"]','h1','.entry-content h2']);
+      const body=pick(['.entry-content','.job-detail','main','article']);
+      const labeled=(labels)=>{const m=body.match(new RegExp('(?:^|\\n)\\s*(?:'+labels+')\\s*[：:]?\\s*(?:\\n\\s*)?([^\\n]+)','i'));return m&&m[1].trim().length<=200&&!/[：:]$/.test(m[1].trim())?m[1].trim():'';};
+      let company=pick(['.company-info .name','.company-info a','.company-name a','.company-name','[itemprop="hiringOrganization"]'])||labeled('招聘公司|公司名称|Hiring organization');
+      if(!company){const pieces=document.title.split(/\s*[|｜—]\s*|\s*-\s*/),last=pieces[pieces.length-1].trim();if(pieces.length>1&&last.length<=120&&/(科技|公司|集团|银行|研究院|医院|大学|股份|有限公司)$/.test(last)&&!/(招聘|职位|岗位)/.test(last))company=last;}
+      const salary=pick(['.job-banner .salary','.job-salary','.salary'])||labeled('薪资范围|薪资待遇|薪资|工资|Salary');
+      const location=pick(['.job-area','.job-location','[itemprop="addressLocality"]'])||labeled('工作地点|工作地址|工作城市|办公地点|Location');
+      let description=pick(['.job-sec-text','.job-description','.job-detail .text','[itemprop="description"]']);
+      const duties=body.match(/岗位职责|工作职责|职位职责|工作内容|职位描述|职责描述|任职资格|任职要求|岗位要求|职位要求|responsibilities|requirements|qualifications/gi)||[];
+      if(!description&&duties.length>=2&&!/^(人才招聘|校园招聘|社会招聘|Careers|Jobs|Join us)$/i.test(title))description=body;
+      const text=body||description;
+      return {url:window.location.href,text:text.slice(0,40000),fields:{title,company,salary,location,description:description.slice(0,30000)}};
     })()
     """;
     private async Task<Job?> ReadVisibleJob(Job original)
@@ -62,7 +67,7 @@ public sealed partial class MainWindow
                     string url=data.GetProperty("url").GetString()??"",visibleText=data.GetProperty("text").GetString()??"";
                     var fields=JsonSerializer.Deserialize<Dictionary<string,string>>(data.GetProperty("fields").GetRawText(),BackendClient.Json)!;
                     string title=fields.GetValueOrDefault("title","");
-                    if(string.IsNullOrWhiteSpace(title)||title.StartsWith("请稍候")||title is "安全验证" or "人机验证" or "登录" or "登录注册" or "访问验证"||fields.Where(p=>p.Key!="title").All(p=>string.IsNullOrWhiteSpace(p.Value)))
+                    if(string.IsNullOrWhiteSpace(title)||System.Text.RegularExpressions.Regex.IsMatch(title,@"(?i)安全验证|人机验证|请稍候|访问验证|Access denied|Checking your browser|Just a moment|captcha|^(?:\d{4}年?\s*)?(登录|登录注册|人才招聘|校园招聘|社会招聘|Careers|Jobs|Join us)$")||fields.Where(p=>p.Key!="title").All(p=>string.IsNullOrWhiteSpace(p.Value)))
                     { status.Text="当前页面尚未显示完整职位。请正常完成访问验证、登录或返回具体职位页后再读取。"; continue; }
                     var captured=await api.Post<CapturePreview>("capture-preview",new {text=url+"\n"+visibleText,visibleFields=fields});
                     var job=JsonSerializer.Deserialize<Job>(JsonSerializer.Serialize(original,BackendClient.Json),BackendClient.Json)!;
