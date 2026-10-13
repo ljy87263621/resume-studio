@@ -48,7 +48,9 @@ public static class UpdateInstaller
         foreach(string file in new[] {"Update-App.ps1","sync-distribution.ps1"}) File.Copy(Path.Combine(installRoot,"updater",file),Path.Combine(workspace,file),true);
         string request=Path.Combine(workspace,"request.json");
         await File.WriteAllTextAsync(request,JsonSerializer.Serialize(new InstallRequest(Environment.ProcessId,Path.GetFullPath(installRoot),source,workspace,dataDirectory),ReleaseUpdate.Json));
-        var info=new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"WindowsPowerShell","v1.0","powershell.exe")) {UseShellExecute=false,CreateNoWindow=true};
+        // A desktop shortcut starts the app inside its installation directory. The
+        // updater must run elsewhere so its own current directory cannot block the swap.
+        var info=new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"WindowsPowerShell","v1.0","powershell.exe")) {UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=workspace};
         foreach(string arg in new[] {"-NoProfile","-ExecutionPolicy","Bypass","-File",Path.Combine(workspace,"Update-App.ps1"),"-RequestFile",request}) info.ArgumentList.Add(arg);
         _=Process.Start(info)??throw new IOException("更新安装器未能启动。");
     }

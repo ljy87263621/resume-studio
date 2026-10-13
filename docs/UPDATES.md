@@ -31,3 +31,9 @@ Nightly 标签：`nightly-yyyyMMdd-八位提交`；安装包：`ResumeStudio-vX.
 `scripts/test-offline.ps1` 验证后端；`scripts/test-updater.ps1` 验证更新协议和隔离安装／回滚；`scripts/sign-release.ps1` 使用 Actions Secret 签署更新信息。私钥轮换需要保留旧公钥兼容或发布过渡版，不能直接换钥使已安装客户端无法验证。
 
 旧 v0.5.0 没有更新器，需先安装 v0.6.0。所有自动构建包仍保留 Java / .NET / WinUI 完整运行环境、许可证和对应 OpenJDK 源码。
+
+## v0.6.0 / v0.6.1 更新失败的恢复
+
+若提示安装目录 “is in use”，旧更新器可能继承了安装目录作为自身工作目录。v0.6.2 同时修复启动工作目录与 PowerShell 工作位置，并加入从安装目录启动的回归测试。
+
+旧版会复制并使用本机原有的更新脚本，第一次升级仍需要一次性修补：关闭软件，将正式 v0.6.2 完整包中的 `updater/Update-App.ps1` 复制到原安装目录的同名文件（建议先备份原脚本），再重新打开软件并检查更新。该脚本在验证更新路径后执行 `Set-Location -LiteralPath $workspace` 和 `[Environment]::CurrentDirectory=$workspace`。也可直接手动安装完整 v0.6.2。个人数据目录不参与程序目录替换。

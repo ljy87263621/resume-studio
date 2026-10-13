@@ -15,10 +15,14 @@ Copy-Item -LiteralPath (Join-Path $install 'ResumeStudio.exe') -Destination $sou
 'new program' | Set-Content (Join-Path $source 'new.dll'); Manifest $source @('ResumeStudio.exe','new.dll')
 $request=[ordered]@{processId=99999999;installRoot=$install;sourceRoot=$source;workspace=$workspace;dataDirectory=$data;restart=$false}
 $requestFile=Join-Path $workspace 'request.json'; $request | ConvertTo-Json | Set-Content $requestFile -Encoding UTF8
-& (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoProfile -ExecutionPolicy Bypass -File (Join-Path $workspace 'Update-App.ps1') -RequestFile $requestFile
+# Reproduce the installed shortcut: the child updater inherits the application directory.
+Push-Location -LiteralPath $install
+try { & (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoProfile -ExecutionPolicy Bypass -File (Join-Path $workspace 'Update-App.ps1') -RequestFile $requestFile }
+finally { Pop-Location }
 if($LASTEXITCODE -ne 0){throw 'Transactional install failed'}
 if(!(Test-Path (Join-Path $install 'personal.txt')) -or !(Test-Path (Join-Path $install 'modified.dll')) -or (Test-Path (Join-Path $install 'obsolete.dll')) -or !(Test-Path (Join-Path $install 'new.dll')) -or (Get-Content (Join-Path $data 'sentinel.txt')) -ne 'data sentinel'){throw 'Install failed to preserve data or modified files'}
 Write-Output 'PASS: transactional install, obsolete removal, modified and unknown files, personal data preservation'
+Write-Output 'PASS: inherited application working directory does not block the directory swap'
 # A publisher can accidentally ship an invalid executable; startup failure must restore the former directory.
 $request.restart=$true; 'invalid executable' | Set-Content (Join-Path $source 'ResumeStudio.exe'); Manifest $source @('ResumeStudio.exe','new.dll')
 $request | ConvertTo-Json | Set-Content $requestFile -Encoding UTF8

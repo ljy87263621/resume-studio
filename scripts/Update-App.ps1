@@ -28,6 +28,10 @@ try {
     if((Get-Item -LiteralPath $install -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Application directory cannot be a reparse point'}
     Check-OwnedSibling $candidate; Check-OwnedSibling $backup
     if(@(Get-ChildItem -LiteralPath $install -Recurse -Force | Where-Object {$_.Attributes -band [IO.FileAttributes]::ReparsePoint}).Count){throw 'Application directory contains a reparse point'}
+    # Both the PowerShell provider location and the process directory must be outside
+    # install. Older clients may still launch this helper from their shortcut directory.
+    Set-Location -LiteralPath $workspace
+    [Environment]::CurrentDirectory=$workspace
     $process=Get-Process -Id $request.processId -ErrorAction SilentlyContinue
     if($process){
         if($process.Path -ne (Join-Path $install 'ResumeStudio.exe')){throw 'Unexpected application process'}
