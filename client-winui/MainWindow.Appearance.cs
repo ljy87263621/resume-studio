@@ -69,7 +69,7 @@ public sealed partial class MainWindow
             Grid.SetColumn(contentHost,0);
             modernNavigation=new NavigationView { IsBackButtonVisible=NavigationViewBackButtonVisible.Collapsed,IsSettingsVisible=false,OpenPaneLength=210,CompactPaneLength=48,PaneDisplayMode=NavigationViewPaneDisplayMode.Auto,Content=contentHost };
             ConfigureGlassNavigation(modernNavigation);
-            modernNavigation.PaneTitle="拾简";
+            var brand=Row(10); brand.Margin=new Thickness(15,6,15,12); brand.Children.Add(BrandLogo(34)); var name=Text("拾简",22,true); name.VerticalAlignment=VerticalAlignment.Center; brand.Children.Add(name); modernNavigation.PaneHeader=brand;
             foreach(var page in Pages)
             {
                 var item=new NavigationViewItem { Content=page.Label,Tag=page.Key,Icon=new FontIcon { Glyph=page.Glyph,FontSize=16 } };
@@ -104,6 +104,7 @@ public sealed partial class MainWindow
     {
         Heading("设置","切换界面外观与预览节奏，简历和求职记录共用同一份本机数据。");
         var panel=Stack(18);
+        panel.Children.Add(AiSettingsCard());
         var appearance=Stack(14); appearance.Children.Add(Text("界面与主题",20,true));
         var style=new ComboBox { Header="界面版本",ItemsSource=new[] {"经典界面 · 当前默认","Haru 玻璃界面 · haruphoto 整体亚克力"},SelectedIndex=haruStyle?1:0,HorizontalAlignment=HorizontalAlignment.Stretch };
         style.SelectionChanged+=async (_,_)=>await Run(async ()=> { preferences.InterfaceStyle=style.SelectedIndex==1?"haru":"classic"; await ApplyPreferences(); }); appearance.Children.Add(style);
@@ -121,7 +122,7 @@ public sealed partial class MainWindow
         diagnostics.Children.Add(Text("耗时从窗口创建起计算，供比较同机启动表现；不包含启动进程前的磁盘与系统调度时间。",11)); panel.Children.Add(Card(diagnostics)); FillScroll(panel);
         var storage=Stack(12); storage.Children.Add(Text("本机存储",20,true));
         var storageInfo=Text(StorageUsage(),13); storage.Children.Add(storageInfo);
-        storage.Children.Add(Text("简历、职位收藏和投递记录保存在本机。编辑备份只保留上一版并压缩；预览磁盘缓存可随时重建。",12));
+        storage.Children.Add(Text("简历、职位收藏和投递记录保存在本机。上一版备份与最近 20 个历史版本压缩保存；预览磁盘缓存可随时重建。",12));
         var actions=Row(8);
         actions.Children.Add(Button("清理预览磁盘缓存",async ()=> { await ClearPreviewDiskCache(); storageInfo.Text=StorageUsage(); Success("缓存已清理","只清除了预览磁盘缓存，简历、备份、职位收藏和投递记录均保留。"); }));
         actions.Children.Add(Button("刷新占用",()=> { storageInfo.Text=StorageUsage(); return Task.CompletedTask; })); storage.Children.Add(actions);
@@ -143,7 +144,7 @@ public sealed partial class MainWindow
                 long size; try { size=new FileInfo(path).Length; } catch(IOException) { continue; } catch(UnauthorizedAccessException) { continue; }
                 string relative=Path.GetRelativePath(root,path);
                 if(relative.StartsWith("WebView2"+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)) cache+=size;
-                else if(Path.GetFileName(path).EndsWith(".bak",StringComparison.OrdinalIgnoreCase)||Path.GetFileName(path).EndsWith(".bak.gz",StringComparison.OrdinalIgnoreCase)) backups+=size;
+                else if(relative.StartsWith("history"+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)||Path.GetFileName(path).EndsWith(".bak",StringComparison.OrdinalIgnoreCase)||Path.GetFileName(path).EndsWith(".bak.gz",StringComparison.OrdinalIgnoreCase)) backups+=size;
                 else if(Path.GetFileName(path).StartsWith("backend.log",StringComparison.OrdinalIgnoreCase)) logs+=size;
                 else if(Path.GetExtension(path).Equals(".json",StringComparison.OrdinalIgnoreCase)) records+=size;
                 else other+=size;

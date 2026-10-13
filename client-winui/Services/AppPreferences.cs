@@ -10,6 +10,8 @@ public sealed class AppPreferences
     public string Theme { get; set; } = "system";
     public bool LivePreview { get; set; } = true;
     public int PreviewDelayMs { get; set; } = 900;
+    public string AiEndpoint { get; set; } = "";
+    public string AiModel { get; set; } = "";
     public static AppPreferences Load(string directory)
     {
         try

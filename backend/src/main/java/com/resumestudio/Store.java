@@ -10,7 +10,8 @@ import java.util.zip.GZIPOutputStream;
 /** Each document is atomically replaced. One compressed previous revision is kept for recovery. */
 public final class Store {
     private final Path root;
-    public Store(Path root) throws IOException { this.root=root.toAbsolutePath(); Files.createDirectories(this.root); }
+    private final ResumeHistory history;
+    public Store(Path root) throws IOException { this.root=root.toAbsolutePath(); Files.createDirectories(this.root); history=new ResumeHistory(this.root); }
     private Path path(String kind,String id) throws IOException {
         if (!Set.of("resumes","favorites","applications","sources").contains(kind)) throw new IllegalArgumentException("Invalid collection");
         if (!id.matches("[a-zA-Z0-9_-]{1,100}")) throw new IllegalArgumentException("Invalid identifier");
@@ -20,6 +21,20 @@ public final class Store {
         String id=Json.str(doc,"id"); if (id.isBlank()) id=UUID.randomUUID().toString();
         Map<String,Object> copy=new LinkedHashMap<>(doc); copy.put("id",id); copy.put("updatedAt",Instant.now().toString());
         Path p=path(kind,id), temp=p.resolveSibling(p.getFileName()+".tmp");
+        Map<String,Object> previous=Files.exists(p)?Json.object(Json.parse(Files.readString(p))):new LinkedHashMap<>();
+        if(kind.equals("resumes")&&!previous.isEmpty()) {
+            var before=new LinkedHashMap<>(previous); var after=new LinkedHashMap<>(copy); before.remove("updatedAt"); after.remove("updatedAt");
+            if(!Json.write(before).equals(Json.write(after))) history.capture(id,previous,"自动保存前",true);
+        }
+        if(kind.equals("applications")) {
+            // A submitted snapshot and its timeline are retained even when an older client saves the record.
+            for(String field:List.of("dueAt","eventKind","reminderDone","review","createdAt")) if(!copy.containsKey(field)&&previous.containsKey(field)) copy.put(field,previous.get(field));
+            if(previous.get("resumeSnapshot")!=null) { copy.put("resumeSnapshot",previous.get("resumeSnapshot")); copy.put("resumeTitle",previous.get("resumeTitle")); }
+            var events=new ArrayList<>(Json.array(previous.getOrDefault("timeline",List.of())));
+            if(!Json.str(previous,"status").equals(Json.str(copy,"status"))) events.add(Map.of("status",Json.str(copy,"status"),"at",Instant.now().toString()));
+            if(!Json.str(previous,"dueAt").equals(Json.str(copy,"dueAt"))) events.add(Map.of("status",Json.str(copy,"status"),"at",Instant.now().toString(),"note",Json.str(copy,"dueAt").isBlank()?"已清除下一次安排":Json.str(copy,"eventKind")+"："+Json.str(copy,"dueAt")));
+            copy.put("timeline",events.stream().skip(Math.max(0,events.size()-100)).toList());
+        }
         Path backup=p.resolveSibling(p.getFileName()+".bak.gz"), backupTemp=p.resolveSibling(p.getFileName()+".bak.gz.tmp");
         if (Files.exists(p)) {
             try (OutputStream out=new GZIPOutputStream(Files.newOutputStream(backupTemp))) { Files.copy(p,out); }
@@ -41,5 +56,12 @@ public final class Store {
     }
     public synchronized void delete(String kind,String id) throws IOException {
         Path p=path(kind,id); Files.deleteIfExists(p); Files.deleteIfExists(p.resolveSibling(p.getFileName()+".bak")); Files.deleteIfExists(p.resolveSibling(p.getFileName()+".bak.gz"));
+        if(kind.equals("resumes")) history.delete(id);
+    }
+    public synchronized List<Map<String,Object>> history(String id) throws IOException { path("resumes",id); return history.list(id); }
+    public synchronized Map<String,Object> revision(String id,String version) throws IOException { path("resumes",id); return history.get(id,version); }
+    public synchronized void checkpoint(String id,String label) throws IOException {
+        var doc=Json.object(Json.parse(Files.readString(path("resumes",id))));
+        history.capture(id,doc,label.isBlank()?"手动保存":label.substring(0,Math.min(100,label.length())),false);
     }
 }

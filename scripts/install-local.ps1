@@ -16,6 +16,6 @@ if(Test-Path $shortcutPath) {
     if($existing.TargetPath -ne $exe) { throw 'A different shortcut already uses this name' }
 }
 $shortcut=(New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
-$shortcut.TargetPath=$exe; $shortcut.WorkingDirectory=$destination; $shortcut.Description='Java 后端 + WinUI 3 简历制作与招聘投递客户端'; $shortcut.Save()
+$shortcut.TargetPath=$exe; $shortcut.WorkingDirectory=$destination; $shortcut.IconLocation=(Join-Path $destination 'Assets\AppIcon.ico')+',0'; $shortcut.Description='Java 后端 + WinUI 3 简历制作与招聘投递客户端'; $shortcut.Save()
 Write-Output "Installed: $exe"
 Write-Output "Desktop shortcut: $shortcutPath"

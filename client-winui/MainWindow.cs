@@ -39,6 +39,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         Title="拾简 Resume Studio";
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory,"Assets","AppIcon.ico"));
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1440,960));
         SystemBackdrop=new Microsoft.UI.Xaml.Media.MicaBackdrop();
         preferences=AppPreferences.Load(api.DataDirectory); BuildContentHost(); BuildShell();
@@ -51,12 +52,13 @@ public sealed partial class MainWindow : Window
         shell.Loaded+=async (_,_)=>await Run(Initialize);
         editTimer.Tick+=async (_,_)=> { editTimer.Stop(); await Run(SaveCurrent); };
         previewTimer.Tick+=async (_,_)=> { previewTimer.Stop(); if(currentPage=="editor") await Run(RenderPreview); };
+        reminderTimer.Tick+=async (_,_)=>await Run(CheckApplicationReminders);
         systemSettings.ColorValuesChanged+=(_,_)=>DispatcherQueue.TryEnqueue(()=> { if(preferences.InterfaceStyle=="haru"&&preferences.Theme=="system") _=Run(ApplyPreferences); });
         AppWindow.Closing+=(sender,args)=>
         {
             if(closing) return;
             args.Cancel=true;
-            _=Run(async ()=> { editTimer.Stop(); previewTimer.Stop(); CancelJobSearch(); await SaveCurrent(); closing=true; preview?.Close(); api.Dispose(); Close(); });
+            _=Run(async ()=> { editTimer.Stop(); previewTimer.Stop(); reminderTimer.Stop(); CancelJobSearch(); await SaveCurrent(); closing=true; preview?.Close(); api.Dispose(); Close(); });
         };
     }
     private static SolidColorBrush Brush(string hex)
@@ -89,9 +91,11 @@ public sealed partial class MainWindow : Window
         var scale=shell.XamlRoot.RasterizationScale;
         AppWindow.Resize(new Windows.Graphics.SizeInt32(Math.Min((int)(1440*scale),area.Width-80),Math.Min((int)(920*scale),area.Height-60)));
         await api.StartAsync(); Mark("backendReady"); ready=true; saveState.Text="本地服务已连接";
+        reminderTimer.Start(); await CheckApplicationReminders();
         if(templates.Count==0) { templates=await api.Get<List<Template>>("templates"); await Navigate("templates"); Mark("firstPageReady"); }
         if(Environment.GetCommandLineArgs().Contains("--benchmark")) { await Benchmark(); return; }
         if(Environment.GetCommandLineArgs().Contains("--iteration-test")) { await IterationOnlyTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--feature-test")) { await FeatureTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--self-test"))
         {
             Title="拾简 · 自动验证窗口"; shell.IsHitTestVisible=false;
@@ -103,7 +107,7 @@ public sealed partial class MainWindow : Window
     {
         var side=new Grid { Background=Brush("#14233F"),Padding=new Thickness(17,28,17,20) };
         side.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto }); side.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) }); side.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto });
-        var brand=Stack(5); var name=Text("拾简",30,true); name.Foreground=Brush("#FFFFFF"); brand.Children.Add(name); var sub=Text("RESUME STUDIO",10); sub.CharacterSpacing=150; sub.Foreground=Brush("#8CA6D2"); brand.Children.Add(sub); side.Children.Add(brand);
+        var brand=Stack(5); var name=Text("拾简",30,true); name.Foreground=Brush("#FFFFFF"); var mark=Row(10); mark.Children.Add(BrandLogo(46)); mark.Children.Add(name); brand.Children.Add(mark); var sub=Text("RESUME STUDIO",10); sub.CharacterSpacing=150; sub.Foreground=Brush("#8CA6D2"); brand.Children.Add(sub); side.Children.Add(brand);
         var menu=Stack(7); menu.Margin=new Thickness(0,35,0,0);
         foreach(var item in Pages)
         {
@@ -166,7 +170,7 @@ public sealed partial class MainWindow : Window
         string lastValue=NormalizeLines(value); box.Text=value;
         box.TextChanged+=(_,_)=> { string text=NormalizeLines(box.Text); if(text==lastValue) return; lastValue=text; setter(text); Changed(); }; return box;
     }
-    private void Changed() { dirty=true; revision++; saveState.Text="有未保存的修改…"; editTimer.Stop(); editTimer.Start(); previewTimer.Stop(); if(preferences.LivePreview) previewTimer.Start(); }
+    private void Changed() { CaptureUndo(); dirty=true; revision++; saveState.Text="有未保存的修改…"; editTimer.Stop(); editTimer.Start(); previewTimer.Stop(); if(preferences.LivePreview) previewTimer.Start(); }
     private async Task SaveCurrent()
     {
         await saveLock.WaitAsync();
@@ -185,9 +189,7 @@ public sealed partial class MainWindow : Window
     }
     private async Task ExportPdf()
     {
-        if(current is null) return; await SaveCurrent();
-        var picker=new FileSavePicker { SuggestedFileName=SafeName(current.Title) }; picker.FileTypeChoices.Add("PDF 文档",new List<string> {".pdf"}); InitPicker(picker); var file=await picker.PickSaveFileAsync(); if(file is null) return;
-        await PrintPdf(file.Path); Success("PDF 已导出",file.Path);
+        await CheckPdf(true);
     }
     private async Task PrintPdf(string path)
     {
@@ -238,7 +240,7 @@ public sealed partial class MainWindow : Window
         var description=Text(j.Description,13); description.MaxHeight=145; description.TextTrimming=TextTrimming.CharacterEllipsis; c.Children.Add(description);
         c.Children.Add(JobLink(j));
         var actions=Row(); actions.Children.Add(Button("详情",async ()=> { var content=Stack(); content.Children.Add(Text(j.Company+" · "+j.Location,14,true)); content.Children.Add(Text(j.Description,14)); var dialog=new ContentDialog { XamlRoot=shell.XamlRoot,Title=j.Title,Content=new ScrollViewer { Content=content,MaxHeight=480 },PrimaryButtonText="前往投递",CloseButtonText="返回" }; if(await dialog.ShowAsync()==ContentDialogResult.Primary) await OpenJob(j); })); actions.Children.Add(Button("前往投递 ↗",()=>OpenJob(j),true));
-        actions.Children.Add(Button(favorite?"取消收藏":"收藏职位",async ()=> { if(favorite) { await api.Delete("favorites/"+j.Id); await Navigate("favorites"); } else { await api.Save("favorites",j); Success("已收藏",j.Title); } })); if(favorite) { actions.Children.Add(Button("编辑收藏",()=>EditFavorite(j,false))); actions.Children.Add(Button("自动补全",()=>ResolveFavorite(j))); } actions.Children.Add(Button("复制链接",()=>CopyJobLink(j))); c.Children.Add(actions); return Card(c);
+        actions.Children.Add(Button(favorite?"取消收藏":"收藏职位",async ()=> { if(favorite) { await api.Delete("favorites/"+j.Id); await Navigate("favorites"); } else { await api.Save("favorites",j); Success("已收藏",j.Title); } })); if(favorite) { actions.Children.Add(Button("编辑收藏",()=>EditFavorite(j,false))); actions.Children.Add(Button("自动补全",()=>ResolveFavorite(j))); } actions.Children.Add(Button("复制链接",()=>CopyJobLink(j))); c.Children.Add(actions); c.Children.Add(Button("针对岗位制作简历",()=>FitJob(j))); return Card(c);
     }
     private async Task OpenJob(Job job)
     {
@@ -252,28 +254,10 @@ public sealed partial class MainWindow : Window
         if(!Uri.TryCreate(url,UriKind.Absolute,out var uri)||uri.Scheme!="https"||string.IsNullOrEmpty(uri.Host)||!string.IsNullOrEmpty(uri.UserInfo)) throw new IOException("招聘链接无效");
         if(!await Windows.System.Launcher.LaunchUriAsync(uri)) throw new IOException("无法打开默认浏览器");
     }
-    private async Task ShowApplications()
-    {
-        Heading("投递记录","记录已打开、已投递、面试和录用进度。状态由你确认更新。"); var panel=Stack(18);
-        var records=await api.Get<List<ApplicationRecord>>("applications");
-        if(currentPage!="applications") return;
-        var stats=Row(16); foreach(string s in new[] {"已打开","已投递","面试中","已录用","已结束"}) stats.Children.Add(Card(Text($"{s}  {records.Count(r=>r.Status==s)}",15,true),new Thickness(16))); panel.Children.Add(stats);
-        panel.Children.Add(Button("＋ 手动添加投递",async ()=> { var record=new ApplicationRecord { Status="已投递" }; var f=Stack(); var title=new TextBox { Header="职位名称" }; var company=new TextBox { Header="公司" }; var url=new TextBox { Header="招聘页面链接（HTTPS）" }; f.Children.Add(title); f.Children.Add(company); f.Children.Add(url); var dialog=new ContentDialog { XamlRoot=shell.XamlRoot,Title="添加投递记录",Content=f,PrimaryButtonText="保存",CloseButtonText="取消" }; if(await dialog.ShowAsync()==ContentDialogResult.Primary) { record.Title=title.Text; record.Company=company.Text; record.Url=url.Text; await api.Save("applications",record); await Navigate("applications"); } }));
-        if(records.Count==0) panel.Children.Add(Card(Text("打开职位投递页面后，这里会自动生成一条“已打开”记录。",16)));
-        foreach(var r in records)
-        {
-            var c=Stack(12); c.Children.Add(Text(r.Title,20,true)); c.Children.Add(Text(r.Company+"  ·  创建时间："+LocalDate(r.CreatedAt),12)); var line=Row();
-            var status=new ComboBox { Header="当前进度",ItemsSource=new[] {"已打开","已投递","面试中","已录用","已结束"},SelectedItem=r.Status,Width=150 };
-            var resume=new TextBox { Header="使用的简历版本",Text=r.ResumeTitle,Width=280 }; line.Children.Add(status); line.Children.Add(resume); c.Children.Add(line);
-            var notes=new TextBox { Header="备注 / 面试安排",Text=r.Notes,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,MinHeight=85,MaxLength=10000 }; c.Children.Add(notes);
-            var actions=Row(); actions.Children.Add(Button("保存记录",async ()=> { r.Status=(string)status.SelectedItem; r.ResumeTitle=resume.Text; r.Notes=notes.Text; await api.Save("applications",r); await Navigate("applications"); },true)); actions.Children.Add(Button("打开原页面 ↗",()=>Launch(r.Url))); actions.Children.Add(Button("删除",async ()=> { if(await Confirm("删除记录？",r.Title)) { await api.Delete("applications/"+r.Id); await Navigate("applications"); } })); c.Children.Add(actions); panel.Children.Add(Card(c));
-        }
-        FillScroll(panel);
-    }
     private void ShowAbout()
     {
         Heading("使用说明","简历制作与求职跟进，在一个桌面工作区完成。"); var content=Stack(22);
-        foreach(var item in new[] {("01  GitHub 高星模板","8 套岗位适配，覆盖前端、后端、嵌入式与通用型，来自 Awesome-CV、billryan/resume、Deedy-Resume 和 Jake’s Resume。卡片显示仓库来源、核实星数和许可。版式从原仓库 LaTeX 模板移植为中文 A4，原文件与许可随应用保存。6 套旧模板保留以兼容已有简历。"),("02  制作与辅助","填写信息与经历 → 调整模块顺序和样式 → 检查模块状态与规则建议 → 查看 A4 内容余量 → 导出 PDF。支持 Markdown 表格与标题日期。AI 提示词按钮只复制规则与当前简历，不连接在线模型。"),("03  招聘与跨平台收藏","21个公司来源可在发现职位汇总查询，支持腾讯及 Greenhouse、Lever、Ashby、SmartRecruiters、Workday；可添加国内外公司官网并查看真实接入状态。BOSS、猎聘、智联、前程无忧、拉勾、牛客和企业官网职位可粘贴详情链接，尝试自动解析公开信息后收藏。也可正常浏览详情并读取可见职位内容。原始链接保留访问参数，规范地址单独去重，可按平台筛选。平台账号收藏不会自动同步。"),("04  直接采集的范围","当前自动获取的是公开职位源。BOSS 搜索页依赖脚本和访问状态，robots 限制搜索参数路径，当前未实现其匿名批量采集；单个公开详情可尝试直接解析，受限页面可在“浏览并读取”中正常完成验证后读取可见内容。未实现验证码绕过、外部浏览器 Cookie 读取或自动投递。"),("05  投递与数据","“前往投递”打开原页面并记录“已打开”；实际投递在原站完成，再手动更新进度。简历、收藏、投递记录由本地 Java 服务保存。上一完整版本以压缩 JSON 备份，设置页提供存储占用和预览缓存清理。"),("06  技术与来源","客户端为原生 WinUI 3 / .NET 8，后端 Java 21，WebView2 用于预览和 PDF。开源模板与 resume-helper 功能来源说明见安装目录 THIRD_PARTY_NOTICES.md。")}) { var s=Stack(); s.Children.Add(Text(item.Item1,20,true)); s.Children.Add(Text(item.Item2,15)); content.Children.Add(Card(s)); }
+        foreach(var item in new[] {("01  GitHub 高星模板","8 套岗位适配，覆盖前端、后端、嵌入式与通用型，来自 Awesome-CV、billryan/resume、Deedy-Resume 和 Jake’s Resume。卡片显示仓库来源、核实星数和许可。版式从原仓库 LaTeX 模板移植为中文 A4，原文件与许可随应用保存。6 套旧模板保留以兼容已有简历。"),("02  制作与辅助","填写信息与经历 → 调整模块顺序和样式 → 检查模块状态与规则建议 → 查看 A4 内容余量 → 导出 PDF。支持 Markdown 表格与标题日期。支持格式按钮、撤销重做和最近 20 个历史版本；PDF 导出前检查真实分页。岗位对照列出要求与简历依据，可按设置的兼容接口获取 AI 建议，逐条确认后生成独立岗位简历。AI 提示词按钮仍只复制文本。"),("03  招聘与跨平台收藏","21个公司来源可在发现职位汇总查询，支持腾讯及 Greenhouse、Lever、Ashby、SmartRecruiters、Workday；可添加国内外公司官网并查看真实接入状态。BOSS、猎聘、智联、前程无忧、拉勾、牛客和企业官网职位可粘贴详情链接，尝试自动解析公开信息后收藏。也可正常浏览详情并读取可见职位内容。原始链接保留访问参数，规范地址单独去重，可按平台筛选。平台账号收藏不会自动同步。"),("04  直接采集的范围","当前自动获取的是公开职位源。BOSS 搜索页依赖脚本和访问状态，robots 限制搜索参数路径，当前未实现其匿名批量采集；单个公开详情可尝试直接解析，受限页面可在“浏览并读取”中正常完成验证后读取可见内容。未实现验证码绕过、外部浏览器 Cookie 读取或自动投递。"),("05  投递与数据","“前往投递”打开原页面并记录“已打开”；实际投递在原站完成，再手动更新进度。简历、收藏、投递记录由本地 Java 服务保存。记录进度时间线、笔试／面试日期和复盘，可确认所用简历并固定投递快照。应用运行时提前 24 小时及到期提醒，关闭期间不通知，重新打开补查待办。上一版备份与最多 20 个历史版本压缩保存。"),("06  技术与来源","客户端为原生 WinUI 3 / .NET 8，后端 Java 21，WebView2 用于预览和 PDF。开源模板与 resume-helper 功能来源说明见安装目录 THIRD_PARTY_NOTICES.md。")}) { var s=Stack(); s.Children.Add(Text(item.Item1,20,true)); s.Children.Add(Text(item.Item2,15)); content.Children.Add(Card(s)); }
         content.Children.Add(Card(Text("本机数据目录：\n"+api.DataDirectory,13))); content.Children.Add(Button("打开数据目录",()=> { Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList={api.DataDirectory},UseShellExecute=true }); return Task.CompletedTask; })); FillScroll(content);
     }
     private async Task SelfTest()

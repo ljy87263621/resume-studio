@@ -23,16 +23,18 @@ jobs:
       - name: Build client and local backend
         shell: pwsh
         run: ./scripts/build.ps1
-      - name: Test public job parsing and robots rules
+      - name: Test job parsing and resume application workflows
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force backend/build/test-classes | Out-Null
-          & "$env:JAVA_HOME/bin/javac.exe" -encoding UTF-8 -Xlint:all -Werror -cp backend/build/classes -d backend/build/test-classes backend/src/test/java/com/resumestudio/CompanyJobsTest.java backend/src/test/java/com/resumestudio/JobCaptureTest.java
+          & "$env:JAVA_HOME/bin/javac.exe" -encoding UTF-8 -Xlint:all -Werror -cp backend/build/classes -d backend/build/test-classes backend/src/test/java/com/resumestudio/CompanyJobsTest.java backend/src/test/java/com/resumestudio/JobCaptureTest.java backend/src/test/java/com/resumestudio/WorkflowTest.java
           if ($LASTEXITCODE -ne 0) { throw 'Test compile failed' }
           & "$env:JAVA_HOME/bin/java.exe" -cp 'backend/build/classes;backend/build/test-classes' com.resumestudio.CompanyJobsTest
           if ($LASTEXITCODE -ne 0) { throw 'Job parsing tests failed' }
           & "$env:JAVA_HOME/bin/java.exe" -cp 'backend/build/classes;backend/build/test-classes' com.resumestudio.JobCaptureTest
           if ($LASTEXITCODE -ne 0) { throw 'Job detail capture tests failed' }
+          & "$env:JAVA_HOME/bin/java.exe" -cp 'backend/build/classes;backend/build/test-classes' com.resumestudio.WorkflowTest
+          if ($LASTEXITCODE -ne 0) { throw 'Resume application workflow tests failed' }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ResumeStudio-windows-x64

@@ -23,7 +23,7 @@ public final class Server {
         try {
             if(!token.equals(e.getRequestHeaders().getFirst("X-Resume-Token"))) { send(e,401,Map.of("error","Unauthorized")); return; }
             String path=e.getRequestURI().getPath().substring(5), method=e.getRequestMethod();
-            if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.4.2","java",System.getProperty("java.version"))); return; }
+            if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.5.0","java",System.getProperty("java.version"))); return; }
             if(path.equals("templates")&&method.equals("GET")) { send(e,200,Templates.all()); return; }
             if(path.equals("job-sources")&&method.equals("GET")) { send(e,200,jobs.sources()); return; }
             if(Set.of("resume-check","capture-preview").contains(path)&&method.equals("POST")) {
@@ -39,6 +39,11 @@ public final class Server {
                 send(e,200,jobs.search(q.getOrDefault("provider","all"),q.getOrDefault("keyword",""),q.getOrDefault("city",""),page)); return;
             }
             String[] parts=path.split("/",-1); String kind=parts[0];
+            if(kind.equals("resumes")&&parts.length>=3&&parts[2].equals("history")) {
+                if(parts.length==3&&method.equals("GET")) { send(e,200,store.history(parts[1])); return; }
+                if(parts.length==3&&method.equals("POST")) { store.checkpoint(parts[1],"手动保存"); send(e,200,Map.of("saved",true)); return; }
+                if(parts.length==4&&method.equals("GET")) { send(e,200,store.revision(parts[1],parts[3])); return; }
+            }
             if(Set.of("resumes","favorites","applications","sources").contains(kind)) {
                 if(parts.length==1&&method.equals("GET")) { send(e,200,store.list(kind)); return; }
                 if(parts.length==1&&method.equals("POST")) {
@@ -75,7 +80,12 @@ public final class Server {
             URI uri=URI.create(Json.str(doc,"url"));
             if(!"https".equals(uri.getScheme())||uri.getHost()==null||uri.getUserInfo()!=null) throw new IllegalArgumentException("Job URL must be HTTPS");
             if(Json.str(doc,"title").isBlank()) throw new IllegalArgumentException("Job title is required");
-            if(kind.equals("applications")&&!Set.of("已打开","已投递","面试中","已录用","已结束").contains(Json.str(doc,"status"))) throw new IllegalArgumentException("Invalid application status");
+            if(kind.equals("applications")) {
+                if(!Set.of("已打开","已投递","笔试中","面试中","已录用","已结束").contains(Json.str(doc,"status"))) throw new IllegalArgumentException("Invalid application status");
+                String due=Json.str(doc,"dueAt"); if(!due.isBlank()) try { java.time.OffsetDateTime.parse(due); } catch(java.time.format.DateTimeParseException ex) { throw new IllegalArgumentException("安排时间格式无效"); }
+                if(Json.str(doc,"review").length()>10000) throw new IllegalArgumentException("复盘内容过长");
+                if(doc.get("resumeSnapshot")!=null) validate("resumes",Json.object(doc.get("resumeSnapshot")));
+            }
         }
     }
     private static Map<String,String> query(String raw) {

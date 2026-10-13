@@ -21,6 +21,7 @@ public sealed partial class MainWindow
     private async Task OpenEditor()
     {
         if(current is null) return;
+        InitializeUndo();
         if(editorResumeId!=current.Id) { selectedEditorPart=0; editorResumeId=current.Id; }
         currentPage="editor"; DetachPreview(); body.Children.Clear(); body.ColumnDefinitions.Clear(); body.RowDefinitions.Clear();
         Heading("简历工作台","选择模块编辑，右侧保留预览；自动保存与预览独立运行。"); UpdateNavigation("editor");
@@ -35,6 +36,13 @@ public sealed partial class MainWindow
         toolbar.SecondaryCommands.Add(EditorAction("查看打印版",Symbol.Print,async ()=> { await WaitForPreview(); preview!.CoreWebView2.ShowPrintUI(Microsoft.Web.WebView2.Core.CoreWebView2PrintDialogKind.Browser); }));
         toolbar.SecondaryCommands.Add(EditorAction("检查与建议",Symbol.Help,ShowResumeCheck));
         toolbar.SecondaryCommands.Add(EditorAction("AI 提示词",Symbol.Copy,CopyAiPrompt));
+        toolbar.SecondaryCommands.Add(EditorAction("撤销",Symbol.Undo,()=>UndoEditor(false)));
+        toolbar.SecondaryCommands.Add(EditorAction("重做",Symbol.Redo,()=>UndoEditor(true)));
+        toolbar.SecondaryCommands.Add(EditorAction("保存历史版本",Symbol.SaveLocal,SaveCheckpoint));
+        toolbar.SecondaryCommands.Add(EditorAction("历史版本",Symbol.Clock,ShowHistory));
+        toolbar.SecondaryCommands.Add(EditorAction("岗位对照",Symbol.Find,()=>SelectFitJob()));
+        toolbar.SecondaryCommands.Add(EditorAction("检查 PDF 分页",Symbol.Document,()=>CheckPdf(false)));
+        AddUndoKeys(body);
         var saveKey=new KeyboardAccelerator { Key=VirtualKey.S,Modifiers=VirtualKeyModifiers.Control };
         saveKey.Invoked+=async (_,e)=> { e.Handled=true; await Run(SaveCurrent); }; toolbar.KeyboardAccelerators.Add(saveKey);
         Grid.SetColumnSpan(toolbar,3); body.Children.Add(toolbar);
@@ -88,7 +96,7 @@ public sealed partial class MainWindow
         {
             var section=resume.Sections[selectedEditorPart-2]; fields.Children.Add(Text(section.Title,20,true));
             fields.Children.Add(Field("模块标题",section.Title,v=>section.Title=v));
-            var input=Field("内容",section.Content,v=>section.Content=v,true,"## 项目 / 经历名称 | 时间\n- 技术、职责与真实成果"); input.MinHeight=340; fields.Children.Add(input);
+            var input=Field("内容",section.Content,v=>section.Content=v,true,"## 项目 / 经历名称 | 时间\n- 技术、职责与真实成果"); input.MinHeight=340; fields.Children.Add(FormattingBar(input)); fields.Children.Add(input);
             fields.Children.Add(Text("支持小标题、时间、列表、加粗和 Markdown 表格。只编辑当前模块，预览始终展示整份简历。",12));
             var visible=new ToggleSwitch { Header="显示模块",IsOn=section.Visible }; visible.Toggled+=(_,_)=> { section.Visible=visible.IsOn; Changed(); }; fields.Children.Add(visible);
             fields.Children.Add(Button("上移模块",()=>MoveEditorSection(section,-1))); fields.Children.Add(Button("下移模块",()=>MoveEditorSection(section,1)));

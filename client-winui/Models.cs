@@ -97,6 +97,25 @@ public sealed class ApplicationRecord
     public string Notes { get; set; } = "";
     public string CreatedAt { get; set; } = DateTimeOffset.Now.ToString("O");
     public string UpdatedAt { get; set; } = "";
+    public Resume? ResumeSnapshot { get; set; }
+    public List<ApplicationEvent> Timeline { get; set; } = [];
+    public string EventKind { get; set; } = "面试";
+    public string DueAt { get; set; } = "";
+    public bool ReminderDone { get; set; }
+    public string Review { get; set; } = "";
+}
+public sealed class ApplicationEvent
+{
+    public string Status { get; set; } = "";
+    public string At { get; set; } = "";
+    public string Note { get; set; } = "";
+}
+public sealed class ResumeRevision
+{
+    public string Id { get; set; } = "";
+    public string CreatedAt { get; set; } = "";
+    public string Label { get; set; } = "";
+    public Resume? Resume { get; set; }
 }
 public sealed class JobResult
 {

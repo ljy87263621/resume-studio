@@ -4,7 +4,7 @@ $root = Split-Path $PSScriptRoot -Parent
 if(!$Version) { [xml]$project=Get-Content (Join-Path $root 'client-winui\ResumeStudio.csproj'); $Version=[string]$project.Project.PropertyGroup.Version }
 if($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version' }
 $source = if ($SourceDirectory) { [IO.Path]::GetFullPath($SourceDirectory) } else { Join-Path $root 'release\ResumeStudio' }
-foreach ($required in @('ResumeStudio.exe','ResumeStudio.dll','backend\resume-backend.jar','runtime\bin\java.exe','LICENSE','THIRD_PARTY_NOTICES.md','RUNTIME_NOTICES.md')) {
+foreach ($required in @('ResumeStudio.exe','ResumeStudio.dll','Assets\AppIcon.ico','Assets\AppLogo.png','backend\resume-backend.jar','runtime\bin\java.exe','LICENSE','THIRD_PARTY_NOTICES.md','RUNTIME_NOTICES.md')) {
     if (!(Test-Path (Join-Path $source $required))) { throw "Missing release file: $required" }
 }
 $manifestPath=Join-Path $source 'distribution-manifest.json'
