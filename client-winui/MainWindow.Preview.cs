@@ -10,6 +10,7 @@ public sealed partial class MainWindow
     private async Task<CoreWebView2Environment> CreateWebEnvironment() => await CoreWebView2Environment.CreateWithOptionsAsync("",Path.Combine(api.DataDirectory,"WebView2"),new CoreWebView2EnvironmentOptions());
     private readonly SemaphoreSlim renderLock = new(1,1);
     private string lastRenderedHtml = "";
+    private bool renderingPdf;
     private Grid? previewHost;
     private static string PreviewHtml(Resume resume,Template template,bool photoPlaceholder=false)
     {
@@ -42,7 +43,9 @@ public sealed partial class MainWindow
         try
         {
             var web=preview; var core=web.CoreWebView2;
-            string html=PreviewHtml(current,templates.First(t=>t.Id==current.TemplateId));
+            var template=templates.First(t=>t.Id==current.TemplateId);
+            var document=showPreviewExamples&&!renderingPdf?Services.ResumeExamples.ForPreview(current,template):current;
+            string html=PreviewHtml(document,template);
             if(html==lastRenderedHtml) return;
             string marker=Guid.NewGuid().ToString("N"); renderMarker=marker;
             if(lastRenderedHtml.Length==0)

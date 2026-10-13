@@ -18,7 +18,7 @@ MIT 来源的版权与许可见各目录 `LICENSE`；Deedy 为 Apache-2.0，原�
 
 根目录 MIT 许可证仅适用于拾简原创代码。`ResumeRenderer.cs` 中 `.awesome` 版式适配段与对应预览保留 LPPL-1.3c，`.deedy` 版式及双栏结构适配段与对应预览保留 Apache-2.0，`.billryan` / `.jake` 段与对应预览保留各上游 MIT 署名。适配代码和预览采用拾简自己的文件名和模板标识；适配维护者为 `scj040921`，源代码在公开仓库内一同提供。运行组件许可另外见 [RUNTIME_NOTICES.md](RUNTIME_NOTICES.md)。
 
-resume-helper 的功能规则在 `ResumeAdvisor.java` 中重新适配本应用的简历模型；UI、AI 提示词和容量检测由 WinUI 客户端实现。未接入在线 AI；复制提示词仅写入系统剪贴板，不上传简历。
+resume-helper 的功能规则在 `ResumeAdvisor.java` 中适配本应用模型；UI、AI 提示词和容量检测由 WinUI 客户端实现。复制提示词仅写入剪贴板；在线 AI 由用户配置兼容接口，主动请求时才发送所选内容。
 
 ## 职位来源
 

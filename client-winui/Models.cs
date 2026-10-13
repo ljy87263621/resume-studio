@@ -38,6 +38,7 @@ public sealed class ResumeSection
     public string Title { get; set; } = "";
     public string Content { get; set; } = "";
     public bool Visible { get; set; } = true;
+    public override string ToString() => "≡  "+Title+(Visible?"":" · 隐藏");
 }
 public sealed class Resume
 {

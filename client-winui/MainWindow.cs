@@ -99,6 +99,7 @@ public sealed partial class MainWindow : Window
         if(Environment.GetCommandLineArgs().Contains("--benchmark")) { await Benchmark(); return; }
         if(Environment.GetCommandLineArgs().Contains("--iteration-test")) { await IterationOnlyTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--feature-test")) { await FeatureTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--workbench-test")) { await WorkbenchTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--template-assets")) { await GenerateTemplateAssets(); return; }
         if(Environment.GetCommandLineArgs().Contains("--self-test"))
         {
@@ -200,8 +201,17 @@ public sealed partial class MainWindow : Window
     }
     private async Task PrintPdf(string path)
     {
-        await WaitForPreview(); var settings=preview!.CoreWebView2.Environment.CreatePrintSettings(); settings.ShouldPrintBackgrounds=true; settings.ShouldPrintHeaderAndFooter=false; settings.PageWidth=8.2677; settings.PageHeight=11.6929; settings.MarginTop=0; settings.MarginBottom=0; settings.MarginLeft=0; settings.MarginRight=0;
-        if(!await preview.CoreWebView2.PrintToPdfAsync(path,settings)) throw new IOException("PDF 导出失败，请检查目标文件是否被占用。");
+        renderingPdf=true;previewTimer.Stop();
+        try {
+            await WaitForPreview();await renderLock.WaitAsync();
+            try {
+                var settings=preview!.CoreWebView2.Environment.CreatePrintSettings();settings.ShouldPrintBackgrounds=true;settings.ShouldPrintHeaderAndFooter=false;settings.PageWidth=8.2677;settings.PageHeight=11.6929;settings.MarginTop=0;settings.MarginBottom=0;settings.MarginLeft=0;settings.MarginRight=0;
+                if(!await preview.CoreWebView2.PrintToPdfAsync(path,settings))throw new IOException("PDF 导出失败，请检查目标文件是否被占用。");
+            } finally {renderLock.Release();}
+        } finally {
+            renderingPdf=false;
+            if(currentPage=="editor")await RenderPreview();
+        }
     }
     private async Task ExportJson()
     {

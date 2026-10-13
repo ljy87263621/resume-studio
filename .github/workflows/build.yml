@@ -34,6 +34,7 @@ jobs:
           ./scripts/test-updater.ps1
           ./scripts/test-channel-publication.ps1
           ./scripts/test-schedule.ps1
+          ./scripts/test-workbench.ps1
       - name: Install verified installer build tools
         shell: pwsh
         run: ./scripts/setup-installer-tools.ps1

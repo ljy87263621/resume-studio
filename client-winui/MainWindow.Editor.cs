@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using ResumeStudio.Services;
 using Windows.System;
+using System.Collections.ObjectModel;
 
 namespace ResumeStudio;
 
@@ -10,7 +11,12 @@ public sealed partial class MainWindow
 {
     private int selectedEditorPart;
     private string editorResumeId="";
-    private ListBox? editorParts;
+    private ListView? editorParts;
+    private ObservableCollection<ResumeSection> editorModules=[];
+    private bool draggingEditorModule,updatingDirectory;
+    private AppBarButton? layoutButton;
+    private ToggleSwitch? examplePreviewToggle;
+    private bool showPreviewExamples=true;
     private Grid? editorFields;
     private TextBlock? editorProgressText,editorContentCount;
     private ProgressBar? editorProgress;
@@ -34,11 +40,16 @@ public sealed partial class MainWindow
         toolbar.PrimaryCommands.Add(EditorAction("我的简历",Symbol.Back,()=>Navigate("resumes")));
         toolbar.PrimaryCommands.Add(EditorAction("保存",Symbol.Save,async ()=> {await SaveCurrent();Feedback("简历已保存","修改已写入本机。");}));
         toolbar.PrimaryCommands.Add(EditorAction("导出 PDF",Symbol.Download,ExportPdf));
+        layoutButton=new AppBarButton {Label="排版设置",Icon=new SymbolIcon(Symbol.Font),Flyout=new Flyout {Content=LayoutSettings(current)}};
+        ButtonMotion(layoutButton);ToolTipService.SetToolTip(layoutButton,"模板、字体、颜色、字号与行距");toolbar.PrimaryCommands.Add(layoutButton);
         toolbar.PrimaryCommands.Add(EditorAction("刷新预览",Symbol.Refresh,RenderPreview));
         toolbar.PrimaryCommands.Add(EditorAction("撤销",Symbol.Undo,()=>UndoEditor(false)));
         toolbar.PrimaryCommands.Add(EditorAction("重做",Symbol.Redo,()=>UndoEditor(true)));
         toolbar.SecondaryCommands.Add(EditorAction("备份 JSON",Symbol.SaveLocal,ExportJson));
-        toolbar.SecondaryCommands.Add(EditorAction("查看打印版",Symbol.Print,async ()=> { await WaitForPreview(); preview!.CoreWebView2.ShowPrintUI(Microsoft.Web.WebView2.Core.CoreWebView2PrintDialogKind.Browser); }));
+        toolbar.SecondaryCommands.Add(EditorAction("查看打印版",Symbol.Print,async ()=> {
+            showPreviewExamples=false;if(examplePreviewToggle is not null)examplePreviewToggle.IsOn=false;
+            await WaitForPreview();preview!.CoreWebView2.ShowPrintUI(Microsoft.Web.WebView2.Core.CoreWebView2PrintDialogKind.Browser);
+        }));
         toolbar.SecondaryCommands.Add(EditorAction("检查与建议",Symbol.Help,ShowResumeCheck));
         toolbar.SecondaryCommands.Add(EditorAction("AI 提示词",Symbol.Copy,CopyAiPrompt));
         toolbar.SecondaryCommands.Add(EditorAction("保存历史版本",Symbol.SaveLocal,SaveCheckpoint));
@@ -55,21 +66,36 @@ public sealed partial class MainWindow
         var moduleColumn=Stack(10); moduleColumn.Children.Add(Text("内容目录",14,true));
         editorProgressText=Text("",11);editorProgress=new ProgressBar {Minimum=0,Maximum=1,Height=5,HorizontalAlignment=HorizontalAlignment.Stretch};
         moduleColumn.Children.Add(editorProgressText);moduleColumn.Children.Add(editorProgress);
-        editorParts=new ListBox { HorizontalAlignment=HorizontalAlignment.Stretch,BorderThickness=new Thickness(0),Background=PanelMaterial };
-        var labels=new List<string> { "基本信息","排版设置" }; labels.AddRange(current.Sections.Select(s=>s.Title+(s.Visible?"":" · 隐藏")));
-        editorParts.ItemsSource=labels;
-        editorParts.SelectionChanged+=(_,_)=> { if(editorParts.SelectedIndex>=0) { selectedEditorPart=editorParts.SelectedIndex; ShowEditorPart(); } }; moduleColumn.Children.Add(editorParts);
+        moduleColumn.Children.Add(Button("基本信息",()=> {SelectBasicInformation();return Task.CompletedTask;}));
+        moduleColumn.Children.Add(Text("拖动模块调整顺序",11));
+        editorModules=new ObservableCollection<ResumeSection>(current.Sections);
+        editorParts=new ListView {HorizontalAlignment=HorizontalAlignment.Stretch,BorderThickness=new Thickness(0),Background=PanelMaterial,SelectionMode=ListViewSelectionMode.Single,CanDragItems=true,CanReorderItems=true,AllowDrop=true,ItemsSource=editorModules};
+        ToolTipService.SetToolTip(editorParts,"按住模块并拖动；也可在模块设置中使用上移／下移");
+        editorParts.SelectionChanged+=(_,_)=> {
+            if(draggingEditorModule||updatingDirectory)return;
+            if(editorParts.SelectedIndex>=0){selectedEditorPart=editorParts.SelectedIndex+2;ShowEditorPart();}
+        };
+        editorParts.DragItemsStarting+=(_,_)=>draggingEditorModule=true;
+        editorParts.DragItemsCompleted+=async (_,args)=>await Run(async ()=> {
+            draggingEditorModule=false;
+            var selected=editorParts.SelectedItem as ResumeSection??args.Items.OfType<ResumeSection>().FirstOrDefault();
+            if(CommitEditorOrder(selected)){ShowEditorPart();await SaveCurrent();await RenderPreview();Feedback("模块顺序已保存","预览与导出将使用新的顺序。");}
+        });moduleColumn.Children.Add(editorParts);
         moduleColumn.Children.Add(Button("＋ 添加模块",async ()=> { current.Sections.Add(new ResumeSection { Title="自定义模块" }); Changed(); selectedEditorPart=current.Sections.Count+1; await SaveCurrent(); await OpenEditor(); }));
         var modulesScroll=new ScrollViewer { Content=moduleColumn,HorizontalScrollMode=ScrollMode.Disabled,VerticalScrollBarVisibility=ScrollBarVisibility.Auto };
         form.Children.Add(modulesScroll); editorFields=new Grid(); Grid.SetColumn(editorFields,1); form.Children.Add(editorFields);
         Grid.SetRow(form,1); body.Children.Add(form);
-        editorParts.SelectedIndex=Math.Clamp(selectedEditorPart,0,labels.Count-1);
+        if(selectedEditorPart>=2&&current.Sections.Count>0)editorParts.SelectedIndex=Math.Clamp(selectedEditorPart-2,0,current.Sections.Count-1);
+        else SelectBasicInformation();
         UpdateEditorProgress();
 
         preview??=new WebView2 { HorizontalAlignment=HorizontalAlignment.Stretch,VerticalAlignment=VerticalAlignment.Stretch };
         preview.DefaultBackgroundColor=haruStyle?Microsoft.UI.Colors.Transparent:Microsoft.UI.Colors.White;
         var previewPanel=new Grid(); previewPanel.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto }); previewPanel.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) });
-        capacityText=Text("正在估算 A4 内容容量…",11); capacityText.Margin=new Thickness(12,9,12,9); previewPanel.Children.Add(capacityText); Grid.SetRow(preview,1); previewPanel.Children.Add(preview);
+        var previewHeader=Stack(4);previewHeader.Margin=new Thickness(12,9,12,9);
+        examplePreviewToggle=new ToggleSwitch {Header="未填写处显示模板示例",IsOn=showPreviewExamples};
+        examplePreviewToggle.Toggled+=async (_,_)=>await Run(async ()=> {showPreviewExamples=examplePreviewToggle.IsOn;await RenderPreview();});previewHeader.Children.Add(examplePreviewToggle);
+        capacityText=Text("正在估算 A4 内容容量…",11);previewHeader.Children.Add(capacityText);previewPanel.Children.Add(previewHeader); Grid.SetRow(preview,1); previewPanel.Children.Add(preview);
         previewHost=previewPanel;
         var frame=Card(previewPanel,new Thickness(0)); Grid.SetColumn(frame,2); Grid.SetRow(frame,1); body.Children.Add(frame);
         await InitializeWeb(preview); await RenderPreview(); await UpdateCapacity(preview);
@@ -88,28 +114,15 @@ public sealed partial class MainWindow
             fields.Children.Add(Field("个人简介",resume.Profile.Summary,v=>resume.Profile.Summary=v,true));
             fields.Children.Add(Button("添加证件照",ImportPhoto)); fields.Children.Add(Button("移除照片",()=> { resume.Photo=""; Changed(); return Task.CompletedTask; }));
         }
-        else if(selectedEditorPart==1)
-        {
-            fields.Children.Add(Text("排版设置",20,true));
-            var choices=new ComboBox { Header="模板",ItemsSource=templates,SelectedItem=templates.First(t=>t.Id==resume.TemplateId),HorizontalAlignment=HorizontalAlignment.Stretch };
-            choices.SelectionChanged+=(_,_)=> { if(choices.SelectedItem is Template t) { resume.TemplateId=t.Id; resume.Color=t.Color; Changed(); } }; fields.Children.Add(choices);
-            var font=new ComboBox {Header="简历字体",ItemsSource=ResumeTypography.Labels,SelectedIndex=Array.IndexOf(ResumeTypography.Names,ResumeTypography.Normalize(resume.FontFamily)),HorizontalAlignment=HorizontalAlignment.Stretch};
-            font.SelectionChanged+=(_,_)=> {if(font.SelectedIndex>=0){resume.FontFamily=ResumeTypography.Names[font.SelectedIndex];Changed();}};fields.Children.Add(font);
-            fields.Children.Add(Text("MiSans 随软件提供；其他字体使用本机字体。未安装时由系统选择替代字体。",11));
-            var colors=Row(5); foreach(string color in new[] {"#245AE8","#167D78","#353D59","#222222","#7955B4","#1E668A"}) { var button=Button("●",()=> { resume.Color=color; Changed(); return Task.CompletedTask; }); button.Foreground=Brush(color); button.Padding=new Thickness(6,4,6,4); colors.Children.Add(button); } fields.Children.Add(colors);
-            var size=new Slider { Header="正文字号",Minimum=10,Maximum=16,StepFrequency=0.5,Value=resume.FontSize }; size.ValueChanged+=(_,_)=> { resume.FontSize=size.Value; Changed(); }; fields.Children.Add(size);
-            var spacing=new Slider { Header="行间距",Minimum=1.2,Maximum=2,StepFrequency=0.1,Value=resume.LineHeight }; spacing.ValueChanged+=(_,_)=> { resume.LineHeight=spacing.Value; Changed(); }; fields.Children.Add(spacing);
-            fields.Children.Add(Text("界面主题不会改变简历的打印配色；PDF 保持白色纸张。",12));
-        }
-        else if(selectedEditorPart-2<resume.Sections.Count)
+        else if(selectedEditorPart-2>=0&&selectedEditorPart-2<resume.Sections.Count)
         {
             var section=resume.Sections[selectedEditorPart-2]; fields.Children.Add(Text(section.Title,20,true));
             var anchor=Button("在预览中定位模块",FocusPreviewSection);ToolTipService.SetToolTip(anchor,"滚动到当前模块并短暂高亮；不会改变 PDF");fields.Children.Add(anchor);
-            fields.Children.Add(Field("模块标题",section.Title,v=>section.Title=v));
+            fields.Children.Add(Field("模块标题",section.Title,v=> {section.Title=v;RefreshDirectoryLabel(section);}));
             var input=Field("内容",section.Content,v=>section.Content=v,true,"## 项目 / 经历名称 | 时间\n- 技术、职责与真实成果"); input.MinHeight=340; fields.Children.Add(FormattingBar(input)); fields.Children.Add(input);
             editorContentCount=Text("",11);fields.Children.Add(editorContentCount);UpdateEditorProgress();
             fields.Children.Add(Text("支持小标题、时间、列表、加粗和 Markdown 表格。只编辑当前模块，预览始终展示整份简历。",12));
-            var options=Stack(10);var visible=new ToggleSwitch { Header="显示模块",IsOn=section.Visible }; visible.Toggled+=(_,_)=> { section.Visible=visible.IsOn; Changed(); }; options.Children.Add(visible);
+            var options=Stack(10);var visible=new ToggleSwitch { Header="显示模块",IsOn=section.Visible }; visible.Toggled+=(_,_)=> { section.Visible=visible.IsOn;RefreshDirectoryLabel(section); Changed(); }; options.Children.Add(visible);
             var moves=Row(6);var up=Button("上移模块",()=>MoveEditorSection(section,-1));up.IsEnabled=selectedEditorPart>2;var down=Button("下移模块",()=>MoveEditorSection(section,1));down.IsEnabled=selectedEditorPart-2<resume.Sections.Count-1;moves.Children.Add(up);moves.Children.Add(down);options.Children.Add(moves);
             options.Children.Add(Button("移除模块",async ()=> { if(await Confirm("移除模块？",section.Title)) { resume.Sections.Remove(section); selectedEditorPart=Math.Max(0,selectedEditorPart-1); Changed(); await SaveCurrent(); await OpenEditor(); } }));fields.Children.Add(Disclosure("模块显示与顺序",options,true));
         }
@@ -144,5 +157,46 @@ public sealed partial class MainWindow
         if(target<0||target>=current.Sections.Count) return;
         current.Sections.RemoveAt(index); current.Sections.Insert(target,section); selectedEditorPart=target+2;
         Changed(); await SaveCurrent(); await OpenEditor();
+    }
+
+    private void SelectBasicInformation()
+    {
+        if(editorParts is not null)editorParts.SelectedIndex=-1;
+        selectedEditorPart=0;ShowEditorPart();
+    }
+
+    private void RefreshDirectoryLabel(ResumeSection section)
+    {
+        int index=editorModules.IndexOf(section);if(index<0||editorParts is null)return;
+        updatingDirectory=true;
+        try {editorModules[index]=section;editorParts.SelectedItem=section;}
+        finally {updatingDirectory=false;}
+    }
+
+    private bool CommitEditorOrder(ResumeSection? selected)
+    {
+        if(current is null||current.Sections.SequenceEqual(editorModules))return false;
+        // Native reordering changes the collection first; persist the final permutation once.
+        if(editorModules.Count!=current.Sections.Count||editorModules.Distinct().Count()!=editorModules.Count||editorModules.Any(section=>!current.Sections.Contains(section)))return false;
+        current.Sections=editorModules.ToList();
+        selectedEditorPart=selected is null?0:current.Sections.IndexOf(selected)+2;
+        lastUndoCapture=DateTime.MinValue;Changed();return true;
+    }
+
+    private UIElement LayoutSettings(Resume resume)
+    {
+        var fields=Stack(12);fields.Width=320;fields.Children.Add(Text("排版设置",20,true));
+        var choices=new ComboBox {Header="模板",ItemsSource=templates,SelectedItem=templates.First(t=>t.Id==resume.TemplateId),HorizontalAlignment=HorizontalAlignment.Stretch};
+        choices.SelectionChanged+=(_,_)=> {if(choices.SelectedItem is Template t){resume.TemplateId=t.Id;resume.Color=t.Color;Changed();}};fields.Children.Add(choices);
+        var font=new ComboBox {Header="简历字体",ItemsSource=ResumeTypography.Labels,SelectedIndex=Array.IndexOf(ResumeTypography.Names,ResumeTypography.Normalize(resume.FontFamily)),HorizontalAlignment=HorizontalAlignment.Stretch};
+        font.SelectionChanged+=(_,_)=> {if(font.SelectedIndex>=0){resume.FontFamily=ResumeTypography.Names[font.SelectedIndex];Changed();}};fields.Children.Add(font);
+        fields.Children.Add(Text("MiSans 随软件提供；其他字体使用本机字体。",11));
+        var colors=Row(5);foreach(string color in new[] {"#245AE8","#167D78","#353D59","#222222","#7955B4","#1E668A"}) {
+            var button=Button("●",()=> {resume.Color=color;Changed();return Task.CompletedTask;});button.Foreground=Brush(color);button.Padding=new Thickness(6,4,6,4);ToolTipService.SetToolTip(button,"主题色 "+color);colors.Children.Add(button);
+        }fields.Children.Add(colors);
+        var size=new Slider {Header="正文字号",Minimum=10,Maximum=16,StepFrequency=.5,Value=resume.FontSize};size.ValueChanged+=(_,_)=> {resume.FontSize=size.Value;Changed();};fields.Children.Add(size);
+        var spacing=new Slider {Header="行间距",Minimum=1.2,Maximum=2,StepFrequency=.1,Value=resume.LineHeight};spacing.ValueChanged+=(_,_)=> {resume.LineHeight=spacing.Value;Changed();};fields.Children.Add(spacing);
+        fields.Children.Add(Text("PDF 使用白色纸张，仅包含你填写的内容。",11));
+        return new ScrollViewer {Content=fields,MaxHeight=540,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
     }
 }

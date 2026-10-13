@@ -64,7 +64,7 @@ public sealed partial class MainWindow
             var multiline=ResumeEditing.Format("first\nsecond\nthird",6,7,"bullet"); Check(multiline.Text=="first\n- second\nthird","format selected lines without changing neighbors");
             var toggle=ResumeEditing.Format("- first\n- second",0,16,"bullet"); Check(toggle.Text=="first\nsecond","toggle list formatting");
             current=await api.Save("resumes",new Resume {Title="隔离功能验证",TemplateId=templates[0].Id,Profile=new Profile {Name="测试姓名",Phone="private-phone",Email="private-email",Role="嵌入式实习"},Sections=[new() {Title="技能",Content="- Python\n- C / Linux"},new() {Title="项目",Content="## 实验 | 2026\n- 实现 TCP 通信并验证。"}]}); dirty=false;
-            await OpenEditor(); editorParts!.SelectedIndex=2; await Task.Delay(180); var input=FindTextField(body,"内容")!;
+            await OpenEditor(); editorParts!.SelectedIndex=0; await Task.Delay(180); var input=FindTextField(body,"内容")!;
             input.Select(0,8); var button=FeatureButton(body,"加粗")??throw new Exception("format button missing");
             ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke(); await Task.Delay(180);
             Check(current.Sections[0].Content.StartsWith("**- Python**"),"native format button updates model");
@@ -97,7 +97,7 @@ public sealed partial class MainWindow
             await FeatureClick(editDialog,"保存记录"); await editing;
             record=(await api.Get<List<ApplicationRecord>>("applications")).First(r=>r.Id==record.Id);
             Check(record.Status=="面试中"&&record.Review=="原生弹窗复盘保存验证"&&record.ResumeSnapshot!.Sections[0].Content==original.Sections[0].Content,"native application dialog saves stage and review without changing snapshot");
-            current=await api.Save("resumes",target); dirty=false; await OpenEditor(); editorParts!.SelectedIndex=2; await Task.Delay(180); await SaveNativePreview(Path.Combine(output,"editor.png"));
+            current=await api.Save("resumes",target); dirty=false; await OpenEditor(); editorParts!.SelectedIndex=0; await Task.Delay(180); await SaveNativePreview(Path.Combine(output,"editor.png"));
             string pdf=Path.Combine(output,"checked-resume.pdf"); await PrintPdf(pdf); var pages=await PdfInspection.Read(pdf); Check(pages.Count>0&&pages.All(p=>!p.NearlyBlank),"actual PDF page inspection and blank detection");
             await File.WriteAllBytesAsync(Path.Combine(output,"pdf-page-1.png"),pages[0].Image);
             var pdfCheck=CheckPdf(false); var pdfDialog=await FeatureDialog("PDF 导出检查"); await FeatureClick(pdfDialog,"返回编辑"); await pdfCheck; Check(!inspectingPdf,"native PDF inspection dialog opens and closes");
