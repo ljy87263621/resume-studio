@@ -9,6 +9,7 @@ public sealed class AppPreferences
     public string InterfaceStyle { get; set; } = "classic";
     public string Theme { get; set; } = "system";
     public bool LivePreview { get; set; } = true;
+    public bool MotionEnabled { get; set; } = true;
     public int PreviewDelayMs { get; set; } = 900;
     public string AiEndpoint { get; set; } = "";
     public string AiModel { get; set; } = "";

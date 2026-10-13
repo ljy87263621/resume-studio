@@ -4,6 +4,13 @@
 
 Java 后端 + 原生 WinUI 3 Windows 客户端，支持简历制作、PDF 导出、企业官网职位查询、收藏和投递进度管理。GitHub 高星简历模板已移植到桌面编辑与导出流程。来源、固定提交、星数核实时间与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
+## v0.7.1：编辑与日程交互优化
+
+- 页面入场、卡片悬停和按钮按压动效，可在设置中关闭；慢操作显示进度并防止重复提交。
+- 简历编辑增加填写进度、展开分组、字数统计、Ctrl+B 和预览模块定位，自动保存状态清晰可见。
+- 日程增加统计、类型筛选、快速添加、展开详情和完成后撤销；撤销保留后续编辑。
+- 使用与验证范围见 [v0.7.1 说明](docs/ITERATION-0.7.1.md)。
+
 ## v0.7.0：照片双版预览、求职日程与 MiSans
 
 - 模板卡片并排显示有证件照占位／无证件照两种真实预览，分别可放大查看。
@@ -86,7 +93,7 @@ Java 后端 + 原生 WinUI 3 Windows 客户端，支持简历制作、PDF 导出
 
 ## 运行
 
-从 [GitHub Releases](https://github.com/scj040921/resume-studio/releases) 下载 `ResumeStudio-v0.7.0-windows-x64.zip`，解压后双击目录中的 `ResumeStudio.exe`。必须保留整个目录，含自包含 .NET / Windows App SDK 及精简 Java 21 运行时。客户端自动启动本地 Java 服务并在关闭窗口时结束该服务，无需手动安装 Java 或 .NET。需要 Windows 10 2004 或更新的 x64 系统及 Microsoft Edge WebView2 Runtime。不要在压缩包内直接运行。
+从 [GitHub Releases](https://github.com/scj040921/resume-studio/releases) 下载 `ResumeStudio-v0.7.1-windows-x64.zip`，解压后双击目录中的 `ResumeStudio.exe`。必须保留整个目录，含自包含 .NET / Windows App SDK 及精简 Java 21 运行时。客户端自动启动本地 Java 服务并在关闭窗口时结束该服务，无需手动安装 Java 或 .NET。需要 Windows 10 2004 或更新的 x64 系统及 Microsoft Edge WebView2 Runtime。不要在压缩包内直接运行。
 
 发布附带 `SHA256SUMS.txt`。OpenJDK 源码归档属于运行组件的对应源码，普通用户只需下载应用 ZIP。原创应用代码采用 [MIT](LICENSE)，模板及运行组件保留各自许可，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 和 [RUNTIME_NOTICES.md](RUNTIME_NOTICES.md)。
 

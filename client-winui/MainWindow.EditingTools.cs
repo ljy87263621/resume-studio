@@ -48,7 +48,10 @@ public sealed partial class MainWindow
         foreach(var item in new[] {("加粗","bold"),("列表","bullet"),("小标题","heading"),("表格","table")}) {
             var button=Button(item.Item1,()=> { var result=ResumeEditing.Format(NormalizeLines(input.Text),input.SelectionStart,input.SelectionLength,item.Item2); lastUndoCapture=DateTime.MinValue; input.Text=result.Text; input.Focus(FocusState.Programmatic); input.Select(result.Start,result.Length); return Task.CompletedTask; });
             button.Padding=new Thickness(4,7,4,7); Grid.SetColumn(button,index++); panel.Children.Add(button);
+            ToolTipService.SetToolTip(button,item.Item2=="bold"?"选中文本后加粗 · Ctrl+B":item.Item2=="bullet"?"将选中行切换为列表":item.Item2=="heading"?"插入经历标题与时间":"插入 Markdown 表格");
         }
+        var bold=new KeyboardAccelerator {Key=VirtualKey.B,Modifiers=VirtualKeyModifiers.Control};
+        bold.Invoked+=(_,e)=> {e.Handled=true;var result=ResumeEditing.Format(NormalizeLines(input.Text),input.SelectionStart,input.SelectionLength,"bold");lastUndoCapture=DateTime.MinValue;input.Text=result.Text;input.Select(result.Start,result.Length);};input.KeyboardAccelerators.Add(bold);
         return panel;
     }
     private async Task SaveCheckpoint()

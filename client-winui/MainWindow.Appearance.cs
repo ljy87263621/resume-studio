@@ -32,6 +32,7 @@ public sealed partial class MainWindow
         contentHost.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto });
         contentHost.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto });
         contentHost.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) });
+        contentHost.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto });
         var header=new Grid();
         header.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(1,GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width=GridLength.Auto });
@@ -41,10 +42,12 @@ public sealed partial class MainWindow
         headerFrame.LayoutUpdated+=(_,_)=>UpdateGlassDragRegions();
         shell.Loaded+=(_,_)=>shell.XamlRoot.Changed+=(_,_)=>UpdateGlassDragRegions();
         Grid.SetRow(notice,1); contentHost.Children.Add(notice); Grid.SetRow(body,2); contentHost.Children.Add(body);
+        Grid.SetRow(feedback,3); contentHost.Children.Add(feedback);
     }
     private void BuildShell()
     {
         haruStyle=preferences.InterfaceStyle=="haru";
+        motionEnabled=preferences.MotionEnabled; Entrance(body);
         var systemColor=systemSettings.GetColorValue(UIColorType.Background);
         darkStyle=haruStyle&&(preferences.Theme=="dark"||preferences.Theme=="system"&&systemColor.R+systemColor.G+systemColor.B<384);
         shell.RequestedTheme=darkStyle?ElementTheme.Dark:ElementTheme.Light;
@@ -110,6 +113,9 @@ public sealed partial class MainWindow
         panel.Children.Add(AiSettingsCard());
         var appearance=Stack(14); appearance.Children.Add(Text("界面与主题",20,true));
         appearance.Children.Add(Text("界面字体：MiSans，由小米提供，随软件分发。",12));
+        var motion=new ToggleSwitch {Header="交互动效",IsOn=preferences.MotionEnabled};
+        motion.Toggled+=async (_,_)=>await Run(async ()=> {preferences.MotionEnabled=motion.IsOn;motionEnabled=motion.IsOn;Entrance(body);await preferences.SaveAsync(api.DataDirectory);});appearance.Children.Add(motion);
+        appearance.Children.Add(Text("页面入场、按钮按压与卡片悬停会使用动态反馈；关闭后保留展开、状态提示与快捷操作。系统关闭动画时也会减少动效。",12));
         var style=new ComboBox { Header="界面版本",ItemsSource=new[] {"经典界面 · 当前默认","Haru 玻璃界面 · haruphoto 整体亚克力"},SelectedIndex=haruStyle?1:0,HorizontalAlignment=HorizontalAlignment.Stretch };
         style.SelectionChanged+=async (_,_)=>await Run(async ()=> { preferences.InterfaceStyle=style.SelectedIndex==1?"haru":"classic"; await ApplyPreferences(); }); appearance.Children.Add(style);
         var theme=new ComboBox { Header="Haru 界面主题",ItemsSource=new[] {"跟随系统","浅色","深色"},SelectedIndex=preferences.Theme=="light"?1:preferences.Theme=="dark"?2:0,IsEnabled=haruStyle,HorizontalAlignment=HorizontalAlignment.Stretch };

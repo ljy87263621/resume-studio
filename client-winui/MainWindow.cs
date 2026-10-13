@@ -42,7 +42,7 @@ public sealed partial class MainWindow : Window
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory,"Assets","AppIcon.ico"));
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1440,960));
         SystemBackdrop=new Microsoft.UI.Xaml.Media.MicaBackdrop();
-        preferences=AppPreferences.Load(api.DataDirectory); BuildContentHost(); BuildShell();
+        preferences=AppPreferences.Load(api.DataDirectory); InitializeFeedback(); BuildContentHost(); BuildShell();
         if(Environment.GetCommandLineArgs().Contains("--appearance-review")) Title="拾简 · 界面材质验证（数据隔离）";
         var catalogue=Path.Combine(AppContext.BaseDirectory,"Assets","TemplateCatalog.json");
         if(File.Exists(catalogue)) templates=JsonSerializer.Deserialize<List<Template>>(File.ReadAllText(catalogue),BackendClient.Json)??[];
@@ -58,7 +58,7 @@ public sealed partial class MainWindow : Window
         {
             if(closing) return;
             args.Cancel=true;
-            _=Run(async ()=> { editTimer.Stop(); previewTimer.Stop(); reminderTimer.Stop(); CancelJobSearch(); await SaveCurrent(); closing=true; updateCancellation.Cancel(); preview?.Close(); api.Dispose(); Close(); });
+            _=Run(async ()=> { editTimer.Stop(); previewTimer.Stop(); reminderTimer.Stop(); feedbackTimer.Stop(); CancelJobSearch(); await SaveCurrent(); closing=true; updateCancellation.Cancel(); preview?.Close(); api.Dispose(); Close(); });
         };
     }
     private static SolidColorBrush Brush(string hex)
@@ -70,12 +70,13 @@ public sealed partial class MainWindow : Window
     private static TextBlock Text(string text,double size=14,bool bold=false) => new() { Text=text,FontSize=size,FontFamily=ResumeTypography.InterfaceFont,FontWeight=bold?Microsoft.UI.Text.FontWeights.SemiBold:Microsoft.UI.Text.FontWeights.Normal,Foreground=Brush(Ink),TextWrapping=TextWrapping.Wrap };
     private static StackPanel Stack(double spacing=12) => new() { Spacing=spacing };
     private static StackPanel Row(double spacing=10) => new() { Orientation=Orientation.Horizontal,Spacing=spacing };
-    private static Border Card(UIElement child,Thickness? padding=null) => new() { Child=child,Padding=padding??new Thickness(22),Background=PanelMaterial,BorderBrush=EdgeMaterial,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(haruStyle?14:12) };
+    private static Border Card(UIElement child,Thickness? padding=null) => InteractiveCard(child,padding??new Thickness(22));
     private Button Button(string label,Func<Task> action,bool primary=false)
     {
         var b=new Button { Content=label,Padding=new Thickness(15,9,15,9),CornerRadius=new CornerRadius(haruStyle?12:7),FontFamily=ResumeTypography.InterfaceFont };
         if(primary) { b.Background=Brush(Accent); b.Foreground=Brush("#FFFFFF"); }
-        b.Click+=async (_,_)=>await Run(action); return b;
+        ButtonMotion(b); ToolTipService.SetToolTip(b,label);
+        b.Click+=async (_,_)=>await Run(()=>ExecuteButton(b,action)); return b;
     }
     private async Task Run(Func<Task> action)
     {
@@ -174,7 +175,7 @@ public sealed partial class MainWindow : Window
         string lastValue=NormalizeLines(value); box.Text=value;
         box.TextChanged+=(_,_)=> { string text=NormalizeLines(box.Text); if(text==lastValue) return; lastValue=text; setter(text); Changed(); }; return box;
     }
-    private void Changed() { CaptureUndo(); dirty=true; revision++; saveState.Text="有未保存的修改…"; editTimer.Stop(); editTimer.Start(); previewTimer.Stop(); if(preferences.LivePreview) previewTimer.Start(); }
+    private void Changed() { CaptureUndo(); dirty=true; revision++; SaveIndicator("有未保存的修改…",true); UpdateEditorProgress(); editTimer.Stop(); editTimer.Start(); previewTimer.Stop(); if(preferences.LivePreview) previewTimer.Start(); }
     private async Task SaveCurrent()
     {
         await saveLock.WaitAsync();
@@ -185,10 +186,12 @@ public sealed partial class MainWindow : Window
                 int savedRevision=revision; string id=current.Id;
                 var snapshot=JsonSerializer.Deserialize<Resume>(JsonSerializer.Serialize(current,BackendClient.Json),BackendClient.Json)!;
                 if(string.IsNullOrWhiteSpace(snapshot.Title)) { saveState.Text="请填写简历名称后保存"; throw new InvalidOperationException("简历名称不能为空，当前修改尚未保存。"); }
+                SaveIndicator("正在保存…",true);
                 var saved=await api.Save("resumes",snapshot);
-                if(current.Id==id&&revision==savedRevision) { dirty=false; current.UpdatedAt=saved.UpdatedAt; saveState.Text="已保存  "+DateTime.Now.ToString("HH:mm:ss"); }
+                if(current.Id==id&&revision==savedRevision) { dirty=false; current.UpdatedAt=saved.UpdatedAt; SaveIndicator("已保存  "+DateTime.Now.ToString("HH:mm:ss")); }
             }
         }
+        catch {SaveIndicator("保存未完成，请重试",true);throw;}
         finally { saveLock.Release(); }
     }
     private async Task ExportPdf()
