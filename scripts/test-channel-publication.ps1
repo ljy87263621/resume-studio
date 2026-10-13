@@ -31,11 +31,16 @@ try {
     @{channel='stable';version='0.6.0';commit=('a'*40);builtAt='2026-10-13T00:00:00Z';tag='v0.6.0'}|ConvertTo-Json|Set-Content source/Assets/ReleaseIdentity.json -Encoding utf8
     $package=Join-Path $fixtureRoot 'release/ResumeStudio-v0.6.0-windows-x64.zip';[IO.File]::WriteAllBytes($package,[Text.Encoding]::UTF8.GetBytes('isolated channel fixture'))
     $global:resumeChannelFixtureSize=(Get-Item -LiteralPath $package).Length
+    $installer=Join-Path $fixtureRoot 'release/ResumeStudio-v0.6.0-Setup-x64.exe'
+    [IO.File]::WriteAllBytes($installer,[Text.Encoding]::UTF8.GetBytes('isolated installer fixture'))
     & (Join-Path $repositoryRoot 'scripts/sign-release.ps1') -PackagePath $package -SourceDirectory (Join-Path $fixtureRoot 'source')
     & (Join-Path $repositoryRoot 'scripts/publish-channel.ps1') -Channel stable
     $envelope=Get-Content release/stable.json -Raw|ConvertFrom-Json;$data=[Convert]::FromBase64String($envelope.data)
     if($global:resumeChannelUploads -ne 1 -or !$rsa.VerifyData($data,[Convert]::FromBase64String($envelope.signature),[Security.Cryptography.HashAlgorithmName]::SHA256,[Security.Cryptography.RSASignaturePadding]::Pss) -or [Text.Encoding]::UTF8.GetString($data) -ne [IO.File]::ReadAllText((Join-Path $fixtureRoot 'release/release-info.json'))){throw 'Single-file channel changed signed bytes'}
     Write-Output 'PASS: actual signing and publication scripts preserve the signed payload in one envelope'
+    $signedInfo=[Text.Encoding]::UTF8.GetString($data)|ConvertFrom-Json
+    if($signedInfo.installerName -ne 'ResumeStudio-v0.6.0-Setup-x64.exe' -or $signedInfo.installerSize -ne (Get-Item -LiteralPath $installer).Length -or $signedInfo.installerSha256 -ne (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()){throw 'Installer digest is missing from signed metadata'}
+    Write-Output 'PASS: Setup filename, size and SHA-256 are included in the signed metadata'
     $global:resumeChannelWrongSize=$true;$global:resumeChannelUploads=0;$rejected=$false
     try{& (Join-Path $repositoryRoot 'scripts/publish-channel.ps1') -Channel stable}catch{$rejected=$true}
     if(!$rejected -or $global:resumeChannelUploads -ne 0){throw 'Wrong published package size reached channel upload'}

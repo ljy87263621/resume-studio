@@ -34,6 +34,26 @@ jobs:
           ./scripts/test-updater.ps1
           ./scripts/test-channel-publication.ps1
           ./scripts/test-schedule.ps1
+      - name: Install verified installer build tools
+        shell: pwsh
+        run: ./scripts/setup-installer-tools.ps1
+      - name: Build and verify one-click installer
+        shell: pwsh
+        run: |
+          ./scripts/build-installer.ps1
+          [xml]$project=Get-Content client-winui/ResumeStudio.csproj
+          ./scripts/test-installer.ps1 -SetupPath "release/ResumeStudio-v$($project.Project.PropertyGroup.Version)-Setup-x64.exe"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ResumeStudio-installer
+          path: release/*-Setup-x64.exe
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always() && env.RESUMESTUDIO_INSTALLER_TEST_OUTPUT != ''
+        with:
+          name: installer-acceptance
+          path: ${{ env.RESUMESTUDIO_INSTALLER_TEST_OUTPUT }}
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ResumeStudio-windows-x64

@@ -31,3 +31,9 @@ v0.3.0 企业招聘系统接入依据官方公开资料：[Greenhouse Job Board 
 本软件使用由小米提供的 MiSans，原字体文件保持不变，随应用用于界面、简历预览和 PDF。字体许可独立于项目 MIT 许可证。官方来源：https://hyperos.mi.com/font/zh/download/ 。完整许可与字体来源见 Assets/Fonts/MiSans-License.pdf 和 Assets/Fonts/README.md。
 
 原始 MiSans-Regular.ttf 的 SHA-256：9c120f0a849bc0aa5048daae2a3c0f6eecd828b5b33fce682a9622833f5feea6。
+
+## Windows 安装器
+
+Setup 使用 Inno Setup 6.7.3 构建，来源为 [JRSoftware 官方发行版](https://github.com/jrsoftware/issrc/releases/tag/is-6_7_3)。安装器安装 Inno Setup 的完整许可至 licenses/InnoSetup-LICENSE.txt。构建工具的原始 SHA-256 为 9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732，并验证 Pyrsys B.V. 的 Authenticode 签名。
+
+安装包包含微软官方 WebView2 Evergreen Bootstrapper，仅在所需运行时缺失时安装。来源与分发方式见 [Microsoft WebView2 分发说明](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)，构建时验证 Microsoft Corporation 发布者签名。WebView2 的许可独立于本项目 MIT 许可证。

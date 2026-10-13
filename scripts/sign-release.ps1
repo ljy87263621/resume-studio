@@ -3,6 +3,12 @@ $ErrorActionPreference='Stop'
 if(!$env:RESUMESTUDIO_UPDATE_SIGNING_KEY){throw 'Update signing key is not configured'}
 $info=Get-Content (Join-Path $SourceDirectory 'Assets\ReleaseIdentity.json') -Raw | ConvertFrom-Json
 $metadata=[ordered]@{channel=$info.channel;version=$info.version;commit=$info.commit;builtAt=$info.builtAt;tag=$info.tag;packageName=[IO.Path]::GetFileName($PackagePath);sha256=(Get-FileHash -LiteralPath $PackagePath -Algorithm SHA256).Hash.ToLowerInvariant();packageSize=(Get-Item -LiteralPath $PackagePath).Length}
+$installer=Join-Path (Split-Path ([IO.Path]::GetFullPath($PackagePath)) -Parent) ([IO.Path]::GetFileName($PackagePath).Replace('-windows-x64.zip','-Setup-x64.exe'))
+if(Test-Path -LiteralPath $installer){
+    $metadata['installerName']=[IO.Path]::GetFileName($installer)
+    $metadata['installerSha256']=(Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+    $metadata['installerSize']=(Get-Item -LiteralPath $installer).Length
+}
 $json=($metadata | ConvertTo-Json -Depth 5)
 $bytes=[Text.Encoding]::UTF8.GetBytes($json)
 $rsa=[Security.Cryptography.RSA]::Create(); $rsa.ImportFromPem($env:RESUMESTUDIO_UPDATE_SIGNING_KEY)
