@@ -54,6 +54,12 @@ public sealed partial class MainWindow
         var checks=new List<string>();
         void Check(bool condition,string label) {if(!condition) throw new Exception(label); checks.Add(label);}
         try {
+            var backendTemplates=await api.Get<List<Template>>("templates");
+            Check(JsonSerializer.Serialize(templates,BackendClient.Json)==JsonSerializer.Serialize(backendTemplates,BackendClient.Json),"packaged template text matches live backend UTF-8 data");
+            await Navigate("templates");
+            var awesome=templates.Single(t=>t.Id=="gh-back-awesome");
+            Check(awesome.Name=="Awesome-CV · 后端简历"&&awesome.Category=="后端开发"&&awesome.Sections.Contains("专业技能")&&!awesome.Description.Contains('?'),"Chinese template names categories descriptions and section titles");
+            await SaveNativePreview(Path.Combine(output,"templates-utf8.png"));
             var empty=ResumeEditing.Format("",0,0,"bullet"); Check(empty.Text=="- ","format empty field");
             var multiline=ResumeEditing.Format("first\nsecond\nthird",6,7,"bullet"); Check(multiline.Text=="first\n- second\nthird","format selected lines without changing neighbors");
             var toggle=ResumeEditing.Format("- first\n- second",0,16,"bullet"); Check(toggle.Text=="first\nsecond","toggle list formatting");

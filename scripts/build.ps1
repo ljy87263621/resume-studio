@@ -17,9 +17,8 @@ New-Item -ItemType Directory -Force $classes | Out-Null
 $sources = @(Get-ChildItem (Join-Path $root 'backend\src\main\java') -Recurse -Filter '*.java' | ForEach-Object FullName)
 & (Join-Path $jdk 'bin\javac.exe') -encoding UTF-8 -Xlint:all -Werror --release 21 --add-modules jdk.httpserver -d $classes @sources
 if ($LASTEXITCODE -ne 0) { throw 'Java compile failed' }
-$catalog = & (Join-Path $jdk 'bin\java.exe') -cp $classes com.resumestudio.TemplateCatalog
+& (Join-Path $jdk 'bin\java.exe') -cp $classes com.resumestudio.TemplateCatalog (Join-Path $root 'client-winui\Assets\TemplateCatalog.json')
 if ($LASTEXITCODE -ne 0) { throw 'Template catalogue generation failed' }
-[IO.File]::WriteAllText((Join-Path $root 'client-winui\Assets\TemplateCatalog.json'), ($catalog -join "`n"), [Text.UTF8Encoding]::new($false))
 $jar = Join-Path $root 'backend\build\resume-backend.jar'
 & (Join-Path $jdk 'bin\jar.exe') --create --file $jar --main-class com.resumestudio.Server -C $classes .
 if ($LASTEXITCODE -ne 0) { throw 'Java package failed' }

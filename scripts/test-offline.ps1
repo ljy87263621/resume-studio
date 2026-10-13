@@ -1,3 +1,4 @@
+param([string]$ReleaseDirectory='')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $jdk=$env:JAVA_HOME
@@ -10,3 +11,6 @@ foreach($test in @('CompanyJobsTest','JobCaptureTest','WorkflowTest')){
     & (Join-Path $jdk 'bin/java.exe') -cp ((Join-Path $root 'backend/build/classes')+';'+$classes) "com.resumestudio.$test"
     if($LASTEXITCODE -ne 0){throw "Offline test failed: $test"}
 }
+$distribution=if($ReleaseDirectory){[IO.Path]::GetFullPath($ReleaseDirectory)}else{Join-Path $root 'release/ResumeStudio'}
+& (Join-Path $jdk 'bin/java.exe') -cp ((Join-Path $root 'backend/build/classes')+';'+$classes) com.resumestudio.TemplateCatalogTest (Join-Path $distribution 'Assets/TemplateCatalog.json')
+if($LASTEXITCODE -ne 0){throw 'Packaged template catalogue encoding or content check failed'}
