@@ -29,7 +29,6 @@ DisableProgramGroupPage=yes
 DisableReadyPage=yes
 ShowLanguageDialog=no
 WizardStyle=modern
-WizardFontName=MiSans
 SetupIconFile={#SourceDir}\Assets\AppIcon.ico
 UninstallDisplayIcon={app}\Assets\AppIcon.ico
 UninstallDisplayName=拾简 {#ChannelName} v{#AppVersion}

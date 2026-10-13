@@ -37,6 +37,11 @@ jobs:
       - name: Install verified installer build tools
         shell: pwsh
         run: ./scripts/setup-installer-tools.ps1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: verified-installer-build-tools
+          path: artifacts/installer-tools/
+          retention-days: 1
       - name: Build and verify one-click installer
         shell: pwsh
         run: |
