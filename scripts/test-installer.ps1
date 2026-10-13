@@ -35,13 +35,32 @@ foreach($file in $manifest.files){
     if((Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash -ne $file.sha256){throw "Installed payload hash mismatch: $($file.path)"}
 }
 Assert $true 'every installed manifest-owned file matches the release payload'
-$shell=New-Object -ComObject WScript.Shell
 # Inno may serialize icons using Windows 8.3 paths. Compare the resolved file,
 # rather than treating an equivalent short path as a broken shortcut.
 Add-Type @'
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+[ComImport, Guid("00021401-0000-0000-C000-000000000046")]
+class ResumeInstallerShellLink {}
+[ComImport, Guid("000214F9-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface ResumeInstallerShellLinkW {
+    void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int size, IntPtr findData, uint flags);
+    void GetIDList(out IntPtr pidl);
+    void SetIDList(IntPtr pidl);
+    void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder text, int size);
+    void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string text);
+    void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int size);
+    void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string path);
+    void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder text, int size);
+    void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string text);
+    void GetHotkey(out short hotkey);
+    void SetHotkey(short hotkey);
+    void GetShowCmd(out int command);
+    void SetShowCmd(int command);
+    void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int size, out int index);
+}
 public static class ResumeInstallerPaths {
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
     private static extern uint GetLongPathName(string path, StringBuilder buffer, uint size);
@@ -51,14 +70,27 @@ public static class ResumeInstallerPaths {
         if(length==0 || length>=buffer.Capacity) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
         return buffer.ToString().TrimEnd('\\');
     }
+    public static string[] ReadShortcut(string path) {
+        object instance=new ResumeInstallerShellLink();
+        try {
+            ((IPersistFile)instance).Load(path,0);
+            var link=(ResumeInstallerShellLinkW)instance;
+            var target=new StringBuilder(32768);
+            var working=new StringBuilder(32768);
+            var icon=new StringBuilder(32768);
+            link.GetPath(target,target.Capacity,IntPtr.Zero,0);
+            link.GetWorkingDirectory(working,working.Capacity);
+            link.GetIconLocation(icon,icon.Capacity,out int index);
+            return new[]{target.ToString(),working.ToString(),icon.ToString()};
+        } finally {Marshal.FinalReleaseComObject(instance);}
+    }
 }
 '@
 foreach($path in @($desktopLink,$menuLink)){
     Assert (Test-Path -LiteralPath $path) "automatic shortcut exists: $([IO.Path]::GetFileName($path))"
-    $link=$shell.CreateShortcut($path)
-    Write-Output ("Shortcut details: "+(@{target=$link.TargetPath;workingDirectory=$link.WorkingDirectory;icon=$link.IconLocation}|ConvertTo-Json -Compress))
-    $iconPath=($link.IconLocation -replace ',\s*-?\d+$','').Trim('"')
-    Assert ([ResumeInstallerPaths]::Resolve($link.TargetPath) -eq [ResumeInstallerPaths]::Resolve($exe) -and [ResumeInstallerPaths]::Resolve($link.WorkingDirectory) -eq [ResumeInstallerPaths]::Resolve($installRoot) -and [ResumeInstallerPaths]::Resolve($iconPath) -eq [ResumeInstallerPaths]::Resolve((Join-Path $installRoot 'Assets/AppIcon.ico'))) 'shortcut uses the installed executable, working directory and app icon'
+    $details=[ResumeInstallerPaths]::ReadShortcut($path)
+    Write-Output ("Shortcut details: "+(@{target=$details[0];workingDirectory=$details[1];icon=$details[2];size=(Get-Item -LiteralPath $path).Length}|ConvertTo-Json -Compress))
+    Assert ([ResumeInstallerPaths]::Resolve($details[0]) -eq [ResumeInstallerPaths]::Resolve($exe) -and [ResumeInstallerPaths]::Resolve($details[1]) -eq [ResumeInstallerPaths]::Resolve($installRoot) -and [ResumeInstallerPaths]::Resolve($details[2]) -eq [ResumeInstallerPaths]::Resolve((Join-Path $installRoot 'Assets/AppIcon.ico'))) 'shortcut uses the installed executable, working directory and app icon'
 }
 $registryPath='Software\Microsoft\Windows\CurrentVersion\Uninstall\{B782F0B7-68E7-4D53-9200-5A45126A71F5}_is1'
 $registered=$false
