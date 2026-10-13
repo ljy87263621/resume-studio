@@ -56,6 +56,31 @@ Check(Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(download)
 string ready=await UpdateInstaller.Prepare(download,Path.Combine(root,"job"),info,CancellationToken.None);
 Check(File.Exists(Path.Combine(ready,"ResumeStudio.exe")),"manifest verified before install");
 Check(handler.Addresses.All(s=>!s.Contains("Authorization",StringComparison.OrdinalIgnoreCase)),"no account credentials in update routing");
+var channelInfo=new ReleaseIdentity {Channel="nightly",Version="0.6.0",Commit=new string('c',40),BuiltAt="2026-10-13T03:00:00Z",Tag="nightly-20261013-cccccccc",PackageName="ResumeStudio-v0.6.0-nightly.20261013.cccccccc-windows-x64.zip",PackageSize=package.Length,Sha256=info.Sha256};
+byte[] Envelope(ReleaseIdentity identity){var data=JsonSerializer.SerializeToUtf8Bytes(identity,ReleaseUpdate.Json);return JsonSerializer.SerializeToUtf8Bytes(new {data=Convert.ToBase64String(data),signature=Encoding.UTF8.GetString(Sign(data))},ReleaseUpdate.Json);}
+var envelope=Envelope(channelInfo);var indexed=ReleaseUpdate.VerifyChannel(envelope,pem,"nightly");
+info.PackageSize=package.Length;Check(ReleaseUpdate.VerifyChannel(Envelope(info),pem,"stable").Identity.Tag=="v0.6.0","Stable signed channel remains compatible with its formal release tag");
+Check(indexed.Identity.Commit==channelInfo.Commit&&indexed.Package.Size==package.Length&&indexed.Package.Url.Contains("/nightly-20261013-cccccccc/"),"signed Nightly channel yields an official package without REST metadata");
+Reject(()=>ReleaseUpdate.VerifyChannel(envelope,pem,"stable"),"signed channel cannot cross Stable and Nightly");
+var tampered=JsonSerializer.SerializeToUtf8Bytes(new {data=Convert.ToBase64String(bytes),signature=Encoding.UTF8.GetString(Sign(JsonSerializer.SerializeToUtf8Bytes(channelInfo,ReleaseUpdate.Json)))},ReleaseUpdate.Json);
+Reject(()=>ReleaseUpdate.VerifyChannel(tampered,pem,"nightly"),"tampered channel payload is rejected");
+channelInfo.Tag="nightly-20261013-aaaaaaaa";Reject(()=>ReleaseUpdate.VerifyChannel(Envelope(channelInfo),pem,"nightly"),"channel tag must match source commit");channelInfo.Tag="nightly-20261013-cccccccc";
+channelInfo.PackageName="ResumeStudio-v0.6.0-nightly.20261013.aaaaaaaa-windows-x64.zip";Reject(()=>ReleaseUpdate.VerifyChannel(Envelope(channelInfo),pem,"nightly"),"channel package must match date and source commit");channelInfo.PackageName="ResumeStudio-v0.6.0-nightly.20261013.cccccccc-windows-x64.zip";
+channelInfo.PackageSize=0;Reject(()=>ReleaseUpdate.VerifyChannel(Envelope(channelInfo),pem,"nightly"),"unsigned or missing package size cannot enter a channel");channelInfo.PackageSize=package.Length;
+using var channelHandler=new ChannelHandler(envelope,package);using var channelService=new ReleaseUpdate(pem,channelHandler);
+var channelUpdate=await channelService.Check("nightly","auto",ni,CancellationToken.None);
+Check(channelUpdate is not null&&channelService.LastSource=="signed-channel"&&channelHandler.Addresses.All(u=>u.Host!="api.github.com"),"Nightly update succeeds while every REST endpoint is rate limited");
+string channelDownload=Path.Combine(root,"channel-download.zip");await channelService.Download(channelUpdate!,"auto",channelDownload,null,CancellationToken.None);
+Check(Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(channelDownload))).ToLowerInvariant()==channelInfo.Sha256,"channel package download checks signed size and hash");
+Check(await channelService.Check("nightly","auto",channelInfo,CancellationToken.None) is null,"same signed channel source does not repeat update prompt");
+var newer=new ReleaseIdentity {Channel="nightly",Version="0.7.0",Commit=new string('d',40),BuiltAt="2026-10-14T03:00:00Z"};
+Check(await channelService.Check("nightly","auto",newer,CancellationToken.None) is null,"stale channel cannot roll a newer client back");
+using var proxyChannelHandler=new ChannelHandler(envelope,package,true);using var proxyChannelService=new ReleaseUpdate(pem,proxyChannelHandler);
+Check(await proxyChannelService.Check("nightly","proxy",ni,CancellationToken.None) is not null&&proxyChannelService.LastRoute.Contains("Proxy"),"proxy-only channel works without an API account token");
+using var badChannelHandler=new ChannelHandler(tampered,package);using var badChannelService=new ReleaseUpdate(pem,badChannelHandler);
+try{await badChannelService.Check("nightly","auto",ni,CancellationToken.None);throw new Exception("Bad channel accepted");}catch(IOException){Check(badChannelHandler.Addresses.All(u=>u.Host!="api.github.com"),"invalid channel signature stops rather than falling back to another index");}
+using var missingChannelHandler=new ChannelHandler(null,package);using var missingChannelService=new ReleaseUpdate(pem,missingChannelHandler);
+try{await missingChannelService.Check("nightly","auto",ni,CancellationToken.None);throw new Exception("API failure ignored");}catch(IOException){Check(missingChannelHandler.Addresses.Any(u=>u.Host=="api.github.com"),"missing channel can attempt the legacy API and reports its failure");}
 string bad=Path.Combine(root,"bad.zip"); using(var zip=ZipFile.Open(bad,ZipArchiveMode.Create)){using var entry=zip.CreateEntry("../outside.txt").Open(); entry.WriteByte(1);}
 try{await UpdateInstaller.Prepare(bad,Path.Combine(root,"badjob"),info,CancellationToken.None); throw new Exception("ZIP escaped");}catch(IOException){Check(true,"malformed ZIP rejected during extraction");}
 Console.WriteLine($"PASS: {checks} updater checks; fixtures: {root}");
@@ -68,6 +93,20 @@ sealed class FixtureHandler(Dictionary<string,byte[]> fixtures):HttpMessageHandl
         string url=request.RequestUri!.AbsoluteUri; Addresses.Add(url);
         if(request.RequestUri.Host!="gh-proxy.org") throw new HttpRequestException("isolated direct-connection failure");
         string path=request.RequestUri.AbsolutePath; int scheme=path.IndexOf("https://",StringComparison.Ordinal); var original=new Uri(path[scheme..]);
-        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) {Content=new ByteArrayContent(fixtures[original.AbsolutePath])});
+        return Task.FromResult(fixtures.TryGetValue(original.AbsolutePath,out var bytes)?new HttpResponseMessage(HttpStatusCode.OK) {Content=new ByteArrayContent(bytes)}:new HttpResponseMessage(HttpStatusCode.NotFound));
+    }
+}
+
+sealed class ChannelHandler(byte[]? index,byte[] package,bool proxyOnly=false):HttpMessageHandler
+{
+    public List<Uri> Addresses {get;}=[];
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken cancellationToken)
+    {
+        var url=request.RequestUri!;Addresses.Add(url);
+        if(proxyOnly&&url.Host!="gh-proxy.org")throw new HttpRequestException("isolated direct failure");
+        var original=url.Host=="gh-proxy.org"?new Uri(url.AbsolutePath[url.AbsolutePath.IndexOf("https://",StringComparison.Ordinal)..]+url.Query):url;
+        if(original.Host=="api.github.com")return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden));
+        byte[]? body=original.AbsolutePath.EndsWith("/nightly.json",StringComparison.Ordinal)?index:original.AbsolutePath.EndsWith(".zip",StringComparison.Ordinal)?package:null;
+        return Task.FromResult(body is null?new HttpResponseMessage(HttpStatusCode.NotFound):new HttpResponseMessage(HttpStatusCode.OK){Content=new ByteArrayContent(body)});
     }
 }

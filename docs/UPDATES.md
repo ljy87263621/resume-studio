@@ -2,7 +2,11 @@
 
 设置 → 软件更新可选 Stable、Nightly 以及自动、直连、公益代理三种网络方式。默认 Stable，启动时后台检查；不自动安装。用户确认下载后，校验通过才关闭并更新程序。简历、职位、投递记录和密钥仍在原本的数据目录。
 
-Stable 使用 GitHub `releases/latest`，只接受正式版本。Nightly 从发行列表中选择 `nightly-日期-提交` 预发行版，按提交和构建时间比较，同一提交不会重复提示更新。切换到 Stable 时可回到正式版；不会自动把更高版本的 Stable 换成旧 Nightly。
+v0.7.3 起，两条通道优先读取 GitHub Release `update-channels` 下的 `stable.json`／`nightly.json` 签名索引。它们仍属于仓库 Release 资源，无需 GitHub 账号、匿名 REST API 配额或客户端令牌。每次检查加上时间查询参数，减少旧索引缓存。
+
+索引将原始元数据字节和签名合为单个 JSON 封装。元数据额外签署安装包字节数；客户端验证公钥签名、通道、标签／提交／文件名关系后生成官方 Release 包地址，下载后核对长度与 SHA-256。签名和内容无效时直接停止，只有网络读取失败才回退到原 API：Stable 使用 `releases/latest`，Nightly 从发行列表中选择 `nightly-日期-提交` 预发行版。
+
+Nightly 按提交和构建时间比较，同一提交不会重复提示更新。切换到 Stable 时可回到正式版；不会自动把更高版本的 Stable 换成旧 Nightly。旧签名元数据继续兼容 API 读取。
 
 ## 公益代理与校验
 
@@ -23,6 +27,10 @@ Stable 使用 GitHub `releases/latest`，只接受正式版本。Nightly 从发�
 Nightly 标签：`nightly-yyyyMMdd-八位提交`；安装包：`ResumeStudio-vX.Y.Z-nightly.yyyyMMdd.八位提交-windows-x64.zip`。日期使用北京时间。计划执行可能延迟，依据 [GitHub 定时工作流说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。
 
 “实时同步”指提交并推送后的自动编译；尚未提交或推送的本机文件不进入 GitHub 构建。
+
+两条发布工作流在完整 Release 上传成功后才调用 `scripts/publish-channel.ps1` 更新对应的索引。该步骤先验证已有签名和发布包大小，再发布单个封装文件。索引 Release 不作为 Latest Stable，也不属于 Nightly 日期标签。Nightly 源码未变化时，重新下载原签名元数据并刷新索引，保持测试包本身不变。
+
+索引附件替换可能短暂不可用；客户端保留 API 回退，不将读取失败伪装为“没有更新”。第一次升级到 v0.7.3 时，旧客户端仍依赖 API，遇到 403 可从正式 Release 下载完整包进行一次升级。
 
 ## 构建与维护
 

@@ -27,6 +27,7 @@ jobs:
           $last=@($releases|Where-Object {$_.prerelease -and !$_.draft -and $_.tag_name -match '^nightly-'}|Sort-Object published_at -Descending|Select-Object -First 1)
           if($last.Count -and $last[0].body.Contains("source-commit: $sha")){
             Add-Content $env:GITHUB_OUTPUT 'changed=false'
+            Add-Content $env:GITHUB_OUTPUT "existing_tag=$($last[0].tag_name)"
             Write-Output 'Source unchanged since successful Nightly; no new release.'
             exit 0
           }
@@ -38,6 +39,16 @@ jobs:
           Add-Content $env:GITHUB_OUTPUT "tag=nightly-$day-$short"
           Add-Content $env:GITHUB_OUTPUT "label=$base-nightly.$day.$short"
           Add-Content $env:GITHUB_OUTPUT "sha=$sha"
+      - name: Refresh channel index for unchanged Nightly
+        if: steps.source.outputs.changed == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Path release -Force | Out-Null
+          gh release download '${{ steps.source.outputs.existing_tag }}' --repo "$env:GITHUB_REPOSITORY" -p release-info.json -p release-info.sig -D release
+          if($LASTEXITCODE -ne 0){throw 'Cannot read existing signed Nightly metadata'}
+          ./scripts/publish-channel.ps1 -Channel nightly
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         if: steps.source.outputs.changed == 'true'
         with:
@@ -53,6 +64,7 @@ jobs:
           ./scripts/build.ps1 -Channel nightly -BuildTag '${{ steps.source.outputs.tag }}'
           ./scripts/test-offline.ps1
           ./scripts/test-updater.ps1
+          ./scripts/test-channel-publication.ps1
           ./scripts/test-schedule.ps1
           ./scripts/package.ps1 -PackageLabel '${{ steps.source.outputs.label }}'
       - name: Sign update metadata
@@ -80,3 +92,9 @@ jobs:
           $notes | Set-Content release/nightly-notes.md -Encoding utf8
           gh release create '${{ steps.source.outputs.tag }}' 'release/ResumeStudio-v${{ steps.source.outputs.label }}-windows-x64.zip' release/release-info.json release/release-info.sig release/microsoft-openjdk-jdk21u-6f26c6b2.tar.gz release/SHA256SUMS.txt --repo "$env:GITHUB_REPOSITORY" --target $sha --title '拾简 Nightly ${{ steps.source.outputs.tag }} — Windows x64' --prerelease --latest=false --notes-file release/nightly-notes.md
           if($LASTEXITCODE -ne 0){throw 'Nightly publication failed'}
+      - name: Publish signed Nightly channel index
+        if: steps.source.outputs.changed == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-channel.ps1 -Channel nightly

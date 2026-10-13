@@ -114,6 +114,7 @@ public sealed partial class MainWindow
             await VerifyNewFeatures(output,checks);
             await VerifyInteractions(output,checks);
             await VerifyEmployerCapture(output,checks);
+            await VerifyPublishedUpdateChannels(output,checks);
             await File.WriteAllTextAsync(Path.Combine(output,"feature-result.json"),JsonSerializer.Serialize(new {status="passed",checks,pages=pages.Count,multipage=many.Count},BackendClient.Json));
         }
         catch(Exception ex) {await File.WriteAllTextAsync(Path.Combine(output,"feature-result.json"),JsonSerializer.Serialize(new {status="failed",checks,error=ex.ToString()},BackendClient.Json)); await SaveNativePreview(Path.Combine(output,"failed.png"));}

@@ -15,6 +15,7 @@ public sealed class ReleaseIdentity
     public string Tag {get;set;}="";
     public string PackageName {get;set;}="";
     public string Sha256 {get;set;}="";
+    public long PackageSize {get;set;}
     public static ReleaseIdentity Current(string root)
     {
         string file=Path.Combine(root,"Assets","ReleaseIdentity.json");
@@ -50,6 +51,7 @@ public sealed class ReleaseUpdate : IDisposable
     private readonly HttpClient http;
     private readonly string publicKey;
     public string LastRoute {get;private set;}="";
+    public string LastSource {get;private set;}="";
     public ReleaseUpdate(string key,HttpMessageHandler? handler=null)
     {
         publicKey=key;
@@ -107,8 +109,40 @@ public sealed class ReleaseUpdate : IDisposable
             ||!Regex.IsMatch(info.PackageName,@"^ResumeStudio-v\d+\.\d+\.\d+(?:-nightly\.\d{8}\.[0-9a-f]{8})?-windows-x64\.zip$")) throw new IOException("更新说明的版本或通道不匹配。");
         return info;
     }
+    public static string ChannelAddress(string channel)
+    {
+        if(channel is not "stable" and not "nightly")throw new IOException("更新通道无效。");
+        return $"https://github.com/{Repository}/releases/download/update-channels/{channel}.json";
+    }
+    public static AvailableUpdate VerifyChannel(byte[] envelope,string publicKey,string channel)
+    {
+        if(envelope.Length>64000)throw new IOException("通道索引超出大小限制。");
+        using var document=JsonDocument.Parse(envelope);var root=document.RootElement;
+        if(root.ValueKind!=JsonValueKind.Object||!root.TryGetProperty("data",out var content)||content.ValueKind!=JsonValueKind.String||!root.TryGetProperty("signature",out var signature)||signature.ValueKind!=JsonValueKind.String)throw new IOException("通道索引格式无效。");
+        byte[] data=Convert.FromBase64String(content.GetString()!);
+        if(data.Length>16000)throw new IOException("通道索引内容过长。");
+        var candidate=JsonSerializer.Deserialize<ReleaseIdentity>(data,Json)??throw new IOException("通道索引为空。");
+        var info=VerifyInfo(data,System.Text.Encoding.UTF8.GetBytes(signature.GetString()!),publicKey,channel,candidate.Tag);
+        bool validTag=channel=="stable"?info.Tag=="v"+info.Version:Regex.IsMatch(info.Tag,@"^nightly-\d{8}-[0-9a-f]{8}$")&&info.Tag.EndsWith(info.Commit[..8],StringComparison.Ordinal);
+        if(!validTag||info.PackageSize<=0||info.PackageSize>512_000_000)throw new IOException("通道索引的标签或安装包大小无效。");
+        string expected=channel=="stable"?$"ResumeStudio-v{info.Version}-windows-x64.zip":$"ResumeStudio-v{info.Version}-nightly.{info.Tag.Split('-')[1]}.{info.Commit[..8]}-windows-x64.zip";
+        if(info.PackageName!=expected)throw new IOException("通道索引的安装包名称不匹配。");
+        string url=$"https://github.com/{Repository}/releases/download/{info.Tag}/{info.PackageName}";ValidateUrl(url);
+        var package=new GitHubAsset {Name=info.PackageName,Url=url,Digest="sha256:"+info.Sha256,Size=info.PackageSize};
+        var release=new GitHubRelease {Tag=info.Tag,Prerelease=channel=="nightly",PublishedAt=DateTimeOffset.Parse(info.BuiltAt),Url=$"https://github.com/{Repository}/releases/tag/{info.Tag}",Assets=[package]};
+        return new(release,info,package);
+    }
     public async Task<AvailableUpdate?> Check(string channel,string route,ReleaseIdentity current,CancellationToken token)
     {
+        LastSource="";
+        string channelAddress=ChannelAddress(channel);
+        byte[]? channelBytes=null;
+        // One signed, public Release asset avoids the anonymous REST API quota. An invalid
+        // signature is fatal; only transport failure may fall back to the legacy API.
+        try {channelBytes=await Read(channelAddress+"?check="+DateTimeOffset.UtcNow.ToUnixTimeSeconds(),route,64000,token);}
+        catch(IOException) when(!token.IsCancellationRequested) { }
+        if(channelBytes is not null){var indexed=VerifyChannel(channelBytes,publicKey,channel);LastSource="signed-channel";return IsNewer(current,indexed.Identity)?indexed:null;}
+        LastSource="release-api";
         GitHubRelease? release;
         if(channel=="stable") {
             var bytes=await Read($"https://api.github.com/repos/{Repository}/releases/latest",route,2_000_000,token);
