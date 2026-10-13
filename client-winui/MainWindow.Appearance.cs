@@ -104,6 +104,7 @@ public sealed partial class MainWindow
     {
         Heading("设置","切换界面外观与预览节奏，简历和求职记录共用同一份本机数据。");
         var panel=Stack(18);
+        panel.Children.Add(UpdateSettingsCard());
         panel.Children.Add(AiSettingsCard());
         var appearance=Stack(14); appearance.Children.Add(Text("界面与主题",20,true));
         var style=new ComboBox { Header="界面版本",ItemsSource=new[] {"经典界面 · 当前默认","Haru 玻璃界面 · haruphoto 整体亚克力"},SelectedIndex=haruStyle?1:0,HorizontalAlignment=HorizontalAlignment.Stretch };

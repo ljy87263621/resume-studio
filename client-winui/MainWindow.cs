@@ -58,7 +58,7 @@ public sealed partial class MainWindow : Window
         {
             if(closing) return;
             args.Cancel=true;
-            _=Run(async ()=> { editTimer.Stop(); previewTimer.Stop(); reminderTimer.Stop(); CancelJobSearch(); await SaveCurrent(); closing=true; preview?.Close(); api.Dispose(); Close(); });
+            _=Run(async ()=> { editTimer.Stop(); previewTimer.Stop(); reminderTimer.Stop(); CancelJobSearch(); await SaveCurrent(); closing=true; updateCancellation.Cancel(); preview?.Close(); api.Dispose(); Close(); });
         };
     }
     private static SolidColorBrush Brush(string hex)
@@ -93,6 +93,8 @@ public sealed partial class MainWindow : Window
         await api.StartAsync(); Mark("backendReady"); ready=true; saveState.Text="本地服务已连接";
         reminderTimer.Start(); await CheckApplicationReminders();
         if(templates.Count==0) { templates=await api.Get<List<Template>>("templates"); await Navigate("templates"); Mark("firstPageReady"); }
+        await AcknowledgeUpdateStartup();
+        if(!VerificationSession&&preferences.CheckUpdatesOnStartup) _=Run(()=>CheckForUpdates(true));
         if(Environment.GetCommandLineArgs().Contains("--benchmark")) { await Benchmark(); return; }
         if(Environment.GetCommandLineArgs().Contains("--iteration-test")) { await IterationOnlyTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--feature-test")) { await FeatureTest(); return; }

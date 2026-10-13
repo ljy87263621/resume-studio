@@ -98,7 +98,13 @@ public sealed partial class MainWindow
             current.Sections[1].Content=string.Join("\n",Enumerable.Range(0,50).Select(i=>"- 多页项目验证 "+i+"：实现协议通信并核对收发结果，检查页面边距与条目换行。")); Changed(); await SaveCurrent(); await PrintPdf(Path.Combine(output,"multipage.pdf"));
             var many=await PdfInspection.Read(Path.Combine(output,"multipage.pdf")); Check(many.Count>1&&many.All(p=>!p.NearlyBlank),"multipage PDF has actual page count and nonblank pages");
             for(int i=0;i<many.Count;i++) await File.WriteAllBytesAsync(Path.Combine(output,$"multipage-{i+1}.png"),many[i].Image);
-            await Navigate("settings"); await Task.Delay(180); Check(FindTextField(body,"完整 Chat Completions 接口地址") is not null,"native AI settings fields"); await SaveNativePreview(Path.Combine(output,"settings.png"));
+            await Navigate("settings"); await Task.Delay(180); Check(FindTextField(body,"完整 Chat Completions 接口地址") is not null,"native AI settings fields");
+            var channel=FindCombo(body,"更新通道")??throw new Exception("Update selector missing"); channel.SelectedIndex=1; await Task.Delay(250);
+            Check(AppPreferences.Load(api.DataDirectory).UpdateChannel=="nightly","native Nightly channel selection persists"); channel.SelectedIndex=0;
+            var route=FindCombo(body,"更新连接方式")??throw new Exception("Update connection selector missing"); route.SelectedIndex=2; await Task.Delay(250);
+            Check(AppPreferences.Load(api.DataDirectory).UpdateRoute=="proxy","native proxy route selection persists"); route.SelectedIndex=0;
+            Check(FeatureButton(body,"检查更新") is not null&&FeatureButton(body,"下载并安装") is not null,"native release update actions");
+            await SaveNativePreview(Path.Combine(output,"settings.png"));
             await File.WriteAllTextAsync(Path.Combine(output,"feature-result.json"),JsonSerializer.Serialize(new {status="passed",checks,pages=pages.Count,multipage=many.Count},BackendClient.Json));
         }
         catch(Exception ex) {await File.WriteAllTextAsync(Path.Combine(output,"feature-result.json"),JsonSerializer.Serialize(new {status="failed",checks,error=ex.ToString()},BackendClient.Json)); await SaveNativePreview(Path.Combine(output,"failed.png"));}

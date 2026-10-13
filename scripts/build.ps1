@@ -1,6 +1,13 @@
-param([string]$Configuration = 'Release', [string]$ReleaseDirectory = '')
+param([string]$Configuration = 'Release', [string]$ReleaseDirectory = '', [ValidateSet('stable','nightly')][string]$Channel='stable', [string]$BuildTag='')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
+[xml]$project=Get-Content (Join-Path $root 'client-winui\ResumeStudio.csproj')
+$version=[string]$project.Project.PropertyGroup.Version
+$commit=(& git -C $root rev-parse HEAD).Trim()
+if($commit -notmatch '^[0-9a-f]{40}$'){throw 'Cannot identify source commit'}
+if(!$BuildTag){$BuildTag=if($Channel -eq 'stable'){'v'+$version}else{'nightly-'+[DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(8)).ToString('yyyyMMdd')+'-'+$commit.Substring(0,8)}}
+$identity=[ordered]@{channel=$Channel;version=$version;commit=$commit;builtAt=[DateTimeOffset]::UtcNow.ToString('O');tag=$BuildTag}
+[IO.File]::WriteAllText((Join-Path $root 'client-winui\Assets\ReleaseIdentity.json'),($identity|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
 $jdk = 'C:\Program Files\Java\jdk-21'
 if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\javac.exe'))) { $jdk = $env:JAVA_HOME }
 $dotnet = Join-Path $env:USERPROFILE '.dotnet\dotnet.exe'
@@ -26,6 +33,11 @@ New-Item -ItemType Directory -Force $release | Out-Null
 Copy-Item -Path (Join-Path $output '*') -Destination $release -Recurse -Force
 New-Item -ItemType Directory -Force (Join-Path $release 'backend') | Out-Null
 Copy-Item -LiteralPath $jar -Destination (Join-Path $release 'backend\resume-backend.jar') -Force
+New-Item -ItemType Directory -Force (Join-Path $release 'updater') | Out-Null
+foreach($helper in @('Update-App.ps1','sync-distribution.ps1')){
+    # The updater runs in Windows PowerShell 5.1, which needs a BOM for Chinese text.
+    [IO.File]::WriteAllText((Join-Path $release ('updater\'+$helper)),[IO.File]::ReadAllText((Join-Path $PSScriptRoot $helper)),[Text.UTF8Encoding]::new($true))
+}
 $runtime = Join-Path $release 'runtime'
 if(Test-Path (Join-Path $destination 'runtime\bin\java.exe')) { Copy-Item -LiteralPath (Join-Path $destination 'runtime') -Destination $release -Recurse }
 if (!(Test-Path (Join-Path $runtime 'bin\java.exe'))) {

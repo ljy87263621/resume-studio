@@ -8,5 +8,6 @@ artifacts/
 data/
 .env
 .env.*
+client-winui/Assets/ReleaseIdentity.json
 *.pfx
 *.key

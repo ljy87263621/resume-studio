@@ -1,0 +1,77 @@
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using ResumeStudio.Services;
+using System.Text.Json;
+
+namespace ResumeStudio;
+
+public sealed partial class MainWindow
+{
+    private readonly CancellationTokenSource updateCancellation=new();
+    private bool updateBusy;
+    private AvailableUpdate? availableUpdate;
+    private TextBlock? updateStatus;
+    private Button? installUpdateButton;
+    private static bool VerificationSession=>Environment.GetCommandLineArgs().Any(a=>a is "--self-test" or "--feature-test" or "--iteration-test" or "--benchmark" or "--appearance-review");
+    private ReleaseUpdate UpdateClient()=>new(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"Assets","UpdatePublicKey.pem")));
+    private UIElement UpdateSettingsCard()
+    {
+        var panel=Stack(12); var identity=ReleaseIdentity.Current(AppContext.BaseDirectory); panel.Children.Add(Text("软件更新",20,true)); panel.Children.Add(Text("当前版本："+identity.Display,14,true));
+        var channel=new ComboBox {Header="更新通道",ItemsSource=new[] {"Stable · 稳定发行版","Nightly · 每日测试版"},SelectedIndex=preferences.UpdateChannel=="nightly"?1:0,HorizontalAlignment=HorizontalAlignment.Stretch};
+        channel.SelectionChanged+=async (_,_)=>await Run(async ()=> {preferences.UpdateChannel=channel.SelectedIndex==1?"nightly":"stable"; availableUpdate=null; if(installUpdateButton is not null) installUpdateButton.IsEnabled=false; await preferences.SaveAsync(api.DataDirectory); if(updateStatus is not null) updateStatus.Text="通道已切换，请检查更新。";}); panel.Children.Add(channel);
+        var route=new ComboBox {Header="更新连接方式",ItemsSource=new[] {"自动 · 直连失败时使用公益代理","GitHub 直连","GH-Proxy 公益代理"},SelectedIndex=preferences.UpdateRoute=="direct"?1:preferences.UpdateRoute=="proxy"?2:0,HorizontalAlignment=HorizontalAlignment.Stretch};
+        route.SelectionChanged+=async (_,_)=>await Run(async ()=> {preferences.UpdateRoute=route.SelectedIndex==1?"direct":route.SelectedIndex==2?"proxy":"auto"; await preferences.SaveAsync(api.DataDirectory);}); panel.Children.Add(route);
+        var automatic=new ToggleSwitch {Header="启动时检查更新",IsOn=preferences.CheckUpdatesOnStartup}; automatic.Toggled+=async (_,_)=>await Run(async ()=> {preferences.CheckUpdatesOnStartup=automatic.IsOn; await preferences.SaveAsync(api.DataDirectory);}); panel.Children.Add(automatic);
+        panel.Children.Add(Text("Stable 为正式稳定版；Nightly 根据最新提交每日生成，有源码变化才发布。更新从拾简 GitHub Releases 读取，签名和文件校验通过后才能安装。",12));
+        panel.Children.Add(Text("公益代理仅用于公开的更新信息和程序包，不传输简历、API Key 或登录信息。",12));
+        updateStatus=Text(availableUpdate is null?"尚未检查更新。":"可更新到："+availableUpdate.Identity.Display,13); panel.Children.Add(updateStatus);
+        var actions=Row(); actions.Children.Add(Button("检查更新",()=>CheckForUpdates(false),true)); installUpdateButton=Button("下载并安装",InstallAvailableUpdate); installUpdateButton.IsEnabled=availableUpdate is not null; actions.Children.Add(installUpdateButton); actions.Children.Add(Button("查看发行记录 ↗",()=>Launch("https://github.com/"+ReleaseUpdate.Repository+"/releases"))); panel.Children.Add(actions);
+        return Card(panel);
+    }
+    private async Task CheckForUpdates(bool background)
+    {
+        if(updateBusy||closing) return; updateBusy=true; string channel=preferences.UpdateChannel,route=preferences.UpdateRoute;
+        try {
+            if(updateStatus is not null) updateStatus.Text="正在读取 GitHub Releases…";
+            using var client=UpdateClient(); var found=await client.Check(channel,route,ReleaseIdentity.Current(AppContext.BaseDirectory),updateCancellation.Token);
+            if(channel!=preferences.UpdateChannel) return; availableUpdate=found;
+            if(installUpdateButton is not null) installUpdateButton.IsEnabled=found is not null;
+            if(updateStatus is not null) updateStatus.Text=found is null?"当前通道暂无可用的新版本。":"发现 "+found.Identity.Display+" · "+client.LastRoute;
+            if(background&&found is not null) Success("发现软件更新",found.Identity.Display+"，可在设置 → 软件更新中下载并安装。");
+        }
+        catch(Exception ex) when(ex is IOException or HttpRequestException or JsonException or System.Security.Cryptography.CryptographicException or FormatException or OperationCanceledException) {
+            if(updateStatus is not null) updateStatus.Text="更新检查未完成："+ex.Message;
+            if(!background&&!updateCancellation.IsCancellationRequested) Success("更新检查未完成",ex.Message);
+        }
+        finally {updateBusy=false;}
+    }
+    private async Task InstallAvailableUpdate()
+    {
+        if(updateBusy||availableUpdate is null) return; var selected=availableUpdate;
+        if(await new ContentDialog {XamlRoot=shell.XamlRoot,Title="安装软件更新",Content="更新到 "+selected.Identity.Display+"。下载和校验完成后会保存当前简历、关闭并重新打开软件。原程序会保留一份备份。",PrimaryButtonText="下载并安装",CloseButtonText="返回"}.ShowAsync()!=ContentDialogResult.Primary) return;
+        updateBusy=true; string workspace=Path.Combine(api.DataDirectory,"updates",Guid.NewGuid().ToString("N")); Directory.CreateDirectory(workspace);
+        try {
+            using var cancellation=CancellationTokenSource.CreateLinkedTokenSource(updateCancellation.Token);
+            var status=Text("正在下载更新包…",14); var loading=new ContentDialog {XamlRoot=shell.XamlRoot,Title="下载软件更新",Content=status,CloseButtonText="取消"};
+            loading.CloseButtonClick+=(_,_)=>cancellation.Cancel(); var shown=loading.ShowAsync(); string source;
+            try {
+                using var client=UpdateClient(); string zip=Path.Combine(workspace,selected.Identity.PackageName);
+                await client.Download(selected,preferences.UpdateRoute,zip,new Progress<double>(p=>status.Text=$"正在下载：{p:0}%"),cancellation.Token);
+                status.Text="下载完成，正在校验和准备安装…"; source=await UpdateInstaller.Prepare(zip,workspace,selected.Identity,cancellation.Token);
+            }
+            finally {loading.Hide(); await shown;}
+            editTimer.Stop(); previewTimer.Stop(); await SaveCurrent();
+            await UpdateInstaller.Launch(source,workspace,AppContext.BaseDirectory,api.DataDirectory);
+            reminderTimer.Stop(); CancelJobSearch(); closing=true; updateCancellation.Cancel(); preview?.Close(); api.Dispose(); Close();
+        }
+        catch(OperationCanceledException) {Success("更新已取消","当前程序保持原样。");}
+        finally {updateBusy=false;}
+    }
+    private async Task AcknowledgeUpdateStartup()
+    {
+        string? path=Environment.GetEnvironmentVariable("RESUMESTUDIO_UPDATE_ACK"); if(string.IsNullOrEmpty(path)) return;
+        string root=Path.GetFullPath(Path.Combine(api.DataDirectory,"updates"))+Path.DirectorySeparatorChar;
+        if(!Path.GetFullPath(path).StartsWith(root,StringComparison.OrdinalIgnoreCase)) return;
+        await File.WriteAllTextAsync(path,JsonSerializer.Serialize(new {status="ready",version=ReleaseIdentity.Current(AppContext.BaseDirectory).Display},ReleaseUpdate.Json));
+    }
+}
