@@ -33,7 +33,7 @@ Windows + PowerShell 7 + .NET 8 SDK + JDK 21。设置 `JAVA_HOME`；脚本优先
 | `test-updater.ps1` | 签名、下载校验、隔离安装与失败回滚 |
 | `test-schedule.ps1` | 日期边界与日程规则 |
 | `test-installer.ps1` | 仅 GitHub 临时 runner：安装、快捷方式、覆盖和卸载数据保留 |
-| `--workbench-test` | 隔离目录内的原生顶栏、目录排序提交／撤销、预览、PDF 与两种界面 |
+| `--workbench-test` | 隔离目录内的原生顶栏、排序、预览与 PDF；收藏去重／撤销、投递日程联动、失败重试及快速切页 |
 | `--feature-test`／`--iteration-test` | 既有原生功能与界面回归 |
 
 原生测试可用 `RESUMESTUDIO_TEST_DATA`／`RESUMESTUDIO_TEST_OUTPUT` 指定隔离目录。文件选择器、实际鼠标拖动、外站登录与投递仍需人工验收。自动编译成功不等于完整人工验收。
@@ -41,6 +41,8 @@ Windows + PowerShell 7 + .NET 8 SDK + JDK 21。设置 `JAVA_HOME`；脚本优先
 ## 本地服务与数据
 
 服务仅监听 `127.0.0.1`，每次启动使用随机端口和会话令牌；请求需要 `X-Resume-Token`。路由以 `Server.java` 为准，覆盖简历、模板、职位来源、收藏、投递、日程、历史与本地建议。
+
+`favorites/collect` 与 `applications/open` 在 Store 锁内按职位标识及规范链接查找或创建，重复请求保留既有内容；`applications/find` 只查询。客户端的 `SaveForm` 在校验和持久化成功后才关闭；异步列表检查导航序号，避免过期结果写入新页面。
 
 JSON 原子保存；上一版本和最多 20 个历史版本压缩保留，日志轮转。数据与程序目录分开。删除简历会删除其备份和历史，投递中的独立快照保留。
 

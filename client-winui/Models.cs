@@ -107,6 +107,11 @@ public sealed class ApplicationRecord
     public bool ReminderDone { get; set; }
     public string Review { get; set; } = "";
 }
+public sealed class CollectionResult<T>
+{
+    public T Record { get; set; } = default!;
+    public bool Created { get; set; }
+}
 public sealed class ScheduleItem
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();

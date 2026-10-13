@@ -14,7 +14,7 @@ public sealed partial class MainWindow
     private string undoBaseline="",undoResumeId="";
     private DateTime lastUndoCapture=DateTime.MinValue;
     private bool restoringUndo;
-    private static Resume CloneResume(Resume r)=>JsonSerializer.Deserialize<Resume>(JsonSerializer.Serialize(r,BackendClient.Json),BackendClient.Json)!;
+    private static Resume CloneResume(Resume r)=>CloneDocument(r);
     private string EditorSnapshot() { if(current is null) return ""; var clone=CloneResume(current); clone.UpdatedAt=""; return JsonSerializer.Serialize(clone,BackendClient.Json); }
     private void InitializeUndo()
     {

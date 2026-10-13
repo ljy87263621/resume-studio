@@ -34,6 +34,23 @@ public final class WorkflowTest {
         var invalid=new LinkedHashMap<>(record); invalid.put("dueAt","tomorrow"); try {Server.validate("applications",invalid); throw new AssertionError("invalid date accepted");} catch(IllegalArgumentException expected) {checks++;}
         store.delete("resumes","resume-one"); require(store.history("resume-one").isEmpty(),"deleting document removes its history");
         require(new Store(root).list("applications").get(0).get("resumeSnapshot")!=null,"deleted source resume leaves submitted snapshot intact");
+        var job=new LinkedHashMap<String,Object>(Map.of("id","provider-position","title","Embedded","url","https://example.com/jobs/embedded?utm_source=search","notes","我的面试准备","source","官网"));
+        require((Boolean)store.collectFavorite(job).get("created"),"first collection creates a favorite");
+        var pasted=new LinkedHashMap<>(job);pasted.put("id","external-alias");pasted.put("url","https://example.com/jobs/embedded?utm_source=share");pasted.put("notes","");pasted.put("title","different title");
+        var duplicate=store.collectFavorite(pasted);
+        require(!(Boolean)duplicate.get("created")&&Json.str(Json.object(duplicate.get("record")),"notes").equals("我的面试准备"),"cross-platform repeated collect preserves handwritten notes and original title");
+        require(store.list("favorites").size()==1,"canonical links do not create duplicate favorites");
+        try {store.save("favorites",pasted);throw new AssertionError("conflicting favorite overwrite accepted");}catch(IllegalArgumentException expected){checks++;}
+        require(store.findApplication(job).isEmpty(),"looking up an untracked job does not create an opened record");
+        var tracked=Json.object(store.openApplication(job).get("record"));
+        require(Json.str(tracked,"status").equals("已打开")&&!tracked.containsKey("resumeSnapshot")&&!tracked.containsKey("resumeTitle"),"opening a job never assumes the currently edited resume was submitted");
+        tracked.put("status","面试中");tracked.put("notes","保留投递备注");store.save("applications",tracked);
+        var reopened=store.openApplication(pasted);
+        require(!(Boolean)reopened.get("created")&&Json.str(Json.object(reopened.get("record")),"status").equals("面试中"),"opening an alias does not duplicate or downgrade a submitted application");
+        var tasks=new ArrayList<java.util.concurrent.Future<Map<String,Object>>>();var pool=java.util.concurrent.Executors.newFixedThreadPool(6);
+        try {for(int i=0;i<20;i++)tasks.add(pool.submit(()->store.collectFavorite(pasted)));for(var task:tasks)require(!(Boolean)task.get().get("created"),"concurrent repeated favorite is idempotent");}
+        finally {pool.shutdownNow();}
+        require(store.list("applications").size()==2&&store.list("favorites").size()==1,"atomic collection and tracking keep one record per matched job");
         System.out.println("PASS: "+checks+" offline workflow checks; fixtures: "+root);
     }
 }

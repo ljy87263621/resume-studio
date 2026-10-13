@@ -27,6 +27,8 @@ public sealed partial class MainWindow
             await Task.Delay(350);
             Check(font.SelectedItem?.ToString()==ResumeTypography.Labels[2]&&editorLayoutPanel!.Visibility==Microsoft.UI.Xaml.Visibility.Visible,"native font dropdown selection updates its label and keeps the inline panel open");
             Check((await preview.CoreWebView2.ExecuteScriptAsync("getComputedStyle(document.querySelector('article')).fontFamily")).Contains("SimSun"),"font selection refreshes preview even when live typing preview is disabled");
+            var size=InteractionElement<Slider>(layout,s=>s.Header?.ToString()=="正文字号")!;size.Value=13.5;await Task.Delay(previewTimer.Interval+TimeSpan.FromMilliseconds(180));
+            Check(await preview.CoreWebView2.ExecuteScriptAsync("getComputedStyle(document.querySelector('article')).fontSize === '18px'")=="true","explicit layout size changes also refresh when live typing preview is disabled");size.Value=12;
             await preview.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.enable","{}");await preview.CoreWebView2.CallDevToolsProtocolMethodAsync("CSS.enable","{}");
             using(var document=JsonDocument.Parse(await preview.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.getDocument","{}"))) {
                 int rootNode=document.RootElement.GetProperty("root").GetProperty("nodeId").GetInt32();
@@ -57,6 +59,7 @@ public sealed partial class MainWindow
             ToggleLayoutSettings();await Task.Delay(180);await SaveNativePreview(Path.Combine(output,"workbench-layout.png"));ToggleLayoutSettings();
             var folder=await Windows.Storage.StorageFolder.GetFolderFromPathAsync(output);var image=await folder.CreateFileAsync("workbench-preview.png",Windows.Storage.CreationCollisionOption.ReplaceExisting);
             using(var stream=await image.OpenAsync(Windows.Storage.FileAccessMode.ReadWrite))await preview.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png,stream);
+            await VerifyWorkflow(output,checks);
             await File.WriteAllTextAsync(Path.Combine(output,"workbench-result.json"),JsonSerializer.Serialize(new {status="passed",checks},BackendClient.Json));
         } catch(Exception error) {
             await File.WriteAllTextAsync(Path.Combine(output,"workbench-result.json"),JsonSerializer.Serialize(new {status="failed",checks,error=error.ToString()},BackendClient.Json));

@@ -32,6 +32,7 @@ public sealed partial class MainWindow
     private async Task OpenEditor()
     {
         if(current is null) return;
+        int generation=++navigationRevision;CancelJobSearch();
         InitializeUndo();
         if(editorResumeId!=current.Id) { selectedEditorPart=0; editorResumeId=current.Id; }
         currentPage="editor"; DetachPreview(); body.Children.Clear(); body.ColumnDefinitions.Clear(); body.RowDefinitions.Clear();
@@ -102,7 +103,7 @@ public sealed partial class MainWindow
         capacityText=Text("正在估算 A4 内容容量…",11);previewHeader.Children.Add(capacityText);previewPanel.Children.Add(previewHeader); Grid.SetRow(preview,1); previewPanel.Children.Add(preview);
         previewHost=previewPanel;
         var frame=Card(previewPanel,new Thickness(0)); Grid.SetColumn(frame,2); Grid.SetRow(frame,2); body.Children.Add(frame);
-        await InitializeWeb(preview); await RenderPreview(); await UpdateCapacity(preview);
+        await InitializeWeb(preview);if(!PageIsCurrent("editor",generation))return;await RenderPreview();if(PageIsCurrent("editor",generation))await UpdateCapacity(preview);
     }
     private void ShowEditorPart()
     {
@@ -189,6 +190,7 @@ public sealed partial class MainWindow
 
     private UIElement LayoutSettings(Resume resume)
     {
+        void UpdateLayout(){Changed();previewTimer.Stop();previewTimer.Start();}
         var fields=new Grid {ColumnSpacing=18,RowSpacing=8};
         for(int column=0;column<3;column++)fields.ColumnDefinitions.Add(new ColumnDefinition {Width=new GridLength(1,GridUnitType.Star)});
         fields.RowDefinitions.Add(new RowDefinition {Height=GridLength.Auto});fields.RowDefinitions.Add(new RowDefinition {Height=GridLength.Auto});
@@ -199,10 +201,10 @@ public sealed partial class MainWindow
         font.SelectionChanged+=async (_,_)=>await Run(async ()=> {if(font.SelectedIndex>=0){resume.FontFamily=ResumeTypography.Names[font.SelectedIndex];Changed();await RenderPreview();}});Add(font,0,1);
         var palette=Stack(4);palette.Children.Add(Text("主题色",13));
         var colors=Row(5);foreach(string color in new[] {"#245AE8","#167D78","#353D59","#222222","#7955B4","#1E668A"}) {
-            var button=Button("●",()=> {resume.Color=color;Changed();return Task.CompletedTask;});button.Foreground=Brush(color);button.Padding=new Thickness(6,4,6,4);ToolTipService.SetToolTip(button,"主题色 "+color);colors.Children.Add(button);
+            var button=Button("●",()=> {resume.Color=color;UpdateLayout();return Task.CompletedTask;});button.Foreground=Brush(color);button.Padding=new Thickness(6,4,6,4);ToolTipService.SetToolTip(button,"主题色 "+color);colors.Children.Add(button);
         }palette.Children.Add(colors);Add(palette,0,2);
-        var size=new Slider {Header="正文字号",Minimum=10,Maximum=16,StepFrequency=.5,Value=resume.FontSize};size.ValueChanged+=(_,_)=> {resume.FontSize=size.Value;Changed();};Add(size,1,0);
-        var spacing=new Slider {Header="行间距",Minimum=1.2,Maximum=2,StepFrequency=.1,Value=resume.LineHeight};spacing.ValueChanged+=(_,_)=> {resume.LineHeight=spacing.Value;Changed();};Add(spacing,1,1);
+        var size=new Slider {Header="正文字号",Minimum=10,Maximum=16,StepFrequency=.5,Value=resume.FontSize};size.ValueChanged+=(_,_)=> {resume.FontSize=size.Value;UpdateLayout();};Add(size,1,0);
+        var spacing=new Slider {Header="行间距",Minimum=1.2,Maximum=2,StepFrequency=.1,Value=resume.LineHeight};spacing.ValueChanged+=(_,_)=> {resume.LineHeight=spacing.Value;UpdateLayout();};Add(spacing,1,1);
         Add(Text("MiSans 随软件提供；其他字体使用本机字体。\nPDF 使用白色纸张，仅包含你填写的内容。",11),1,2);
         return fields;
     }

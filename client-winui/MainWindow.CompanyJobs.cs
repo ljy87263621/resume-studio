@@ -25,9 +25,10 @@ public sealed partial class MainWindow
     private void CancelJobSearch() { queryGeneration++; jobCancellation?.Cancel(); jobCancellation?.Dispose(); jobCancellation=null; }
     private async Task ShowJobs()
     {
+        int navigationGeneration=navigationRevision;
         Heading("发现职位","汇总企业官网公开岗位，可添加公司、筛选来源、收藏与跳转投递。");
         var companies=await api.Get<List<CompanySource>>("job-sources");
-        if(currentPage!="jobs") return;
+        if(!PageIsCurrent("jobs",navigationGeneration)) return;
         body.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto }); body.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) });
         var controls=Stack(11); var filters=Row();
         var keyword=new TextBox { PlaceholderText="关键词：Java / embedded / 前端",Text=jobKeyword,Width=260 }; var city=new TextBox { PlaceholderText="城市 / 地点",Text=jobCity,Width=155 };
@@ -73,10 +74,11 @@ public sealed partial class MainWindow
     }
     private async Task ShowCompanySources()
     {
+        int generation=navigationRevision;
         Heading("公司招聘官网","添加公司官网与公开招聘系统，查看实际采集状态。");
         var panel=Stack(17); panel.Children.Add(Button("＋ 添加公司官网",()=>EditCompanySource(new CompanySource()),true));
         panel.Children.Add(Card(Text("支持腾讯、Greenhouse、Lever、Ashby、SmartRecruiters、Workday，以及网页公开 JobPosting 信息。使用同类招聘系统的公司可直接配置公司标识或职位板链接。普通官网会尝试提取公开岗位，动态页面未适配时会明确显示，不把招聘首页当作职位。",14)));
-        var list=await api.Get<List<CompanySource>>("job-sources"); var filter=Row(); var search=new TextBox { PlaceholderText="公司名称 / 招聘系统",Width=280 }; var region=new ComboBox { ItemsSource=new[] {"全部","国内","全球"},SelectedIndex=0,Width=130 }; filter.Children.Add(search); filter.Children.Add(region); panel.Children.Add(filter);
+        var list=await api.Get<List<CompanySource>>("job-sources");if(!PageIsCurrent("sources",generation))return; var filter=Row(); var search=new TextBox { PlaceholderText="公司名称 / 招聘系统",Width=280 }; var region=new ComboBox { ItemsSource=new[] {"全部","国内","全球"},SelectedIndex=0,Width=130 }; filter.Children.Add(search); filter.Children.Add(region); panel.Children.Add(filter);
         var cards=Stack(14); void Refresh()
         {
             cards.Children.Clear(); foreach(var s in list.Where(s=>(s.Name+" "+s.Adapter).Contains(search.Text,StringComparison.OrdinalIgnoreCase)&&((string)region.SelectedItem=="全部"||s.Region==(string)region.SelectedItem)))
@@ -89,6 +91,7 @@ public sealed partial class MainWindow
     }
     private async Task EditCompanySource(CompanySource source)
     {
+        source=CloneDocument(source);
         var content=Stack(12); var name=new TextBox { Header="公司名称",Text=source.Name }; var url=new TextBox { Header="招聘官网链接（HTTPS）",Text=source.Url };
         var types=new[] {"jsonld","greenhouse","lever","ashby","smartrecruiters","workday","tencent","arbeitnow"}; var adapter=new ComboBox { Header="接入方式",ItemsSource=types,SelectedItem=source.Adapter,HorizontalAlignment=HorizontalAlignment.Stretch }; var slug=new TextBox { Header="ATS 公司 / Board 标识（通用官网、Workday 无需填写）",Text=source.Slug,PlaceholderText="例如 stripe、palantir、notion、BoschGroup" }; var region=new ComboBox { Header="范围",ItemsSource=new[] {"国内","全球"},SelectedItem=source.Region };
         foreach(var control in new UIElement[] {name,url,adapter,slug,region}) content.Children.Add(control);
@@ -103,7 +106,10 @@ public sealed partial class MainWindow
             if(u.Host=="jobs.smartrecruiters.com") { adapter.SelectedItem="smartrecruiters"; slug.Text=segments[0]; }
             if(u.Host.EndsWith(".myworkdayjobs.com")) { adapter.SelectedItem="workday"; if(segments.Length>1&&segments[0].Contains('-')) url.Text=u.GetLeftPart(UriPartial.Authority)+"/"+segments[1]; }
         };
-        if(await new ContentDialog { XamlRoot=shell.XamlRoot,Title="配置公司招聘官网",Content=content,PrimaryButtonText="保存来源",CloseButtonText="取消" }.ShowAsync()!=ContentDialogResult.Primary) return;
-        source.Name=name.Text.Trim(); source.Url=url.Text.Trim(); source.Adapter=(string)adapter.SelectedItem; source.Slug=slug.Text.Trim(); source.Region=(string)region.SelectedItem; await api.Save("sources",source); await Navigate("sources");
+        var dialog=SaveForm("配置公司招聘官网",content,"保存来源",async ()=> {
+        source.Name=name.Text.Trim(); source.Url=url.Text.Trim(); source.Adapter=(string)adapter.SelectedItem; source.Slug=slug.Text.Trim(); source.Region=(string)region.SelectedItem; await api.Save("sources",source);
+        });
+        if(await dialog.ShowAsync()!=ContentDialogResult.Primary)return;
+        await Navigate("sources");Feedback("公司来源已保存",source.Name);
     }
 }

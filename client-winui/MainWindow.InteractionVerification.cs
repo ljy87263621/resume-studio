@@ -50,7 +50,7 @@ public sealed partial class MainWindow
         Check((await api.Get<List<ScheduleItem>>("schedule")).Single(i=>i.Id==scheduled.Id).Notes=="完成后补充的地点必须保留","undo preserves edits made after schedule completion");
         await SaveNativePreview(Path.Combine(output,"interaction-schedule-classic.png"));
         var quick=EditSchedule(new ScheduleItem {Kind="笔试",StartAt=DateTimeOffset.Now.AddDays(2).ToString("O")});var dialog=await FeatureDialog("编辑日程");
-        Check(FindCombo(dialog,"日程类型")?.SelectedItem?.ToString()=="笔试","quick schedule creation keeps the preselected event type");await FeatureClick(dialog,"返回");await quick;
+        Check(FindCombo(dialog,"日程类型")?.SelectedItem?.ToString()=="笔试","quick schedule creation keeps the preselected event type");await FeatureClick(dialog,"取消");await quick;
         preferences.InterfaceStyle="haru";preferences.Theme="light";await ApplyPreferences();await Navigate("schedule");await SaveNativePreview(Path.Combine(output,"interaction-schedule-haru.png"));
         await OpenEditor();editorParts!.SelectedIndex=1;await Task.Delay(180);await WaitForPreview();await SaveNativePreview(Path.Combine(output,"interaction-editor-haru.png"));
         var folder=await Windows.Storage.StorageFolder.GetFolderFromPathAsync(output);var browserImage=await folder.CreateFileAsync("interaction-live-preview.png",Windows.Storage.CreationCollisionOption.ReplaceExisting);

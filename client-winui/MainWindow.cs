@@ -158,14 +158,15 @@ public sealed partial class MainWindow : Window
     }
     private async Task ShowResumes()
     {
+        int generation=navigationRevision;
         Heading("我的简历","每个求职方向都可以有一份独立简历，编辑时自动保存。");
         var panel=Stack(18); var toolbar=Row(); toolbar.Children.Add(Button("＋ 新建简历",()=>Navigate("templates"),true)); toolbar.Children.Add(Button("导入备份",ImportResume)); panel.Children.Add(toolbar);
         var list=await api.Get<List<Resume>>("resumes");
-        if(currentPage!="resumes") return;
+        if(!PageIsCurrent("resumes",generation)) return;
         if(list.Count==0) panel.Children.Add(Card(Text("还没有简历。从模板中心选择一套模板，开始填写你的经历。",16)));
         foreach(var r in list)
         {
-            var c=Stack(12); c.Children.Add(Text(r.Title,20,true)); c.Children.Add(Text($"{r.Profile.Name}  ·  {r.Profile.Role}  ·  {templates.First(t=>t.Id==r.TemplateId).Name}",13)); c.Children.Add(Text("最近保存："+LocalDate(r.UpdatedAt),11));
+            var c=Stack(12); c.Children.Add(Text(r.Title,20,true)); c.Children.Add(Text($"{r.Profile.Name}  ·  {r.Profile.Role}  ·  {templates.FirstOrDefault(t=>t.Id==r.TemplateId)?.Name??"模板不可用"}",13)); c.Children.Add(Text("最近保存："+LocalDate(r.UpdatedAt),11));
             var actions=Row(); actions.Children.Add(Button("继续编辑",async ()=> { current=r; dirty=false; await OpenEditor(); },true)); actions.Children.Add(Button("复制",async ()=> { var clone=JsonSerializer.Deserialize<Resume>(JsonSerializer.Serialize(r,BackendClient.Json),BackendClient.Json)!; clone.Id=Guid.NewGuid().ToString(); clone.Title+=" · 副本"; await api.Save("resumes",clone); await Navigate("resumes"); })); actions.Children.Add(Button("删除",async ()=> { if(await Confirm("删除这份简历？",r.Title+"，删除后无法在应用内恢复。")) { await api.Delete("resumes/"+r.Id); if(current?.Id==r.Id) current=null; await Navigate("resumes"); } })); c.Children.Add(actions); panel.Children.Add(Card(c));
         }
         FillScroll(panel);
@@ -186,7 +187,7 @@ public sealed partial class MainWindow : Window
             while(current is not null&&dirty)
             {
                 int savedRevision=revision; string id=current.Id;
-                var snapshot=JsonSerializer.Deserialize<Resume>(JsonSerializer.Serialize(current,BackendClient.Json),BackendClient.Json)!;
+                var snapshot=CloneResume(current);
                 if(string.IsNullOrWhiteSpace(snapshot.Title)) { saveState.Text="请填写简历名称后保存"; throw new InvalidOperationException("简历名称不能为空，当前修改尚未保存。"); }
                 SaveIndicator("正在保存…",true);
                 var saved=await api.Save("resumes",snapshot);
@@ -248,7 +249,7 @@ public sealed partial class MainWindow : Window
     private void InitPicker(object picker) => WinRT.Interop.InitializeWithWindow.Initialize(picker,WinRT.Interop.WindowNative.GetWindowHandle(this));
     private static string SafeName(string text) => string.Join("_",text.Split(Path.GetInvalidFileNameChars(),StringSplitOptions.RemoveEmptyEntries));
     private async Task<bool> Confirm(string title,string message) => await new ContentDialog { XamlRoot=shell.XamlRoot,Title=title,Content=message,PrimaryButtonText="确认",CloseButtonText="取消",DefaultButton=ContentDialogButton.Close }.ShowAsync()==ContentDialogResult.Primary;
-    private void Success(string title,string message) { notice.Title=title; notice.Message=message; notice.Severity=InfoBarSeverity.Success; notice.IsOpen=true; }
+    private void Success(string title,string message) => Feedback(title,message);
     private static string LocalDate(string value) => DateTimeOffset.TryParse(value,out var dt)?dt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"):value;
 
     private Border JobCard(Job j,bool favorite)
@@ -258,14 +259,14 @@ public sealed partial class MainWindow : Window
         var description=Text(j.Description,13); description.MaxHeight=145; description.TextTrimming=TextTrimming.CharacterEllipsis; c.Children.Add(description);
         c.Children.Add(JobLink(j));
         var actions=Row(); actions.Children.Add(Button("详情",async ()=> { var content=Stack(); content.Children.Add(Text(j.Company+" · "+j.Location,14,true)); content.Children.Add(Text(j.Description,14)); var dialog=new ContentDialog { XamlRoot=shell.XamlRoot,Title=j.Title,Content=new ScrollViewer { Content=content,MaxHeight=480 },PrimaryButtonText="前往投递",CloseButtonText="返回" }; if(await dialog.ShowAsync()==ContentDialogResult.Primary) await OpenJob(j); })); actions.Children.Add(Button("前往投递 ↗",()=>OpenJob(j),true));
-        actions.Children.Add(Button(favorite?"取消收藏":"收藏职位",async ()=> { if(favorite) { await api.Delete("favorites/"+j.Id); await Navigate("favorites"); } else { await api.Save("favorites",j); Success("已收藏",j.Title); } })); if(favorite) { actions.Children.Add(Button("编辑收藏",()=>EditFavorite(j,false))); actions.Children.Add(Button("自动补全",()=>ResolveFavorite(j))); } actions.Children.Add(Button("复制链接",()=>CopyJobLink(j))); c.Children.Add(actions); c.Children.Add(Button("针对岗位制作简历",()=>FitJob(j))); return Card(c);
+        actions.Children.Add(Button(favorite?"取消收藏":"收藏职位",()=>favorite?RemoveFavorite(j):CollectFavorite(j))); if(favorite) { actions.Children.Add(Button("编辑收藏",()=>EditFavorite(j,false))); actions.Children.Add(Button("自动补全",()=>ResolveFavorite(j))); } actions.Children.Add(Button("复制链接",()=>CopyJobLink(j))); c.Children.Add(actions);
+        var followup=Row();followup.Children.Add(Button("针对岗位制作简历",()=>FitJob(j)));followup.Children.Add(Button("记录／查看投递",()=>EditJobApplication(j)));c.Children.Add(followup);return Card(c);
     }
     private async Task OpenJob(Job job)
     {
         await Launch(job.Url);
-        var records=await api.Get<List<ApplicationRecord>>("applications");
-        if(records.All(r=>r.JobId!=job.Id)) await api.Save("applications",new ApplicationRecord { JobId=job.Id,Title=job.Title,Company=job.Company,Url=job.Url,ResumeTitle=current?.Title??"" });
-        Success("已打开招聘页面","记录状态为“已打开”。完成原站投递后，可在投递记录中更新为“已投递”。");
+        var result=await api.Post<CollectionResult<ApplicationRecord>>("applications/open",job);
+        Success("已打开招聘页面",result.Created?"已记录为“已打开”；完成投递后点击“记录／查看投递”确认进度和所用简历。":"已有投递记录 · "+result.Record.Status+"，可点击“记录／查看投递”继续跟进。");
     }
     private static async Task Launch(string url)
     {

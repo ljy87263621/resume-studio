@@ -25,7 +25,7 @@ public sealed partial class MainWindow
         await Navigate("schedule");var edit=EditSchedule(new ScheduleItem {StartAt=DateTimeOffset.Now.AddHours(3).ToString("O")});var scheduleDialog=await FeatureDialog("编辑日程");
         (FindTextField(scheduleDialog,"事项名称")??throw new Exception("Schedule title missing")).Text="自定义面试安排";var kind=FindCombo(scheduleDialog,"日程类型")!;kind.SelectedItem="面试";await FeatureClick(scheduleDialog,"保存日程");await edit;
         var items=await api.Get<List<ScheduleItem>>("schedule");var saved=items.Single(i=>i.Title=="自定义面试安排");Check(saved.Kind=="面试"&&DateTimeOffset.TryParse(saved.StartAt,out _),"native schedule dialog saves an event through the backend");
-        var editing=EditSchedule(saved);var existing=await FeatureDialog("编辑日程");var fields=(StackPanel)((ScrollViewer)existing.Content).Content;
+        var editing=EditSchedule(saved);var existing=await FeatureDialog("编辑日程");var fields=(StackPanel)((ContentControl)((ScrollViewer)existing.Content).Content).Content;
         var dayPicker=fields.Children.OfType<CalendarDatePicker>().Single();dayPicker.Date=DateTimeOffset.Now.AddDays(1);
         fields.Children.OfType<CheckBox>().Single(b=>b.Content?.ToString()=="全天事项").IsChecked=true;
         fields.Children.OfType<CheckBox>().Single(b=>b.Content?.ToString()=="软件内提醒").IsChecked=false;
