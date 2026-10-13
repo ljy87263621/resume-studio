@@ -2,8 +2,7 @@ $ErrorActionPreference='Stop'
 $root=Join-Path ([IO.Path]::GetTempPath()) ('resume-install-test-'+[guid]::NewGuid().ToString('N'))
 $install=Join-Path $root 'app'; $data=Join-Path $root 'data'; $workspace=Join-Path $data ('updates\'+[guid]::NewGuid().ToString('N')); $source=Join-Path $workspace 'extracted\ResumeStudio'
 New-Item -ItemType Directory -Force $install,$source | Out-Null
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Update-App.ps1') -Destination $workspace
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'sync-distribution.ps1') -Destination $workspace
+foreach($name in @('Update-App.ps1','sync-distribution.ps1')){[IO.File]::WriteAllText((Join-Path $workspace $name),[IO.File]::ReadAllText((Join-Path $PSScriptRoot $name)),[Text.UTF8Encoding]::new($true))}
 function Manifest([string]$dir,[string[]]$names){
     $files=@($names | ForEach-Object {[ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath (Join-Path $dir $_) -Algorithm SHA256).Hash.ToLowerInvariant()}})
     @{files=$files} | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $dir 'distribution-manifest.json') -Encoding UTF8
@@ -26,7 +25,7 @@ $request | ConvertTo-Json | Set-Content $requestFile -Encoding UTF8
 # Avoid a modal error box in the isolated fixture; production retains its user-facing failure message.
 $helper=Get-Content (Join-Path $workspace 'Update-App.ps1') -Raw
 $helper=$helper.Replace("if(`$request.restart){Add-Type -AssemblyName PresentationFramework;","if(`$false){Add-Type -AssemblyName PresentationFramework;")
-$helper | Set-Content (Join-Path $workspace 'Update-App.ps1') -Encoding UTF8
+[IO.File]::WriteAllText((Join-Path $workspace 'Update-App.ps1'),$helper,[Text.UTF8Encoding]::new($true))
 & (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoProfile -ExecutionPolicy Bypass -File (Join-Path $workspace 'Update-App.ps1') -RequestFile $requestFile
 if($LASTEXITCODE -eq 0){throw 'Invalid executable unexpectedly installed'}
 if((Get-FileHash (Join-Path $install 'ResumeStudio.exe')).Hash -ne (Get-FileHash (Join-Path $env:WINDIR 'System32\cmd.exe')).Hash){throw 'Rollback failed'}
