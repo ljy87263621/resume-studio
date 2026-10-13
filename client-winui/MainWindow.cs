@@ -95,6 +95,7 @@ public sealed partial class MainWindow : Window
         reminderTimer.Start(); await CheckApplicationReminders();
         if(templates.Count==0) { templates=await api.Get<List<Template>>("templates"); await Navigate("templates"); Mark("firstPageReady"); }
         await AcknowledgeUpdateStartup();
+        if(!VerificationSession)_=Run(MaintainStorageAfterStartup);
         if(!VerificationSession&&preferences.CheckUpdatesOnStartup) _=Run(()=>CheckForUpdates(true));
         if(Environment.GetCommandLineArgs().Contains("--benchmark")) { await Benchmark(); return; }
         if(Environment.GetCommandLineArgs().Contains("--iteration-test")) { await IterationOnlyTest(); return; }

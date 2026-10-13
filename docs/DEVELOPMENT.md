@@ -29,6 +29,7 @@ Windows + PowerShell 7 + .NET 8 SDK + JDK 21。设置 `JAVA_HOME`；脚本优先
 | --- | --- |
 | `test-offline.ps1` | 离线职位解析、持久化、模板与请求约束 |
 | `test-workbench.ps1` | 示例不污染数据、逐模块替换、顺序和隐藏状态 |
+| `test-maintenance.ps1` | 日志区间与校验、缓存归属、备份保留和压缩字节不变 |
 | `test-updater.ps1` | 签名、下载校验、隔离安装与失败回滚 |
 | `test-schedule.ps1` | 日期边界与日程规则 |
 | `test-installer.ps1` | 仅 GitHub 临时 runner：安装、快捷方式、覆盖和卸载数据保留 |

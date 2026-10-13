@@ -16,7 +16,7 @@ function gh {
                 '{"tagName":"update-channels"}';return
             }
             $size=if($global:resumeChannelWrongSize){$global:resumeChannelFixtureSize+1}else{$global:resumeChannelFixtureSize}
-            @{tagName='v0.6.0';isPrerelease=$false;assets=@(@{name='ResumeStudio-v0.6.0-windows-x64.zip';size=$size},@{name='release-info.json'},@{name='release-info.sig'})}|ConvertTo-Json -Depth 5
+            @{tagName='v0.6.0';isPrerelease=$false;assets=@(@{name='ResumeStudio-v0.6.0-windows-x64.zip';size=$size},@{name='release-info.json'},@{name='release-info.sig'},@{name='release-changelog.json';size=(Get-Item release/release-changelog.json).Length})}|ConvertTo-Json -Depth 5
         }
         'create' {$global:resumeChannelCreated=$true}
         'upload' {$global:resumeChannelUploads++}

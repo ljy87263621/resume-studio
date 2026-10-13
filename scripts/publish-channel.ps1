@@ -22,6 +22,10 @@ foreach($name in @($info.packageName,'release-info.json','release-info.sig')){
 }
 $package=@($published.assets|Where-Object {$_.name -eq $info.packageName})[0]
 if($package.size -ne $info.packageSize){throw 'Published package size does not match the signed index'}
+if($info.PSObject.Properties.Name -contains 'changeLogName'){
+    $publishedLog=@($published.assets|Where-Object {$_.name -eq $info.changeLogName})
+    if($publishedLog.Count -ne 1 -or $publishedLog[0].size -ne $info.changeLogSize){throw 'Signed changelog has not been uploaded completely'}
+}
 gh release view update-channels --repo $repository --json tagName 1>$null 2>$null
 if($LASTEXITCODE -ne 0){
     $notes='Signed update-channel indexes for Resume Studio. Program packages remain on their individual Stable and Nightly releases.'
