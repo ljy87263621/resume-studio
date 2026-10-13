@@ -1,7 +1,9 @@
 using Microsoft.UI;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Windows.Graphics;
 
 namespace ResumeStudio;
 
@@ -13,6 +15,7 @@ public sealed partial class MainWindow
     private static Brush PanelMaterial => haruStyle ? panelMaterial : Brush(Surface);
     private static Brush EdgeMaterial => haruStyle ? edgeMaterial : Brush(Stroke);
     private bool nativeGlass;
+    private RectInt32[] glassDragRegions=[];
 
     private void ConfigureWindowMaterial()
     {
@@ -55,8 +58,13 @@ public sealed partial class MainWindow
 
     private void ConfigureGlassTitleBar()
     {
+        // The page header lives inside NavigationView; SetTitleBar(headerFrame) leaves
+        // the visible window's top edge outside the drag region. Own both native caption
+        // rectangles after layout, including changes to the navigation pane and DPI.
+        SetTitleBar(null);
         ExtendsContentIntoTitleBar=haruStyle;
-        SetTitleBar(haruStyle?headerFrame:null);
+        glassDragRegions=[];
+        if(!haruStyle) InputNonClientPointerSource.GetForWindowId(AppWindow.Id).ClearRegionRects(NonClientRegionKind.Caption);
         headerFrame!.Margin=new Thickness(0,haruStyle?10:0,haruStyle?138:0,20);
         if(Microsoft.UI.Windowing.AppWindowTitleBar.IsCustomizationSupported())
         {
@@ -70,6 +78,27 @@ public sealed partial class MainWindow
             }
             else { titleBar.ButtonBackgroundColor=null; titleBar.ButtonInactiveBackgroundColor=null; titleBar.ButtonForegroundColor=null; titleBar.ButtonInactiveForegroundColor=null; }
         }
+        UpdateGlassDragRegions();
+    }
+
+    private void UpdateGlassDragRegions()
+    {
+        if(!haruStyle||shell.XamlRoot is null||headerFrame is null||!headerFrame.IsLoaded) return;
+        double scale=shell.XamlRoot.RasterizationScale;
+        int right=(int)Math.Floor(shell.ActualWidth*scale)-AppWindow.TitleBar.RightInset;
+        var regions=new List<RectInt32>();
+        // Leave the NavigationView menu button at the left and native caption buttons
+        // at the right interactive. The otherwise empty top edge also moves the window.
+        int left=Math.Max(AppWindow.TitleBar.LeftInset,(int)Math.Ceiling(48*scale));
+        if(right>left) regions.Add(new RectInt32(left,0,right-left,(int)Math.Ceiling(32*scale)));
+        var bounds=headerFrame.TransformToVisual(shell).TransformBounds(new Windows.Foundation.Rect(0,0,headerFrame.ActualWidth,headerFrame.ActualHeight));
+        int x=Math.Max(0,(int)Math.Ceiling(bounds.X*scale)),y=Math.Max(0,(int)Math.Ceiling(bounds.Y*scale));
+        int end=Math.Min(right,(int)Math.Floor((bounds.X+bounds.Width)*scale)),bottom=(int)Math.Floor((bounds.Y+bounds.Height)*scale);
+        if(end>x&&bottom>y) regions.Add(new RectInt32(x,y,end-x,bottom-y));
+        var next=regions.ToArray();
+        if(glassDragRegions.SequenceEqual(next)) return;
+        InputNonClientPointerSource.GetForWindowId(AppWindow.Id).SetRegionRects(NonClientRegionKind.Caption,next);
+        glassDragRegions=next;
     }
 
     private static void ApplyGlassHosts(DependencyObject parent)

@@ -38,6 +38,8 @@ public sealed partial class MainWindow
         var heading=Stack(5); heading.Children.Add(pageTitle); heading.Children.Add(pageSubtitle); header.Children.Add(heading);
         saveState.HorizontalAlignment=HorizontalAlignment.Right; saveState.VerticalAlignment=VerticalAlignment.Center; saveState.Margin=new Thickness(16,0,0,0); Grid.SetColumn(saveState,1); header.Children.Add(saveState);
         headerFrame=new Border { Child=header,Margin=new Thickness(0,0,0,20) }; contentHost.Children.Add(headerFrame);
+        headerFrame.LayoutUpdated+=(_,_)=>UpdateGlassDragRegions();
+        shell.Loaded+=(_,_)=>shell.XamlRoot.Changed+=(_,_)=>UpdateGlassDragRegions();
         Grid.SetRow(notice,1); contentHost.Children.Add(notice); Grid.SetRow(body,2); contentHost.Children.Add(body);
     }
     private void BuildShell()

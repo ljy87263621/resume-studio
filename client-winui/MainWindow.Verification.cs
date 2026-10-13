@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Input;
 using ResumeStudio.Services;
 using System.Text.Json;
 
@@ -65,10 +66,19 @@ public sealed partial class MainWindow
         if(!nativeGlass && SystemBackdrop is not DesktopAcrylicBackdrop || shell.Background is not SolidColorBrush baseBrush || baseBrush.Color.A==255 || headerFrame?.Background is not LinearGradientBrush glass || glass.GradientStops.Any(s=>s.Color.A==255))
             throw new Exception("Haru glass window/header material missing or covered by an opaque root");
         iterationChecks.Add("whole-window acrylic, translucent root and glass header");
+        await VerifyGlassCaptionRegions();
+        iterationChecks.Add("Haru top edge and page header are native drag regions; menu and caption buttons excluded");
+        var originalSize=AppWindow.Size;
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(800,700)); await Task.Delay(200);
+        await VerifyGlassCaptionRegions();
+        AppWindow.Resize(originalSize); await Task.Delay(200); await VerifyGlassCaptionRegions();
+        iterationChecks.Add("Haru drag regions follow compact navigation and restored window size");
         await OpenEditor(); editorParts!.SelectedIndex=2; await SaveNativePreview(Path.Combine(output,"haru-editor-light.png"));
         preferences.Theme="dark"; await ApplyPreferences(); await SaveNativePreview(Path.Combine(output,"haru-editor-dark.png"));
         if(shell.RequestedTheme!=ElementTheme.Dark||preview!=originalWeb) throw new Exception("Dark theme or WebView reuse failed");
         iterationChecks.Add("Haru light and dark themes without WebView recreation");
+        await VerifyGlassCaptionRegions();
+        iterationChecks.Add("Haru drag regions survive theme switch and WebView editor navigation");
         await PrintPdf(Path.Combine(output,"module-edited-dark-theme.pdf"));
         var folder=await Windows.Storage.StorageFolder.GetFolderFromPathAsync(output);
         var image=await folder.CreateFileAsync("browser-preview-dark.png",Windows.Storage.CreationCollisionOption.ReplaceExisting);
@@ -85,9 +95,21 @@ public sealed partial class MainWindow
         await VerifyVisibleJobCapture(output);
 
         preferences.InterfaceStyle="classic"; preferences.LivePreview=true; await ApplyPreferences(); await Navigate("templates"); await SaveNativePreview(Path.Combine(output,"classic-templates.png"));
-        if(haruStyle||AppPreferences.Load(api.DataDirectory).InterfaceStyle!="classic") throw new Exception("Classic restoration failed");
+        if(haruStyle||ExtendsContentIntoTitleBar||AppPreferences.Load(api.DataDirectory).InterfaceStyle!="classic") throw new Exception("Classic restoration failed");
         iterationChecks.Add("classic interface restoration with shared data");
         await File.WriteAllTextAsync(Path.Combine(output,"iteration-result.json"),JsonSerializer.Serialize(new {status="passed",checks=iterationChecks,startup=timings,webInitializations,previewNavigations,previewPatches},BackendClient.Json));
+    }
+    private async Task VerifyGlassCaptionRegions()
+    {
+        await Task.Delay(150);
+        var regions=InputNonClientPointerSource.GetForWindowId(AppWindow.Id).GetRegionRects(NonClientRegionKind.Caption);
+        var scale=shell.XamlRoot.RasterizationScale;
+        var header=headerFrame!.TransformToVisual(shell).TransformPoint(new Windows.Foundation.Point(headerFrame.ActualWidth/2,headerFrame.ActualHeight/2));
+        bool Contains(double x,double y)=>regions.Any(r=>x>=r.X&&x<r.X+r.Width&&y>=r.Y&&y<r.Y+r.Height);
+        double right=shell.ActualWidth*scale-AppWindow.TitleBar.RightInset;
+        if(!Contains((48*scale+right)/2,12*scale)||!Contains(header.X*scale,header.Y*scale)) throw new Exception("Native caption region missing from visible top edge or page header");
+        if(Contains(24*scale,12*scale)||Contains(shell.ActualWidth*scale-16,12*scale)) throw new Exception("Drag region intercepts navigation menu or caption controls");
+        if(Contains(shell.ActualWidth*scale/2,shell.ActualHeight*scale/2)) throw new Exception("Drag region intercepts page controls");
     }
     private async Task VerifyVisibleJobCapture(string output)
     {
