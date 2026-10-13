@@ -7,7 +7,10 @@ function Manifest([string]$dir,[string[]]$names){
     $files=@($names | ForEach-Object {[ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath (Join-Path $dir $_) -Algorithm SHA256).Hash.ToLowerInvariant()}})
     @{files=$files} | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $dir 'distribution-manifest.json') -Encoding UTF8
 }
-Copy-Item -LiteralPath (Join-Path $env:WINDIR 'System32\cmd.exe') -Destination (Join-Path $install 'ResumeStudio.exe')
+# Rollback restarts this fixture; use an executable that exits without input so
+# it cannot keep the parent verification process's output pipe open.
+$fixtureExecutable=Join-Path $env:WINDIR 'System32\where.exe'
+Copy-Item -LiteralPath $fixtureExecutable -Destination (Join-Path $install 'ResumeStudio.exe')
 'obsolete' | Set-Content (Join-Path $install 'obsolete.dll'); 'original' | Set-Content (Join-Path $install 'modified.dll')
 Manifest $install @('ResumeStudio.exe','obsolete.dll','modified.dll')
 'user-modified' | Set-Content (Join-Path $install 'modified.dll'); 'keep unknown' | Set-Content (Join-Path $install 'personal.txt'); 'data sentinel' | Set-Content (Join-Path $data 'sentinel.txt')
@@ -32,7 +35,7 @@ $helper=$helper.Replace("if(`$request.restart){Add-Type -AssemblyName Presentati
 [IO.File]::WriteAllText((Join-Path $workspace 'Update-App.ps1'),$helper,[Text.UTF8Encoding]::new($true))
 & (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoProfile -ExecutionPolicy Bypass -File (Join-Path $workspace 'Update-App.ps1') -RequestFile $requestFile
 if($LASTEXITCODE -eq 0){throw 'Invalid executable unexpectedly installed'}
-if((Get-FileHash (Join-Path $install 'ResumeStudio.exe')).Hash -ne (Get-FileHash (Join-Path $env:WINDIR 'System32\cmd.exe')).Hash){throw 'Rollback failed'}
+if((Get-FileHash (Join-Path $install 'ResumeStudio.exe')).Hash -ne (Get-FileHash -LiteralPath $fixtureExecutable).Hash){throw 'Rollback failed'}
 @(Get-Process ResumeStudio -ErrorAction SilentlyContinue | Where-Object Path -eq (Join-Path $install 'ResumeStudio.exe')) | Stop-Process
 $global:LASTEXITCODE=0
 Write-Output 'PASS: failed startup rolls back the application directory'

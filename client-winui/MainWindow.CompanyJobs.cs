@@ -64,7 +64,7 @@ public sealed partial class MainWindow
         keyword.TextChanged+=(_,_)=>jobKeyword=keyword.Text; city.TextChanged+=(_,_)=>jobCity=city.Text;
         provider.SelectionChanged+=(_,_)=>jobProvider=((CompanySource)provider.SelectedItem).Id;
         filters.Children.Add(Button("查询官网职位",()=>Search(1),true)); filters.Children.Add(Button("取消",()=> { CancelJobSearch(); status.Text="已取消本次等待。已显示的结果保留；后台官网请求会在限定时间内结束。"; return Task.CompletedTask; })); controls.Children.Add(filters);
-        var actions=Row(); actions.Children.Add(Button("公司来源管理",()=>Navigate("sources"))); actions.Children.Add(Button("添加公司官网",()=>EditCompanySource(new CompanySource()))); actions.Children.Add(Button("BOSS直聘 ↗",()=>Launch("https://www.zhipin.com/web/geek/job?query="+Uri.EscapeDataString(keyword.Text)))); actions.Children.Add(Button("牛客校招 ↗",()=>Launch("https://www.nowcoder.com/jobs"))); controls.Children.Add(actions); controls.Children.Add(status); controls.Margin=new Thickness(0,0,0,15); body.Children.Add(controls);
+        var actions=Row(); actions.Children.Add(Button("公司来源管理",()=>Navigate("sources"))); actions.Children.Add(Button("添加公司官网",()=>EditCompanySource(new CompanySource()))); actions.Children.Add(Button("BOSS 登录并采集",()=>OpenPlatformCaptureAsync("boss",keyword.Text))); actions.Children.Add(Button("牛客浏览并采集",()=>OpenPlatformCaptureAsync("nowcoder",keyword.Text))); controls.Children.Add(actions); controls.Children.Add(status); controls.Margin=new Thickness(0,0,0,15); body.Children.Add(controls);
         var list=new Grid { RowSpacing=10 }; list.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto }); list.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) }); list.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto });
         list.Children.Add(new Expander { Header="本次各公司来源状态",Content=new ScrollViewer {Content=sourcePanel,MaxHeight=240},HorizontalAlignment=HorizontalAlignment.Stretch }); Grid.SetRow(results,1); list.Children.Add(results);
         var paging=Row(); paging.Children.Add(Button("上一页",()=>Search(Math.Max(1,jobPage-1)))); paging.Children.Add(Button("下一页",()=>Search(Math.Min(100,jobPage+1)))); Grid.SetRow(paging,2); list.Children.Add(paging); Grid.SetRow(list,1); body.Children.Add(list);
@@ -73,7 +73,7 @@ public sealed partial class MainWindow
     }
     private async Task ShowCompanySources()
     {
-        Heading("公司招聘官网","添加公司官网与公开招聘系统，查看实际采集状态。");
+        Heading("公司来源管理","添加公司官网与公开招聘系统，查看实际采集状态。");
         var panel=Stack(17); panel.Children.Add(Button("＋ 添加公司官网",()=>EditCompanySource(new CompanySource()),true));
         panel.Children.Add(Card(Text("支持腾讯、Greenhouse、Lever、Ashby、SmartRecruiters、Workday，以及网页公开 JobPosting 信息。使用同类招聘系统的公司可直接配置公司标识或职位板链接。普通官网会尝试提取公开岗位，动态页面未适配时会明确显示，不把招聘首页当作职位。",14)));
         var list=await api.Get<List<CompanySource>>("job-sources"); var filter=Row(); var search=new TextBox { PlaceholderText="公司名称 / 招聘系统",Width=280 }; var region=new ComboBox { ItemsSource=new[] {"全部","国内","全球"},SelectedIndex=0,Width=130 }; filter.Children.Add(search); filter.Children.Add(region); panel.Children.Add(filter);

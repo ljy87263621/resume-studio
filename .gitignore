@@ -11,3 +11,4 @@ data/
 client-winui/Assets/ReleaseIdentity.json
 *.pfx
 *.key
+.codegraph/

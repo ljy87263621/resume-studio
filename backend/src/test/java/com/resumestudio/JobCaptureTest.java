@@ -14,6 +14,9 @@ public final class JobCaptureTest {
         check(Json.str(job,"canonicalUrl").equals("https://www.zhipin.com/job_detail/example.html"),"Dedup URL excludes tracking/access parameters");
         var second=Json.object(JobCapture.preview(Map.of("text","https://www.zhipin.com/job_detail/example.html?securityId=new&ka=other")).get("job"));
         check(Json.str(job,"id").equals(Json.str(second,"id")),"Changing access parameters does not duplicate a job");
+        var plainNowcoder=Json.object(JobCapture.preview(Map.of("text","https://www.nowcoder.com/jobs/detail/12")).get("job"));
+        var trackedNowcoder=Json.object(JobCapture.preview(Map.of("text","https://www.nowcoder.com/jobs/detail/12?channel=npJobTab&pageSource=center&deliverSource=recommend")).get("job"));
+        check(Json.str(plainNowcoder,"id").equals(Json.str(trackedNowcoder,"id")),"DOM tracking parameters and JSON-generated URLs share one favorite ID");
         var markdown=Json.object(JobCapture.preview(Map.of("text","[职位]("+url+")")).get("job"));
         check(Json.str(markdown,"url").equals(url),"Markdown link paste is recognized");
         String html="""

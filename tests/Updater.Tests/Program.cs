@@ -9,6 +9,8 @@ int checks=0;
 void Check(bool condition,string label){if(!condition) throw new Exception(label); checks++; Console.WriteLine("PASS: "+label);}
 void Reject(Action action,string label){try{action();}catch(Exception e) when(e is IOException or CryptographicException or FormatException){Check(true,label); return;} throw new Exception("Unexpected acceptance: "+label);}
 using var key=RSA.Create(3072); string pem=key.ExportSubjectPublicKeyInfoPem();
+Check(ReleaseUpdate.Repository=="ljy87263621/resume-studio","fork updates remain in the maintained repository");
+Reject(()=>ReleaseUpdate.ValidateUrl("https://github.com/scj040921/resume-studio/releases/download/v0.7.4/app.zip"),"upstream cannot replace the fork");
 string root=Path.Combine(Path.GetTempPath(),"ResumeUpdater-"+Guid.NewGuid()); Directory.CreateDirectory(root);
 var info=new ReleaseIdentity {Channel="stable",Version="0.6.0",Commit=new string('a',40),BuiltAt="2026-10-13T02:00:00Z",Tag="v0.6.0",PackageName="ResumeStudio-v0.6.0-windows-x64.zip",Sha256=new string('0',64)};
 var previous=new ReleaseIdentity {Version="0.5.0",Channel="stable",Commit=new string('b',40)};
@@ -41,13 +43,13 @@ using(var zip=ZipFile.Open(archive,ZipArchiveMode.Create)){
 }
 var package=await File.ReadAllBytesAsync(archive); info.Sha256=Convert.ToHexString(SHA256.HashData(package)).ToLowerInvariant();
 bytes=JsonSerializer.SerializeToUtf8Bytes(info,ReleaseUpdate.Json);
-string Base(string name)=>"https://github.com/scj040921/resume-studio/releases/download/v0.6.0/"+name;
+string Base(string name)=>"https://github.com/ljy87263621/resume-studio/releases/download/v0.6.0/"+name;
 stable.Assets=[new() {Name="release-info.json",Url=Base("release-info.json")},new() {Name="release-info.sig",Url=Base("release-info.sig")},new() {Name=info.PackageName,Url=Base(info.PackageName),Digest="sha256:"+info.Sha256,Size=package.Length}];
 using var handler=new FixtureHandler(new Dictionary<string,byte[]> {
-    ["/repos/scj040921/resume-studio/releases/latest"]=JsonSerializer.SerializeToUtf8Bytes(stable,ReleaseUpdate.Json),
-    ["/scj040921/resume-studio/releases/download/v0.6.0/release-info.json"]=bytes,
-    ["/scj040921/resume-studio/releases/download/v0.6.0/release-info.sig"]=Sign(bytes),
-    ["/scj040921/resume-studio/releases/download/v0.6.0/"+info.PackageName]=package});
+    ["/repos/ljy87263621/resume-studio/releases/latest"]=JsonSerializer.SerializeToUtf8Bytes(stable,ReleaseUpdate.Json),
+    ["/ljy87263621/resume-studio/releases/download/v0.6.0/release-info.json"]=bytes,
+    ["/ljy87263621/resume-studio/releases/download/v0.6.0/release-info.sig"]=Sign(bytes),
+    ["/ljy87263621/resume-studio/releases/download/v0.6.0/"+info.PackageName]=package});
 using var service=new ReleaseUpdate(pem,handler);
 var update=await service.Check("stable","auto",previous,CancellationToken.None);
 Check(update is not null&&service.LastRoute.Contains("Proxy"),"direct failure falls back to public proxy");
