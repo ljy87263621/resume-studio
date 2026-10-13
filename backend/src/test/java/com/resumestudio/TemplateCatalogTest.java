@@ -26,8 +26,11 @@ public final class TemplateCatalogTest {
         Path root=Files.createTempDirectory("resume-catalog-");
         Path generated=root.resolve("模板目录.json");
         String java=Path.of(System.getProperty("java.home"),"bin","java.exe").toString();
-        var child=new ProcessBuilder(java,"-Dstdout.encoding=windows-1252","-Dstderr.encoding=windows-1252","-cp",System.getProperty("java.class.path"),"com.resumestudio.TemplateCatalog",generated.toString()).redirectErrorStream(true).redirectOutput(root.resolve("console.txt").toFile()).start();
-        if(!child.waitFor(15,TimeUnit.SECONDS)||child.exitValue()!=0) throw new AssertionError("Catalogue generation failed under a non-Chinese console encoding");
+        String encodedPath=Base64.getEncoder().encodeToString(generated.toString().getBytes(StandardCharsets.UTF_8));
+        Path log=root.resolve("console.txt");
+        var child=new ProcessBuilder(java,"-Dstdout.encoding=windows-1252","-Dstderr.encoding=windows-1252","-cp",System.getProperty("java.class.path"),"com.resumestudio.TemplateCatalog","--path-base64",encodedPath).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+        if(!child.waitFor(15,TimeUnit.SECONDS)) {child.destroyForcibly();throw new AssertionError("Catalogue generation timed out");}
+        if(child.exitValue()!=0) throw new AssertionError("Catalogue generation failed under a non-Chinese console encoding: "+Files.readString(log,StandardCharsets.ISO_8859_1));
         verify(generated);
         if(args.length>0) verify(Path.of(args[0]));
         // A valid JSON file can still contain irreversible question marks: reject it.

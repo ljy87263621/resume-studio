@@ -17,7 +17,10 @@ New-Item -ItemType Directory -Force $classes | Out-Null
 $sources = @(Get-ChildItem (Join-Path $root 'backend\src\main\java') -Recurse -Filter '*.java' | ForEach-Object FullName)
 & (Join-Path $jdk 'bin\javac.exe') -encoding UTF-8 -Xlint:all -Werror --release 21 --add-modules jdk.httpserver -d $classes @sources
 if ($LASTEXITCODE -ne 0) { throw 'Java compile failed' }
-& (Join-Path $jdk 'bin\java.exe') -cp $classes com.resumestudio.TemplateCatalog (Join-Path $root 'client-winui\Assets\TemplateCatalog.json')
+$catalogPath=Join-Path $root 'client-winui\Assets\TemplateCatalog.json'
+# The Windows Java launcher can also decode command-line arguments using the locale.
+$encodedCatalogPath=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($catalogPath))
+& (Join-Path $jdk 'bin\java.exe') -cp $classes com.resumestudio.TemplateCatalog --path-base64 $encodedCatalogPath
 if ($LASTEXITCODE -ne 0) { throw 'Template catalogue generation failed' }
 $jar = Join-Path $root 'backend\build\resume-backend.jar'
 & (Join-Path $jdk 'bin\jar.exe') --create --file $jar --main-class com.resumestudio.Server -C $classes .

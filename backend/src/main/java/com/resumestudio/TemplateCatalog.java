@@ -10,10 +10,11 @@ import java.nio.file.Path;
 public final class TemplateCatalog {
     private TemplateCatalog() {}
     public static void main(String[] args) throws IOException {
-        if(args.length!=1) throw new IllegalArgumentException("Provide the output JSON file path");
+        if(args.length!=2||!args[0].equals("--path-base64")) throw new IllegalArgumentException("Provide --path-base64 and a UTF-8 Base64 output path");
+        String output=new String(Base64.getDecoder().decode(args[1]),StandardCharsets.UTF_8);
         // Console encoding depends on the Windows build agent's locale. Write the
         // catalogue directly so PowerShell never decodes or re-encodes these bytes.
-        Files.writeString(Path.of(args[0]),Json.write(canonical(Templates.all())),StandardCharsets.UTF_8);
+        Files.writeString(Path.of(output),Json.write(canonical(Templates.all())),StandardCharsets.UTF_8);
     }
     private static Object canonical(Object value) {
         if(value instanceof Map<?,?> map) {
