@@ -53,5 +53,7 @@
 
 - [x] Update README and takeover documentation with actual implemented boundaries and test evidence; ensure all new tests are included in CI or a documented comprehensive command.
 - [x] Check `git diff --check` and the final changed-file set.
-- [ ] Commit to `codex/discovery-sync` and create a draft PR in the Fork.
-- [ ] Deliver the PR link, local Portable app, protocol specification and real-service verification boundaries.
+- [x] Commit to `codex/discovery-sync` and create a draft PR in the Fork.
+- [x] Deliver the PR link, local Portable app, protocol specification and real-service verification boundaries.
+
+Delivery: https://github.com/ljy87263621/resume-studio/pull/1 (draft). Initial implementation commit: cf0fd22. Fresh native acceptance: 41 checks. Offline feature, backend, schedule, updater (33 checks), signing-channel and transactional rollback verification passed. Portable handoff directory: artifacts/ResumeStudio-review-windows-x64; real-service and clean-machine limits remain in docs/TAKEOVER.md.
