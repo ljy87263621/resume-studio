@@ -76,16 +76,19 @@ begin
   FontRegistered := AddFontResourceEx(PrivateFontPath, $10, 0) > 0;
   if FontRegistered then WizardForm.Font.Name := 'MiSans';
   WizardForm.WelcomeLabel1.Caption := '安装拾简 {#ChannelName} {#AppVersion}';
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = wpWelcome then begin
+    WizardForm.NextButton.Caption := '一键安装';
+    { The application directory is initialized after InitializeWizard returns. }
   WizardForm.WelcomeLabel2.Caption :=
     '点击“一键安装”，即可完成安装并自动创建桌面快捷方式。' + #13#10#13#10 +
     '安装位置：' + ExpandConstant('{app}') + #13#10#13#10 +
     '简历、职位收藏、投递记录和日程保存在独立的个人数据目录。覆盖安装和卸载会保留这些数据。' + #13#10#13#10 +
     '如果系统缺少 WebView2，安装程序会从微软下载所需运行时。';
-end;
-
-procedure CurPageChanged(CurPageID: Integer);
-begin
-  if CurPageID = wpWelcome then WizardForm.NextButton.Caption := '一键安装'
+  end
   else if CurPageID = wpFinished then WizardForm.NextButton.Caption := '完成';
 end;
 
