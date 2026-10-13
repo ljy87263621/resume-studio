@@ -34,7 +34,7 @@ $scriptPath=Join-Path $root 'artifacts/ResumeStudio-installer.iss'
 # Inno's Chinese script must not depend on the runner's console code page.
 [IO.File]::WriteAllText($scriptPath,[IO.File]::ReadAllText((Join-Path $root 'installer/ResumeStudio.iss')),[Text.UTF8Encoding]::new($true))
 $channelName=if($identity.channel -eq 'nightly'){'Nightly'}else{'Stable'}
-& $Compiler "/DSourceDir=$source" "/DAppVersion=$($identity.version)" "/DPackageLabel=$PackageLabel" "/DChannelName=$channelName" "/DOutputDir=$output" "/DBootstrapper=$bootstrapper" "/DCompilerLicense=$(Join-Path (Split-Path $Compiler -Parent) 'license.txt')" $scriptPath
+& $Compiler "/DSourceDir=$source" "/DAppVersion=$($identity.version)" "/DPackageLabel=$PackageLabel" "/DChannelName=$channelName" "/DOutputDir=$output" "/DBootstrapper=$bootstrapper" "/DCompilerLicense=$(Join-Path (Split-Path $Compiler -Parent) 'license.txt')" "/DLanguageFile=$(Join-Path $root 'installer/ChineseSimplified.isl')" $scriptPath
 if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
 $setup=Join-Path $output "ResumeStudio-v$PackageLabel-Setup-x64.exe"
 if(!(Test-Path -LiteralPath $setup)){throw 'Installer was not produced'}

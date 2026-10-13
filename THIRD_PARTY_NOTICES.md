@@ -36,4 +36,6 @@ v0.3.0 企业招聘系统接入依据官方公开资料：[Greenhouse Job Board 
 
 Setup 使用 Inno Setup 6.7.3 构建，来源为 [JRSoftware 官方发行版](https://github.com/jrsoftware/issrc/releases/tag/is-6_7_3)。安装器安装 Inno Setup 的完整许可至 licenses/InnoSetup-LICENSE.txt。构建工具的原始 SHA-256 为 9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732，并验证 Pyrsys B.V. 的 Authenticode 签名。
 
+简体中文安装器文本保留 [Inno Setup 官方仓库的 ChineseSimplified.isl](https://github.com/jrsoftware/issrc/blob/main/Files/Languages/ChineseSimplified.isl) 原内容与译者署名，固定随源码分发。文件 SHA-256 为 e0b0b350e2245f3c5e65586dfe43d574f6e7f06f2261149aba284954b3fc9a8d。
+
 安装包包含微软官方 WebView2 Evergreen Bootstrapper，仅在所需运行时缺失时安装。来源与分发方式见 [Microsoft WebView2 分发说明](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)，构建时验证 Microsoft Corporation 发布者签名。WebView2 的许可独立于本项目 MIT 许可证。
