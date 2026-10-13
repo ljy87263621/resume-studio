@@ -36,10 +36,29 @@ foreach($file in $manifest.files){
 }
 Assert $true 'every installed manifest-owned file matches the release payload'
 $shell=New-Object -ComObject WScript.Shell
+# Inno may serialize icons using Windows 8.3 paths. Compare the resolved file,
+# rather than treating an equivalent short path as a broken shortcut.
+Add-Type @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public static class ResumeInstallerPaths {
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    private static extern uint GetLongPathName(string path, StringBuilder buffer, uint size);
+    public static string Resolve(string path) {
+        var buffer=new StringBuilder(32768);
+        uint length=GetLongPathName(path,buffer,(uint)buffer.Capacity);
+        if(length==0 || length>=buffer.Capacity) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        return buffer.ToString().TrimEnd('\\');
+    }
+}
+'@
 foreach($path in @($desktopLink,$menuLink)){
     Assert (Test-Path -LiteralPath $path) "automatic shortcut exists: $([IO.Path]::GetFileName($path))"
     $link=$shell.CreateShortcut($path)
-    Assert ($link.TargetPath -eq $exe -and $link.WorkingDirectory -eq $installRoot -and $link.IconLocation.StartsWith((Join-Path $installRoot 'Assets/AppIcon.ico'),[StringComparison]::OrdinalIgnoreCase)) 'shortcut uses the installed executable, working directory and app icon'
+    Write-Output ("Shortcut details: "+(@{target=$link.TargetPath;workingDirectory=$link.WorkingDirectory;icon=$link.IconLocation}|ConvertTo-Json -Compress))
+    $iconPath=($link.IconLocation -replace ',\s*-?\d+$','').Trim('"')
+    Assert ([ResumeInstallerPaths]::Resolve($link.TargetPath) -eq [ResumeInstallerPaths]::Resolve($exe) -and [ResumeInstallerPaths]::Resolve($link.WorkingDirectory) -eq [ResumeInstallerPaths]::Resolve($installRoot) -and [ResumeInstallerPaths]::Resolve($iconPath) -eq [ResumeInstallerPaths]::Resolve((Join-Path $installRoot 'Assets/AppIcon.ico'))) 'shortcut uses the installed executable, working directory and app icon'
 }
 $registryPath='Software\Microsoft\Windows\CurrentVersion\Uninstall\{B782F0B7-68E7-4D53-9200-5A45126A71F5}_is1'
 $registered=$false
