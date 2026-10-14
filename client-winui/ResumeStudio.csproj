@@ -19,7 +19,7 @@
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <PublishReadyToRun>false</PublishReadyToRun>
     <PublishTrimmed>false</PublishTrimmed>
-    <Version>0.8.3</Version>
+    <Version>0.8.4</Version>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>

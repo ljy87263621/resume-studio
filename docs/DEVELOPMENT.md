@@ -36,6 +36,7 @@ Windows + PowerShell 7 + .NET 8 SDK + JDK 21。设置 `JAVA_HOME`；脚本优先
 | `--workbench-test` | 隔离目录内的原生顶栏、排序、预览与 PDF；收藏去重／撤销、投递日程联动、失败重试及快速切页 |
 | `--feature-test`／`--iteration-test` | 既有原生功能与界面回归 |
 | `--capture-layout-test` | 窗口布局、缩放点击、当前详情单条收藏、正文读取、推荐排除、补全去重与返回收藏（本地网页夹具＋真实本地存储） |
+| `--favorites-editor-test` | 原生收藏多页／筛选／新增删除，以及编辑后切模板中心、重建和关闭预览 |
 
 原生测试可用 `RESUMESTUDIO_TEST_DATA`／`RESUMESTUDIO_TEST_OUTPUT` 指定隔离目录。文件选择器、实际鼠标拖动、外站登录与投递仍需人工验收。自动编译成功不等于完整人工验收。
 

@@ -162,7 +162,8 @@ public sealed partial class MainWindow
         UpdateStatus();ContentDialogResult choice;
         try {choice=await dialog.ShowAsync();}
         finally {closed=true;epoch++;viewport.Dispose();if(web.CoreWebView2 is not null)web.CoreWebView2.WebResourceResponseReceived-=ResponseReceived;web.Close();}
-        if(choice==ContentDialogResult.Primary){favoriteQuery="";favoriteSource=name;await Navigate("favorites");}
+        if(choice==ContentDialogResult.Primary||session.Added+session.Updated>0)ResetFavoriteView();
+        if(choice==ContentDialogResult.Primary){await Navigate("favorites");}
         else if(currentPage=="favorites")await Navigate("favorites");
         if(session.Added+session.Existing+session.Updated>0)Success("当前职位已收藏",$"本次新增 {session.Added} 条；补全 {session.Updated} 条；已有收藏 {session.Existing} 条。原有备注保留。"+(session.Pending>0?$"已放弃 {session.Pending} 条未保存职位。":""));
     }

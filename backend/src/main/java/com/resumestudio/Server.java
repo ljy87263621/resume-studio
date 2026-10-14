@@ -24,7 +24,7 @@ public final class Server {
         try {
             if(!token.equals(e.getRequestHeaders().getFirst("X-Resume-Token"))) { send(e,401,Map.of("error","Unauthorized")); return; }
             String path=e.getRequestURI().getPath().substring(5), method=e.getRequestMethod();
-            if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.8.3","java",System.getProperty("java.version"))); return; }
+            if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.8.4","java",System.getProperty("java.version"))); return; }
             if(path.equals("templates")&&method.equals("GET")) { send(e,200,Templates.all()); return; }
             if(path.equals("job-sources")&&method.equals("GET")) { send(e,200,jobs.sources()); return; }
             if(path.equals("sync/snapshot")&&method.equals("GET")) { send(e,200,store.syncSnapshot()); return; }

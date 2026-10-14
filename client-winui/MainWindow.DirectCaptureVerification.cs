@@ -48,7 +48,7 @@ public sealed partial class MainWindow
             await Loaded(Link(c)+"?challenge=1");await Read(dialog);Check((await api.Get<List<Job>>("favorites")).Count==initial+1,provider+": challenge page never saves a job");
             await FeatureClick(dialog,"清空记录");Check((await api.Get<List<Job>>("favorites")).Count==initial+1,provider+": clear display preserves stored favorites");
             await FeatureClick(dialog,"结束并查看收藏");await flow.WaitAsync(TimeSpan.FromSeconds(15));await Task.Delay(200);
-            Check(currentPage=="favorites"&&favoriteSource==name,provider+": finish opens the corresponding favorite filter");
+            Check(currentPage=="favorites"&&favoriteSource=="全部平台"&&favoritePage==1,provider+": finish shows all platforms without hiding previous favorites");
             core=null;var returnFlow=OpenPlatformCaptureAsync(provider,verificationSetup:setup);var returnDialog=await FeatureDialog(name+" · 收藏当前职位");
             for(int i=0;i<100&&core is null;i++)await Task.Delay(50);await Loaded(Link(c));await Read(returnDialog);
             await FeatureClick(returnDialog,"返回");await returnFlow;await Task.Delay(200);

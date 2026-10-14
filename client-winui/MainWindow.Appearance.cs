@@ -114,7 +114,7 @@ public sealed partial class MainWindow
     }
     private async Task ApplyPreferences()
     {
-        await SaveCurrent(); await preferences.SaveAsync(api.DataDirectory); DetachPreview(); BuildShell();
+        await SaveCurrent(); await preferences.SaveAsync(api.DataDirectory);await DetachPreviewAsync(true);BuildShell();
         if(currentPage=="editor") await OpenEditor(); else await Navigate(currentPage);
     }
     private void ShowSettings()

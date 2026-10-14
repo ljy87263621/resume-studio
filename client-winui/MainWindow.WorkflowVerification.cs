@@ -62,7 +62,7 @@ public sealed partial class MainWindow
         FindTextField(sourceDialog,"公司名称")!.Text="工作流测试官网";FindTextField(sourceDialog,"招聘官网链接（HTTPS）")!.Text="https://example.com/jobs";await FeatureClick(sourceDialog,"保存来源");await editSource.WaitAsync(TimeSpan.FromSeconds(15));
         Check((await api.Get<List<CompanySource>>("job-sources")).Any(s=>s.Name=="工作流测试官网"),"corrected company source saves through the shared form");
         var early=Navigate("sources");var late=Navigate("favorites");await Task.WhenAll(early,late);await Task.WhenAll(Navigate("favorites"),Navigate("favorites"));
-        Check(currentPage=="favorites"&&body.RowDefinitions.Count==2&&body.Children.Count==2,"quick and repeated navigation never appends stale page content");
+        Check(currentPage=="favorites"&&body.RowDefinitions.Count==3&&body.Children.Count==3,"quick and repeated navigation never appends stale page content");
         int generation=navigationRevision;await OpenEditor();Check(!PageIsCurrent("favorites",generation),"opening the editor invalidates in-flight list render generations");
         await SaveNativePreview(Path.Combine(output,"workflow-editor.png"));
     }

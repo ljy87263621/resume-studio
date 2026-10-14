@@ -63,7 +63,7 @@ public sealed partial class MainWindow : Window
             closeRequested=true;
             _=Run(async ()=>
             {
-                try { await FinishSyncBeforeClose(); editTimer.Stop(); previewTimer.Stop(); reminderTimer.Stop(); feedbackTimer.Stop(); CancelJobSearch(); await SaveCurrent(); closing=true; updateCancellation.Cancel(); preview?.Close(); api.Dispose(); Close(); }
+                try { await FinishSyncBeforeClose(); editTimer.Stop(); previewTimer.Stop(); reminderTimer.Stop(); feedbackTimer.Stop(); CancelJobSearch(); await SaveCurrent();await DetachPreviewAsync(true);closing=true;updateCancellation.Cancel();api.Dispose();Close(); }
                 finally { if(!closing) closeRequested=false; }
             });
         };
@@ -109,6 +109,7 @@ public sealed partial class MainWindow : Window
         if(Environment.GetCommandLineArgs().Contains("--feature-test")) { await FeatureTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--navigation-test")) { await NavigationTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--capture-layout-test")) { await CaptureLayoutTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--favorites-editor-test")) { await FavoritesEditorTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--workbench-test")) { await WorkbenchTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--template-assets")) { await GenerateTemplateAssets(); return; }
         if(Environment.GetCommandLineArgs().Contains("--self-test"))
@@ -136,7 +137,8 @@ public sealed partial class MainWindow : Window
         editTimer.Stop(); previewTimer.Stop(); CancelJobSearch(); await SaveCurrent();
         if(version!=navigationRevision) return;
         currentPage=page; notice.IsOpen=false;
-        DetachPreview();
+        await DetachPreviewAsync(true);
+        if(version!=navigationRevision)return;
         body.Children.Clear(); body.ColumnDefinitions.Clear(); body.RowDefinitions.Clear();
         UpdateNavigation(page);
         switch(page)

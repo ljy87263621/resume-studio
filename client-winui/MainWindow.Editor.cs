@@ -35,7 +35,7 @@ public sealed partial class MainWindow
         int generation=++navigationRevision;CancelJobSearch();
         InitializeUndo();
         if(editorResumeId!=current.Id) { selectedEditorPart=0; editorResumeId=current.Id; }
-        currentPage="editor"; DetachPreview(); body.Children.Clear(); body.ColumnDefinitions.Clear(); body.RowDefinitions.Clear();
+        currentPage="editor";await DetachPreviewAsync();if(!PageIsCurrent("editor",generation))return;body.Children.Clear();body.ColumnDefinitions.Clear();body.RowDefinitions.Clear();
         Heading("简历工作台","选择模块编辑，右侧保留预览；自动保存与预览独立运行。"); UpdateNavigation("editor");
         body.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto });body.RowDefinitions.Add(new RowDefinition {Height=GridLength.Auto}); body.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) });
         body.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(480) }); body.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(16) }); body.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(1,GridUnitType.Star) });
@@ -103,7 +103,11 @@ public sealed partial class MainWindow
         capacityText=Text("正在估算 A4 内容容量…",11);previewHeader.Children.Add(capacityText);previewPanel.Children.Add(previewHeader); Grid.SetRow(preview,1); previewPanel.Children.Add(preview);
         previewHost=previewPanel;
         var frame=Card(previewPanel,new Thickness(0)); Grid.SetColumn(frame,2); Grid.SetRow(frame,2); body.Children.Add(frame);
-        await InitializeWeb(preview);if(!PageIsCurrent("editor",generation))return;await RenderPreview();if(PageIsCurrent("editor",generation))await UpdateCapacity(preview);
+        var editorWeb=preview;
+        await renderLock.WaitAsync();
+        try {if(PageIsCurrent("editor",generation))await InitializeWeb(editorWeb);}
+        finally {renderLock.Release();}
+        if(!PageIsCurrent("editor",generation))return;await RenderPreview();if(PageIsCurrent("editor",generation))await UpdateCapacity(editorWeb);
     }
     private void ShowEditorPart()
     {

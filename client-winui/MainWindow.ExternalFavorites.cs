@@ -48,12 +48,13 @@ public sealed partial class MainWindow
             try {var read=await ReadVisibleJob(job);if(read is not null){job=read;url.Text=job.Url;title.Text=job.Title;company.Text=job.Company;location.Text=job.Location;salary.Text=job.Salary;description.Text=job.Description;}}
             catch(Exception ex) {Feedback("页面读取未完成",ex.Message);}
         }
-        if(create){favoriteQuery="";favoriteSource="全部平台";}
+        if(create)ResetFavoriteView();
         await Navigate("favorites");Success(create?(created?"职位已收藏":"已有该职位的收藏"):"收藏已保存",created?job.Title:"已保留原有备注和内容；如需修改，请选择“编辑收藏”。");
     }
     private async Task CollectFavorite(Job job)
     {
         var result=await api.Post<CollectionResult<Job>>("favorites/collect",job);
+        if(result.Created)ResetFavoriteView();
         Success(result.Created?"职位已收藏":"已有该职位的收藏",result.Created?job.Title:"原有备注和内容已保留，可在职位收藏中编辑。");
     }
     private async Task RemoveFavorite(Job job)

@@ -88,7 +88,7 @@ public sealed partial class MainWindow
                 if(action==SyncAction.Pull)
                 {
                     current=null;dirty=false;shownCompanyJobs=null;companySearch=null;preferences=AppPreferences.Load(api.DataDirectory);
-                    DetachPreview();BuildShell();await Navigate("settings");
+                    await DetachPreviewAsync(true);BuildShell();await Navigate("settings");
                 }
                 string message=action switch {SyncAction.Push=>"本机资料已上传，云端内容回读验证通过。",SyncAction.Pull=>"云端资料已导入；替换前备份保存在数据目录 sync-backups。",_=>"本机与云端资料一致，已建立同步基线。"};
                 status.Text=message;Success("同步完成",message);

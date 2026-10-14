@@ -11,6 +11,7 @@ public sealed partial class MainWindow
     private string templateCategory="全部",templateOrigin="github";
     private void ShowTemplates()
     {
+        int generation=navigationRevision;
         Heading("模板中心","GitHub 高星简历模板，按前端、后端、嵌入式和通用型分类。");
         var panel=Stack(18);
         var hero=Stack(7); hero.Children.Add(Text("从开源好模板，开始你的简历。",24,true));
@@ -25,6 +26,7 @@ public sealed partial class MainWindow
         var cards=new Grid { ColumnSpacing=18,RowSpacing=18 }; int columns=2;
         void Refresh()
         {
+            if(!PageIsCurrent("templates",generation))return;
             templateCategory=(string?)category.SelectedItem??"全部"; templateOrigin=origin.SelectedIndex==0?"github":origin.SelectedIndex==1?"builtin":"all";
             cards.Children.Clear(); cards.RowDefinitions.Clear(); cards.ColumnDefinitions.Clear();
             for(int i=0;i<columns;i++) cards.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(1,GridUnitType.Star) });
@@ -45,7 +47,14 @@ public sealed partial class MainWindow
             }
             if(list.Count==0) { cards.RowDefinitions.Add(new RowDefinition()); cards.Children.Add(Text("没有匹配的模板，试试其他分类或关键词。")); }
         }
-        cards.SizeChanged+=(_,e)=> { int next=e.NewSize.Width<900?1:2; if(next!=columns) { columns=next; Refresh(); } };
+        bool layoutRefreshQueued=false;
+        cards.SizeChanged+=(_,e)=> {
+            if(e.NewSize.Width<=0||!PageIsCurrent("templates",generation))return;
+            int next=e.NewSize.Width<900?1:2;if(next==columns)return;columns=next;
+            // Rebuild outside the layout callback; a detached page must not re-create its cards.
+            if(layoutRefreshQueued)return;layoutRefreshQueued=true;
+            DispatcherQueue.TryEnqueue(()=>{layoutRefreshQueued=false;if(PageIsCurrent("templates",generation))Refresh();});
+        };
         search.TextChanged+=(_,_)=>Refresh(); category.SelectionChanged+=(_,_)=>Refresh(); origin.SelectionChanged+=(_,_)=>Refresh(); sort.SelectionChanged+=(_,_)=>Refresh(); Refresh(); panel.Children.Add(cards); FillScroll(panel);
     }
     private async Task ShowTemplateSource(Template t)

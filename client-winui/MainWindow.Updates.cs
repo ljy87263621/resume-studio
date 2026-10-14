@@ -16,7 +16,7 @@ public sealed partial class MainWindow
     private IReadOnlyList<ReleaseNote> updateNotes=[];
     private string updateNotesError="";
     private ReleaseIdentity? checkedReleaseIdentity;
-    private static bool VerificationSession=>Environment.GetCommandLineArgs().Any(a=>a is "--self-test" or "--feature-test" or "--iteration-test" or "--benchmark" or "--appearance-review" or "--template-assets" or "--workbench-test" or "--navigation-test" or "--capture-layout-test");
+    private static bool VerificationSession=>Environment.GetCommandLineArgs().Any(a=>a is "--self-test" or "--feature-test" or "--iteration-test" or "--benchmark" or "--appearance-review" or "--template-assets" or "--workbench-test" or "--navigation-test" or "--capture-layout-test" or "--favorites-editor-test");
     private ReleaseUpdate UpdateClient()=>new(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"Assets","UpdatePublicKey.pem")));
     private UIElement UpdateSettingsCard()
     {
@@ -88,7 +88,7 @@ public sealed partial class MainWindow
             await maintenanceLock.WaitAsync(cancellation.Token);maintenanceLock.Release();
             editTimer.Stop(); previewTimer.Stop(); await SaveCurrent();
             await UpdateInstaller.Launch(source,workspace,AppContext.BaseDirectory,api.DataDirectory);
-            reminderTimer.Stop(); CancelJobSearch(); closing=true; updateCancellation.Cancel(); preview?.Close(); api.Dispose(); Close();
+            reminderTimer.Stop();CancelJobSearch();await DetachPreviewAsync(true);closing=true;updateCancellation.Cancel();api.Dispose();Close();
         }
         catch(OperationCanceledException) {Success("更新已取消","当前程序保持原样。");}
         finally {updateBusy=false;if(!closing) closeRequested=false;}
