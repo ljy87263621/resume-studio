@@ -20,7 +20,16 @@ public sealed partial class MainWindow
             await api.Save("favorites",new Job {Id="compact",Title="嵌入式软件工程师",Company="公司名称\n测试公司",Location="深圳",Source="BOSS直聘",Salary="15–20K",Url="https://example.com/compact",Description=string.Join("\n",Enumerable.Repeat("工作职责与任职资格：开发、调试、测试及文档。",30))});
             foreach(string style in new[]{"classic","haru"}){
                 preferences.InterfaceStyle=style;preferences.Theme="light";BuildShell();await Navigate("favorites");await Task.Delay(220);
-                var first=(FrameworkElement)visibleJobList!.ContainerFromIndex(0);var second=(FrameworkElement)visibleJobList.ContainerFromIndex(1);
+                // Virtualized containers can be realized after navigation returns, especially
+                // on a busy CI desktop. Wait for layout instead of relying on a fixed delay.
+                var list=visibleJobList??throw new Exception("Favorite list missing");
+                FrameworkElement? first=null,second=null;
+                for(int attempt=0;attempt<50;attempt++){
+                    list.UpdateLayout();first=list.ContainerFromIndex(0) as FrameworkElement;second=list.ContainerFromIndex(1) as FrameworkElement;
+                    if(first is not null&&second is not null&&first.ActualHeight>0&&second.ActualHeight>0)break;
+                    await Task.Delay(100);
+                }
+                if(first is null||second is null)throw new Exception(style+": favorite containers were not realized within five seconds");
                 var card=InteractionElement<Expander>(first,e=>e.Tag?.ToString()=="favorite-card")??throw new Exception("Compact favorite card missing");
                 double Top(FrameworkElement element)=>element.TransformToVisual(visibleJobList).TransformPoint(new Windows.Foundation.Point()).Y;
                 double secondTop=Top(second);
