@@ -18,7 +18,7 @@ MIT 来源的版权与许可见各目录 `LICENSE`；Deedy 为 Apache-2.0，原�
 
 根目录 MIT 许可证仅适用于拾简原创代码。`ResumeRenderer.cs` 中 `.awesome` 版式适配段与对应预览保留 LPPL-1.3c，`.deedy` 版式及双栏结构适配段与对应预览保留 Apache-2.0，`.billryan` / `.jake` 段与对应预览保留各上游 MIT 署名。适配代码和预览采用拾简自己的文件名和模板标识；适配维护者为 `scj040921`，源代码在公开仓库内一同提供。运行组件许可另外见 [RUNTIME_NOTICES.md](RUNTIME_NOTICES.md)。
 
-resume-helper 的功能规则在 `ResumeAdvisor.java` 中重新适配本应用的简历模型；UI、AI 提示词和容量检测由 WinUI 客户端实现。未接入在线 AI；复制提示词仅写入系统剪贴板，不上传简历。
+resume-helper 的功能规则在 `ResumeAdvisor.java` 中适配本应用模型；UI、AI 提示词和容量检测由 WinUI 客户端实现。复制提示词仅写入剪贴板；在线 AI 由用户配置兼容接口，主动请求时才发送所选内容。
 
 ## 职位来源
 
@@ -32,6 +32,10 @@ v0.3.0 企业招聘系统接入依据官方公开资料：[Greenhouse Job Board 
 
 原始 MiSans-Regular.ttf 的 SHA-256：9c120f0a849bc0aa5048daae2a3c0f6eecd828b5b33fce682a9622833f5feea6。
 
+## PDF 题目导入
+
+面试题 PDF 的文字与版面读取使用 [PdfPig 0.1.16](https://github.com/UglyToad/PdfPig)，由 UglyToad 与贡献者维护，采用 Apache-2.0。完整许可随应用保存在 `ThirdParty/PdfPig/LICENSE.txt`；本应用不执行 PDF 脚本，也不保留用户导入的原文档。
+
 ## Windows 安装器
 
 Setup 使用 Inno Setup 6.7.3 构建，来源为 [JRSoftware 官方发行版](https://github.com/jrsoftware/issrc/releases/tag/is-6_7_3)。安装器安装 Inno Setup 的完整许可至 licenses/InnoSetup-LICENSE.txt。构建工具的原始 SHA-256 为 9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732，并验证 Pyrsys B.V. 的 Authenticode 签名。
@@ -39,3 +43,6 @@ Setup 使用 Inno Setup 6.7.3 构建，来源为 [JRSoftware 官方发行版](ht
 简体中文安装器文本保留 [Inno Setup 官方仓库的 ChineseSimplified.isl](https://github.com/jrsoftware/issrc/blob/main/Files/Languages/ChineseSimplified.isl) 原内容与译者署名，固定随源码分发。文件 SHA-256 为 e0b0b350e2245f3c5e65586dfe43d574f6e7f06f2261149aba284954b3fc9a8d。
 
 安装包包含微软官方 WebView2 Evergreen Bootstrapper，仅在所需运行时缺失时安装。来源与分发方式见 [Microsoft WebView2 分发说明](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)，构建时验证 Microsoft Corporation 发布者签名。WebView2 的许可独立于本项目 MIT 许可证。
+# Android PDFBox
+
+Android document import uses [PdfBox-Android](https://github.com/TomRoush/PdfBox-Android) 2.0.27.0, an Android port of Apache PDFBox / FontBox, under Apache License 2.0. Copyright notices and license resources from the original AAR/JAR are retained in the APK. The dependency is downloaded from Maven Central with a pinned SHA-256 during Android build; it is not part of the Windows runtime.

@@ -43,6 +43,7 @@ public sealed class ResumeSection
     public string Title { get; set; } = "";
     public string Content { get; set; } = "";
     public bool Visible { get; set; } = true;
+    public override string ToString() => "≡  "+Title+(Visible?"":" · 隐藏");
 }
 public sealed class Resume
 {
@@ -113,6 +114,12 @@ public sealed class ApplicationRecord
     public string DueAt { get; set; } = "";
     public bool ReminderDone { get; set; }
     public string Review { get; set; } = "";
+}
+public sealed class CollectionResult<T>
+{
+    public T Record { get; set; } = default!;
+    public bool Created { get; set; }
+    public bool Updated { get; set; }
 }
 public sealed class ScheduleItem
 {

@@ -11,7 +11,7 @@ public sealed partial class MainWindow
     private async Task GenerateTemplateAssets()
     {
         string output=Environment.GetEnvironmentVariable("RESUMESTUDIO_TEST_OUTPUT")??Path.Combine(api.DataDirectory,"template-assets");Directory.CreateDirectory(output);
-        var web=new WebView2 {Width=794,Height=1123,HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top};body.Children.Clear();body.Children.Add(web);
+        var web=new WebView2 {Width=794,Height=1123,HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top};ResetPageBody();body.Children.Add(web);
         var images=new List<object>();
         try {
             await InitializeWeb(web);

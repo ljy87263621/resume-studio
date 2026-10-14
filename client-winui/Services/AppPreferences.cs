@@ -15,7 +15,7 @@ public sealed class AppPreferences
     public string AiModel { get; set; } = "";
     public string UpdateChannel { get; set; } = "stable";
     public string UpdateRoute { get; set; } = "auto";
-    public bool CheckUpdatesOnStartup { get; set; } = false;
+    public bool CheckUpdatesOnStartup { get; set; } = true;
     public static AppPreferences Load(string directory)
     {
         try

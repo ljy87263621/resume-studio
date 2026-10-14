@@ -17,7 +17,7 @@ public sealed partial class MainWindow
         choice.SelectionChanged+=(_,_)=> {if(choice.SelectedItem is Job j) {title.Text=j.Title; company.Text=j.Company; description.Text=j.Description;}};
         foreach(var element in new UIElement[] {choice,title,company,description}) panel.Children.Add(element);
         if(await new ContentDialog {XamlRoot=shell.XamlRoot,Title="选择目标岗位",Content=new ScrollViewer {Content=panel,MaxHeight=560},PrimaryButtonText="开始对照",CloseButtonText="返回"}.ShowAsync()!=ContentDialogResult.Primary) return;
-        var job=choice.SelectedItem is Job selected?JsonSerializer.Deserialize<Job>(JsonSerializer.Serialize(selected,BackendClient.Json),BackendClient.Json)!:new Job();
+        var job=choice.SelectedItem is Job selected?CloneDocument(selected):new Job();
         job.Title=title.Text; job.Company=company.Text; job.Description=description.Text;
         await ShowJobFit(job,current);
     }
@@ -29,7 +29,7 @@ public sealed partial class MainWindow
         var description=new TextBox {Header="职位要求（信息不完整时请从官网补充）",AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,Text=job.Description,MinHeight=200,MaxLength=30000};
         var content=Stack(); content.Children.Add(choice); content.Children.Add(description);
         if(await new ContentDialog {XamlRoot=shell.XamlRoot,Title="针对岗位制作简历",Content=content,PrimaryButtonText="开始对照",CloseButtonText="返回"}.ShowAsync()!=ContentDialogResult.Primary) return;
-        job=JsonSerializer.Deserialize<Job>(JsonSerializer.Serialize(job,BackendClient.Json),BackendClient.Json)!; job.Description=description.Text;
+        job=CloneDocument(job); job.Description=description.Text;
         await ShowJobFit(job,(Resume)choice.SelectedItem);
     }
     private async Task ShowJobFit(Job job,Resume original)

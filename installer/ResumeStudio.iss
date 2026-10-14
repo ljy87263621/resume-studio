@@ -126,3 +126,16 @@ procedure DeinitializeSetup;
 begin
   if FontRegistered then RemoveFontResourceEx(PrivateFontPath, $10, 0);
 end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ExitCode: Integer;
+begin
+  if CurStep = ssPostInstall then begin
+    WizardForm.StatusLabel.Caption := '正在减少程序的磁盘占用…';
+    Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\updater\Compress-App.ps1') +
+      '" -AppDirectory "' + ExpandConstant('{app}') + '"',
+      ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode);
+  end;
+end;

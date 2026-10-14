@@ -9,6 +9,7 @@ $source = if ($SourceDirectory) { [IO.Path]::GetFullPath($SourceDirectory) } els
 foreach ($required in @('ResumeStudio.exe','ResumeStudio.dll','Assets\AppIcon.ico','Assets\AppLogo.png','backend\resume-backend.jar','runtime\bin\java.exe','LICENSE','THIRD_PARTY_NOTICES.md','RUNTIME_NOTICES.md')) {
     if (!(Test-Path (Join-Path $source $required))) { throw "Missing release file: $required" }
 }
+& (Join-Path $PSScriptRoot 'test-lightweight.ps1') -ReleaseDirectory $source
 $manifestPath=Join-Path $source 'distribution-manifest.json'
 if(!(Test-Path -LiteralPath $manifestPath)){throw 'Distribution manifest is missing; rebuild into a fresh release directory'}
 $manifest=Get-Content -LiteralPath $manifestPath -Raw|ConvertFrom-Json

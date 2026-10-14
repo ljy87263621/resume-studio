@@ -41,13 +41,16 @@ public sealed partial class MainWindow
     }
     private async Task UpdateCapacity(WebView2 web)
     {
-        if(web!=preview||capacityText is null||web.CoreWebView2 is null) return;
+        if(currentPage!="editor"||web!=preview||capacityText is null||web.CoreWebView2 is null) return;
+        int generation=navigationRevision;
         try
         {
             string json=await web.CoreWebView2.ExecuteScriptAsync("(()=>{let a=document.querySelector('article');if(!a)return null;let top=a.getBoundingClientRect().top;let pad=parseFloat(getComputedStyle(a).paddingTop);let height=Math.max(...Array.from(a.children).map(x=>x.getBoundingClientRect().bottom-top-pad));let usable=269*96/25.4;return {pages:Math.max(1,Math.ceil(height/usable)),remaining:(usable-height)*25.4/96};})()");
             if(json=="null") return; using var doc=JsonDocument.Parse(json); int pages=doc.RootElement.GetProperty("pages").GetInt32(); double remaining=doc.RootElement.GetProperty("remaining").GetDouble();
-            if(web!=preview||capacityText is null) return;
+            if(web!=preview||!PageIsCurrent("editor",generation)||capacityText is null) return;
             capacityText.Text=pages>1?$"内容估算约 {pages} 页；超出单页约 {-remaining:0} mm，实际分页以 PDF 为准。":$"A4 单页内容余量约 {Math.Max(0,remaining):0} mm；实际分页以 PDF 为准。";
+            if(current is not null&&showPreviewExamples&&!renderingPdf&&ResumeExamples.HasExamples(current))
+                capacityText.Text="包含模板示例 · 填写后替换，导出仅含你的内容。\n"+capacityText.Text;
             capacityText.Foreground=Brush(pages>1||remaining<15?"#A56A05":"#167D78");
         }
         catch(Exception) { /* A navigation may replace the document while its size is being measured. */ }

@@ -101,7 +101,9 @@ public static class PlatformCapture
             company=First(company,Value(Object(data,"recommendInternCompany"),"companyName","companyShortName"),Value(Object(data,"company"),"companyName","name"));
         }
         else return null;
-        string description=Value(data,"postDescription","jobDescription","description","jobDesc","responsibility");
+        string description=Value(data,"postDescription","jobDescription","description","jobDesc","responsibility","responsibilities","positionDesc");
+        string requirements=Value(data,"requirements","qualification","qualifications","jobRequirements","requirement");
+        if(requirements!=""&&!description.Contains(requirements,StringComparison.Ordinal))description+="\n任职要求\n"+requirements;
         string ext=Value(data,"ext");
         if(ext!=""&&ext.Length<=100000)
         {
@@ -114,7 +116,7 @@ public static class PlatformCapture
             string low=Value(data,"salaryMin"),high=Value(data,"salaryMax");
             if(low!=""&&low!="0") salary=low+(high!=""&&high!="0"&&high!=low?"-"+high:"")+(Value(data,"salaryType")=="1"?"元/天":"元/月");
         }
-        var job=new Job {Title=Clip(title,250),Company=Clip(company,250),Url=url,Location=Clip(Value(data,"cityName","jobCity","location","city"),250),Salary=Clip(salary,100),Experience=Clip(Value(data,"jobExperience","experience","workYearName"),250),Description=Plain(description),PublishedAt=Value(data,"datePosted","publishTime","createTime")};
+        var job=new Job {Title=Clip(title,250),Company=Clip(company,250),Url=url,Location=Clip(Value(data,"jobAddress","cityName","jobCity","location","city"),250),Salary=Clip(salary,100),Experience=Clip(Value(data,"jobExperience","experience","workYearName"),250),Description=Plain(description),PublishedAt=Value(data,"datePosted","publishTime","createTime")};
         Finish(provider,job,"浏览会话 JSON 采集，待核对"); return job;
     }
     public static List<Job> ExtractHtml(string provider,string pageUrl,string html)
@@ -160,6 +162,25 @@ public static class PlatformCapture
         }
         catch(JsonException) { return []; }
     }
+    // A list card or a response containing many jobs is never a collection target.
+    public static Job? ExtractCurrentDetail(string provider,string json,IEnumerable<Job>? responseDetails=null)
+    {
+        if(Encoding.UTF8.GetByteCount(json)>MaxPayloadBytes)return null;
+        try {
+            using var document=JsonDocument.Parse(json,JsonOptions);var root=document.RootElement;
+            string target=Value(root,"targetUrl");
+            if(!IsDetailUrl(provider,target)||!root.TryGetProperty("detailVisible",out var visible)||visible.ValueKind!=JsonValueKind.True)return null;
+            if(!root.TryGetProperty("jobs",out var items)||items.ValueKind!=JsonValueKind.Array||items.GetArrayLength()!=1)return null;
+            var item=items[0];string url=Value(item,"url"),title=Value(item,"title");
+            if(!IsDetailUrl(provider,url)||Canonical(url)!=Canonical(target)||title==""||IsChallenge(title)||!IsPlatformUrl(provider,Value(root,"url"))||IsChallenge(Value(root,"pageTitle")))return null;
+            var jobs=ExtractDom(provider,json);
+            var job=jobs.Count==1?jobs[0]:new Job {Url=url,Title=Clip(title,250)};
+            if(jobs.Count==0)Finish(provider,job,"浏览页面采集，待核对");
+            foreach(var cached in responseDetails??[])if(cached.CanonicalUrl==job.CanonicalUrl)job=Merge(cached,job);
+            return HasDetail(job)?job:null;
+        }catch(JsonException){return null;}
+    }
+    public static bool HasDetail(Job job) => job.Description.Trim().Length>=20&&!IsChallenge(job.Description)&&!Regex.IsMatch(job.Description.Trim(),@"^(加载中|正在加载|暂无职位描述|Loading)[.。…\s]*$",RegexOptions.IgnoreCase);
     public static string Canonical(string url)
     {
         var u=new Uri(url); var tracking=new HashSet<string>(StringComparer.OrdinalIgnoreCase) {"ka","sid","source","from","track","tracking","lid","securityid","channel","pagesource","deliversource"};
@@ -183,5 +204,5 @@ public static class PlatformCapture
     }
     private static string First(params string[] values) => values.FirstOrDefault(s=>!string.IsNullOrWhiteSpace(s))??"";
     private static string Clip(string value,int limit) => value.Length>limit?value[..limit]:value;
-    private static string Plain(string value) => Clip(WebUtility.HtmlDecode(Regex.Replace(Regex.Replace(value,@"(?is)<(script|style)\b[^>]*>.*?</\1>",""),@"<[^>]*>"," ")).Trim(),30000);
+    private static string Plain(string value) => Clip(WebUtility.HtmlDecode(Regex.Replace(Regex.Replace(Regex.Replace(value,@"(?is)<(script|style)\b[^>]*>.*?</\1>",""),@"(?i)<br\s*/?>|</(?:p|div|li|h[1-6])>","\n"),@"<[^>]*>"," ")).Trim(),30000);
 }

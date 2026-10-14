@@ -1,3 +1,5 @@
+> 历史贡献者开发计划：原始 Fork 的安排，仅作实现背景。当前官方集成与验证边界见 docs/TAKEOVER.md；更新源和签名沿用 scj040921/resume-studio。
+
 # Discovery and Cross-device Sync Integration Plan
 
 > **For agentic workers:** Execute the module plans task-by-task, with the primary agent reviewing interfaces and performing final integration. The user selected architect plus module engineers acceptance mode.

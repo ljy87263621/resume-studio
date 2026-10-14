@@ -1,23 +1,15 @@
-# Windows 安装与卸载
+# 安装与卸载
 
-下载与通道对应的 Setup-x64.exe，双击后在中文首页点击“一键安装”。默认安装到当前用户的 `%LOCALAPPDATA%\Programs\ResumeStudio`，自动创建桌面“拾简 - 简历制作与投递”和开始菜单快捷方式，完成页可直接启动。
+1. 从 [GitHub Releases](https://github.com/scj040921/resume-studio/releases) 下载对应通道的 `Setup-x64.exe`。
+2. 双击后点击“一键安装”，自动创建桌面和开始菜单快捷方式。
+3. 完成页可直接启动拾简。
 
-安装器以当前用户权限运行。使用中的程序文件由 Windows Restart Manager 检测，安装时可选择正常关闭正在运行的拾简；不会强制终止所有同名进程。建议先保存并关闭正在编辑的窗口。
+默认安装到 `%LOCALAPPDATA%\Programs\ResumeStudio`，使用当前用户权限。缺少 WebView2 时通过微软官方引导程序联网补装；.NET 和 Java 随应用提供。覆盖安装前先保存并关闭软件；安装器也会检测使用中的文件并提示正常关闭。
 
-应用自带 .NET、Windows App SDK 和精简 Java 运行时。缺少 WebView2 时，安装器调用随包的微软官方 Evergreen Bootstrapper，联网完成安装。已安装运行时的机器无需重复下载。WebView2 共享运行时不会随拾简卸载。
+Stable／Nightly 共用安装目录。个人数据位于 `%LOCALAPPDATA%\ResumeStudio`，覆盖安装和卸载均保留。Windows“设置 → 应用”可卸载；安装器只删除其登记的程序文件和快捷方式，保留未登记的额外文件，不移除共享 WebView2。
 
-## 数据和覆盖安装
+软件内更新继续使用签名 ZIP，保留卸载器与快捷方式。便携 ZIP 可直接解压运行，但不自动创建快捷方式或卸载入口。
 
-Stable 和 Nightly 使用同一个应用标识与安装目录。应用数据保存在 `%LOCALAPPDATA%\ResumeStudio`，与程序目录分开。重复安装和切换通道不会清空简历、收藏、投递、日程、历史版本或 AI 设置。
+构建工具来源与许可见 [运行组件](../RUNTIME_NOTICES.md) 和 [第三方说明](../THIRD_PARTY_NOTICES.md)；发布提供 SHA-256，Setup 摘要也纳入签名元数据。
 
-Windows“设置 → 应用 → 已安装的应用”中的拾简条目提供卸载入口。卸载移除安装器登记的程序文件及快捷方式，保留独立的个人数据目录和安装目录中未登记的额外文件。没有递归删除整个应用或数据目录的规则。
-
-软件内更新仍使用签名 ZIP 和原有事务替换机制；卸载器、桌面快捷方式及开始菜单快捷方式保留。便携 ZIP 仍可使用，但它不会自行登记卸载入口或创建快捷方式。
-
-## 构建与验证
-
-CI 获取固定 Inno Setup 6.7.3，核对 SHA-256 及厂商 Authenticode 签名；微软 WebView2 Bootstrapper 也验证发布者签名。编译器仅在构建环境使用，安装包内附带其许可。
-
-build-installer.ps1 检查与 ZIP 相同的应用文件清单，并编译完整 Setup。test-installer.ps1 仅允许在一次性的 GitHub Windows runner 中执行，验证安装、所有文件哈希、两种快捷方式的目标／图标／工作目录、卸载注册、重复安装、Java 运行及卸载后个人数据保留。它不替换开发者本机的实际安装。
-
-发布页同时保留 Setup、ZIP、签名元数据和 SHA256SUMS。签名元数据额外记录 Setup 文件名、大小和 SHA-256；软件更新通道继续使用 ZIP 字段，兼容旧更新器。
+程序及最近一份回退备份使用 Windows LZX 压缩，仅处理清单内未修改的程序文件，保持内容和签名不变。不支持压缩的卷或使用中的文件不会阻止安装。设置中的“本机存储”显示实际磁盘占用、更新缓存和旧程序备份，并提供存储优化入口。

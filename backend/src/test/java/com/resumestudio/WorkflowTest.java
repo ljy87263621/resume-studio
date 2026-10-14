@@ -34,6 +34,35 @@ public final class WorkflowTest {
         var invalid=new LinkedHashMap<>(record); invalid.put("dueAt","tomorrow"); try {Server.validate("applications",invalid); throw new AssertionError("invalid date accepted");} catch(IllegalArgumentException expected) {checks++;}
         store.delete("resumes","resume-one"); require(store.history("resume-one").isEmpty(),"deleting document removes its history");
         require(new Store(root).list("applications").get(0).get("resumeSnapshot")!=null,"deleted source resume leaves submitted snapshot intact");
+        var job=new LinkedHashMap<String,Object>(Map.of("id","provider-position","title","Embedded","url","https://example.com/jobs/embedded?utm_source=search","notes","我的面试准备","source","官网"));
+        require((Boolean)store.collectFavorite(job).get("created"),"first collection creates a favorite");
+        var pasted=new LinkedHashMap<>(job);pasted.put("id","external-alias");pasted.put("url","https://example.com/jobs/embedded?utm_source=share");pasted.put("notes","");pasted.put("title","different title");
+        var duplicate=store.collectFavorite(pasted);
+        require(!(Boolean)duplicate.get("created")&&Json.str(Json.object(duplicate.get("record")),"notes").equals("我的面试准备"),"cross-platform repeated collect preserves handwritten notes and original title");
+        require(store.list("favorites").size()==1,"canonical links do not create duplicate favorites");
+        try {store.save("favorites",pasted);throw new AssertionError("conflicting favorite overwrite accepted");}catch(IllegalArgumentException expected){checks++;}
+        require(store.findApplication(job).isEmpty(),"looking up an untracked job does not create an opened record");
+        var tracked=Json.object(store.openApplication(job).get("record"));
+        require(Json.str(tracked,"status").equals("已打开")&&!tracked.containsKey("resumeSnapshot")&&!tracked.containsKey("resumeTitle"),"opening a job never assumes the currently edited resume was submitted");
+        tracked.put("status","面试中");tracked.put("notes","保留投递备注");store.save("applications",tracked);
+        var reopened=store.openApplication(pasted);
+        require(!(Boolean)reopened.get("created")&&Json.str(Json.object(reopened.get("record")),"status").equals("面试中"),"opening an alias does not duplicate or downgrade a submitted application");
+        var tasks=new ArrayList<java.util.concurrent.Future<Map<String,Object>>>();var pool=java.util.concurrent.Executors.newFixedThreadPool(6);
+        try {for(int i=0;i<20;i++)tasks.add(pool.submit(()->store.collectFavorite(pasted)));for(var task:tasks)require(!(Boolean)task.get().get("created"),"concurrent repeated favorite is idempotent");}
+        finally {pool.shutdownNow();}
+        require(store.list("applications").size()==2&&store.list("favorites").size()==1,"atomic collection and tracking keep one record per matched job");
+        var platform=new LinkedHashMap<String,Object>(Map.of("id","manual-nowcoder","title","手写标题","url","https://www.nowcoder.com/jobs/detail/position?channel=manual","notes","手写备注"));store.save("favorites",platform);
+        var captured=new LinkedHashMap<>(platform);captured.put("id","external-nowcoder");captured.put("url","https://www.nowcoder.com/jobs/detail/position?channel=capture&pageSource=search");captured.put("notes","");
+        var matched=store.collectFavorite(captured);require(!(Boolean)matched.get("created")&&Json.str(Json.object(matched.get("record")),"notes").equals("手写备注"),"capture tracking aliases preserve an existing favorite and its manual notes");
+        captured.put("company","新公司");captured.put("location","深圳");captured.put("salary","15-25K");captured.put("description","岗位职责：开发嵌入式系统并调试驱动，任职要求：熟悉 C 语言和 Linux。");
+        platform.put("description","我的手写正文");platform.put("company","我已核对公司");platform.put("infoStatus","用户核对");platform.put("customData",Map.of("keep",true));store.save("favorites",platform);
+        var detail=store.collectFavoriteDetail(captured);var repaired=Json.object(detail.get("record"));
+        require(!(Boolean)detail.get("created")&&(Boolean)detail.get("updated")&&Json.str(repaired,"location").equals("深圳"),"explicit detail capture fills missing fields on existing favorite");
+        require(Json.str(repaired,"title").equals("手写标题")&&Json.str(repaired,"description").equals("我的手写正文")&&Json.str(repaired,"company").equals("我已核对公司")&&Json.str(repaired,"notes").equals("手写备注"),"detail enrichment preserves nonempty manual fields and notes");
+        require(repaired.containsKey("customData")&&Json.str(repaired,"infoStatus").equals("用户核对"),"detail enrichment preserves unknown fields and manual verification state");
+        require(!(Boolean)store.collectFavoriteDetail(captured).get("updated"),"repeated detail collection avoids unnecessary file writes");
+        var summaryOnly=new LinkedHashMap<>(captured);summaryOnly.put("description","");
+        try {store.collectFavoriteDetail(summaryOnly);throw new AssertionError("empty detail accepted");}catch(IllegalArgumentException expected){checks++;}
         System.out.println("PASS: "+checks+" offline workflow checks; fixtures: "+root);
     }
 }

@@ -1,7 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.ApplicationModel.DataTransfer;
-using System.Text.Json;
 using ResumeStudio.Services;
 
 namespace ResumeStudio;
@@ -23,25 +22,47 @@ public sealed partial class MainWindow
     }
     private async Task EditFavorite(Job job,bool create,string message="")
     {
-        job=JsonSerializer.Deserialize<Job>(JsonSerializer.Serialize(job,BackendClient.Json),BackendClient.Json)!;
+        if(!create&&!(await api.Get<List<Job>>("favorites")).Any(j=>j.Id==job.Id))throw new InvalidOperationException("收藏已被移除，请刷新列表。");
+        job=CloneDocument(job);
         var content=Stack(12); if(!string.IsNullOrEmpty(message)) content.Children.Add(Text(message,12));
         var title=new TextBox { Header="职位名称",Text=job.Title,MaxLength=250 }; var company=new TextBox { Header="公司",Text=job.Company,MaxLength=200 }; var location=new TextBox { Header="城市 / 地点",Text=job.Location,MaxLength=200 }; var salary=new TextBox { Header="薪资",Text=job.Salary,MaxLength=100 }; var url=new TextBox { Header="职位详情链接",Text=job.Url,MaxLength=3000 }; var description=new TextBox { Header="职位描述（可从原站复制）",AcceptsReturn=true,Text=job.Description,TextWrapping=TextWrapping.Wrap,MinHeight=100,MaxLength=30000 }; var notes=new TextBox { Header="备注",AcceptsReturn=true,Text=job.Notes,TextWrapping=TextWrapping.Wrap,MinHeight=60,MaxLength=5000 };
         foreach(var field in new[] {title,company,location,salary,url,description,notes}) content.Children.Add(field);
-        var dialog=new ContentDialog { XamlRoot=shell.XamlRoot,Title=create?"核对并收藏职位":"编辑收藏",Content=new ScrollViewer { Content=content,MaxHeight=570 },PrimaryButtonText="保存收藏",SecondaryButtonText="浏览并读取",CloseButtonText="取消" };
-        var choice=await dialog.ShowAsync();
-        if(choice==ContentDialogResult.Secondary)
-        {
-            job.Url=url.Text; job.Title=title.Text; job.Company=company.Text; job.Location=location.Text; job.Salary=salary.Text; job.Description=description.Text; job.Notes=notes.Text;
-            var read=await ReadVisibleJob(job);
-            await EditFavorite(read??job,create,read is null?"未读取职位内容，可以继续编辑，或重新浏览页面。":"已读取浏览页面上的可见职位信息，请核对后收藏。"); return;
-        }
-        if(choice!=ContentDialogResult.Primary) return;
+        bool created=true;
+        var dialog=SaveForm(create?"核对并收藏职位":"编辑收藏",content,"保存收藏",async ()=> {
+        if(string.IsNullOrWhiteSpace(title.Text)) throw new InvalidOperationException("请填写职位名称。");JobWorkflow.ValidateLink(url.Text);
         var normalized=await api.Post<CapturePreview>("capture-preview",new {text=url.Text});
-        if(string.IsNullOrWhiteSpace(title.Text)) throw new InvalidOperationException("请填写职位名称");
         job.Title=title.Text.Trim(); job.Company=company.Text.Trim(); job.Location=location.Text.Trim(); job.Salary=salary.Text.Trim(); job.Url=normalized.Job.Url; job.CanonicalUrl=normalized.Job.CanonicalUrl; job.Description=description.Text; job.Notes=notes.Text;
         // Only external links use the canonical URL identifier; live provider IDs remain unchanged.
-        if(create||job.Id.StartsWith("external-")) { var oldId=job.Id; job.Id=normalized.Job.Id; job.Source=normalized.Job.Source; if(!create&&oldId!=job.Id) { await api.Save("favorites",job); await api.Delete("favorites/"+oldId); } }
-        job.InfoStatus="用户核对"; await api.Save("favorites",job); await Navigate("favorites"); Success("职位已收藏",job.Title);
+        if(create)job.Id=normalized.Job.Id;
+        if(create||job.Id.StartsWith("external-"))job.Source=normalized.Job.Source;
+        job.InfoStatus="用户核对";
+        if(create){var result=await api.Post<CollectionResult<Job>>("favorites/collect",job);created=result.Created;job=result.Record;}
+        else {job=await api.Save("favorites",job);}
+        });
+        dialog.SecondaryButtonText="浏览并读取";dialog.IsSecondaryButtonEnabled=true;
+        while(true) {
+            var choice=await dialog.ShowAsync();
+            if(choice==ContentDialogResult.None)return;
+            if(choice==ContentDialogResult.Primary)break;
+            job.Url=url.Text;job.Title=title.Text;job.Company=company.Text;job.Location=location.Text;job.Salary=salary.Text;job.Description=description.Text;job.Notes=notes.Text;
+            try {var read=await ReadVisibleJob(job);if(read is not null){job=read;url.Text=job.Url;title.Text=job.Title;company.Text=job.Company;location.Text=job.Location;salary.Text=job.Salary;description.Text=job.Description;}}
+            catch(Exception ex) {Feedback("页面读取未完成",ex.Message);}
+        }
+        if(create)ResetFavoriteView();
+        await Navigate("favorites");Success(create?(created?"职位已收藏":"已有该职位的收藏"):"收藏已保存",created?job.Title:"已保留原有备注和内容；如需修改，请选择“编辑收藏”。");
+    }
+    private async Task CollectFavorite(Job job)
+    {
+        var result=await api.Post<CollectionResult<Job>>("favorites/collect",job);
+        if(result.Created)ResetFavoriteView();
+        Success(result.Created?"职位已收藏":"已有该职位的收藏",result.Created?job.Title:"原有备注和内容已保留，可在职位收藏中编辑。");
+    }
+    private async Task RemoveFavorite(Job job)
+    {
+        var saved=(await api.Get<List<Job>>("favorites")).FirstOrDefault(j=>j.Id==job.Id);
+        if(saved is null)return;
+        await api.Delete("favorites/"+job.Id);await RefreshPage("favorites");
+        Feedback("已取消收藏",saved.Title,async ()=>{await api.Post<CollectionResult<Job>>("favorites/collect",saved);await RefreshPage("favorites");});
     }
     private HyperlinkButton JobLink(Job job)
     {
@@ -62,7 +83,7 @@ public sealed partial class MainWindow
     private async Task ResolveFavorite(Job job)
     {
         var result=await ResolveJobLink(job.Url);
-        var updated=JsonSerializer.Deserialize<Job>(JsonSerializer.Serialize(job,BackendClient.Json),BackendClient.Json)!;
+        var updated=CloneDocument(job);
         if(result.Status=="parsed")
         {
             var r=result.Job;

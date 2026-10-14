@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../client-winui/Services/StorageMaintenance.cs" Link="StorageMaintenance.cs"/>
+    <Compile Include="../../client-winui/Services/ReleaseUpdate.cs" Link="ReleaseUpdate.cs"/>
+    <Compile Include="../../client-winui/Services/UpdateInstaller.cs" Link="UpdateInstaller.cs"/>
+  </ItemGroup>
+</Project>

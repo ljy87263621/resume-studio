@@ -70,7 +70,7 @@ public sealed partial class MainWindow
                     if(string.IsNullOrWhiteSpace(title)||System.Text.RegularExpressions.Regex.IsMatch(title,@"(?i)安全验证|人机验证|请稍候|访问验证|Access denied|Checking your browser|Just a moment|captcha|^(?:\d{4}年?\s*)?(登录|登录注册|人才招聘|校园招聘|社会招聘|Careers|Jobs|Join us)$")||fields.Where(p=>p.Key!="title").All(p=>string.IsNullOrWhiteSpace(p.Value)))
                     { status.Text="当前页面尚未显示完整职位。请正常完成访问验证、登录或返回具体职位页后再读取。"; continue; }
                     var captured=await api.Post<CapturePreview>("capture-preview",new {text=url+"\n"+visibleText,visibleFields=fields});
-                    var job=JsonSerializer.Deserialize<Job>(JsonSerializer.Serialize(original,BackendClient.Json),BackendClient.Json)!;
+                    var job=CloneDocument(original);
                     job.Url=captured.Job.Url; job.CanonicalUrl=captured.Job.CanonicalUrl;
                     job.Title=captured.Job.Title;
                     if(!string.IsNullOrWhiteSpace(captured.Job.Company)) job.Company=captured.Job.Company;
@@ -82,6 +82,6 @@ public sealed partial class MainWindow
                 catch(Exception e) { status.Text="读取未完成："+e.Message; }
             }
         }
-        finally { web.Close(); }
+        finally {if(!VerificationSession&&web.CoreWebView2 is not null)await MaintainBrowserDiskCache(web.CoreWebView2);web.Close();}
     }
 }

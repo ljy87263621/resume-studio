@@ -16,7 +16,8 @@ public sealed partial class MainWindow : Window
 {
     private readonly BackendClient api = new();
     private readonly Grid shell = new();
-    private readonly Grid body = new();
+    private Grid body = new();
+    private readonly Border pageHost = new();
     private readonly TextBlock pageTitle = Text("模板中心",28,true);
     private readonly TextBlock pageSubtitle = Text("从一份清晰的简历，开始下一段旅程。",13);
     private readonly TextBlock saveState = Text("正在连接本地服务…",12);
@@ -25,6 +26,7 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherTimer editTimer = new() { Interval=TimeSpan.FromMilliseconds(650) };
     private readonly DispatcherTimer previewTimer = new();
     private readonly SemaphoreSlim saveLock = new(1,1);
+    private readonly SemaphoreSlim pageTransitionLock = new(1,1);
     private List<Template> templates = [];
     private Resume? current;
     private WebView2? preview;
@@ -63,7 +65,7 @@ public sealed partial class MainWindow : Window
             closeRequested=true;
             _=Run(async ()=>
             {
-                try { await FinishSyncBeforeClose(); editTimer.Stop(); previewTimer.Stop(); reminderTimer.Stop(); feedbackTimer.Stop(); CancelJobSearch(); await SaveCurrent(); closing=true; updateCancellation.Cancel(); preview?.Close(); api.Dispose(); Close(); }
+                try { await FinishSyncBeforeClose(); editTimer.Stop(); previewTimer.Stop(); reminderTimer.Stop(); feedbackTimer.Stop(); CancelJobSearch(); await SaveCurrent();await DetachPreviewAsync(true);await api.StopAsync();closing=true;updateCancellation.Cancel();api.Dispose();Close(); }
                 finally { if(!closing) closeRequested=false; }
             });
         };
@@ -102,11 +104,17 @@ public sealed partial class MainWindow : Window
         reminderTimer.Start(); await CheckApplicationReminders();
         if(templates.Count==0) { templates=await api.Get<List<Template>>("templates"); await Navigate("templates"); Mark("firstPageReady"); }
         await AcknowledgeUpdateStartup();
+        if(!VerificationSession)_=Run(MaintainStorageAfterStartup);
         if(!VerificationSession&&preferences.CheckUpdatesOnStartup) _=Run(()=>CheckForUpdates(true));
         if(Environment.GetCommandLineArgs().Contains("--benchmark")) { await Benchmark(); return; }
         if(Environment.GetCommandLineArgs().Contains("--iteration-test")) { await IterationOnlyTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--feature-test")) { await FeatureTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--navigation-test")) { await NavigationTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--capture-layout-test")) { await CaptureLayoutTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--favorites-editor-test")) { await FavoritesEditorTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--interview-test")) { await InterviewFeatureTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--lightweight-test")) { await LightweightTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--workbench-test")) { await WorkbenchTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--template-assets")) { await GenerateTemplateAssets(); return; }
         if(Environment.GetCommandLineArgs().Contains("--self-test"))
         {
@@ -130,24 +138,33 @@ public sealed partial class MainWindow : Window
     private async Task Navigate(string page)
     {
         int version=++navigationRevision;
-        editTimer.Stop(); previewTimer.Stop(); CancelJobSearch(); await SaveCurrent();
-        if(version!=navigationRevision) return;
-        currentPage=page; notice.IsOpen=false;
-        DetachPreview();
-        body.Children.Clear(); body.ColumnDefinitions.Clear(); body.RowDefinitions.Clear();
-        UpdateNavigation(page);
-        switch(page)
+        // Let the triggering control finish handling input before replacing the page.
+        await Task.Yield();
+        await pageTransitionLock.WaitAsync();
+        try
         {
-            case "templates": ShowTemplates(); break;
-            case "resumes": await ShowResumes(); break;
-            case "jobs": await ShowJobs(); break;
-            case "sources": await ShowCompanySources(); break;
-            case "favorites": await ShowFavorites(); break;
-            case "applications": await ShowApplications(); break;
-            case "schedule": await ShowSchedule(); break;
-            case "settings": ShowSettings(); break;
-            default: ShowAbout(); break;
+            editTimer.Stop(); previewTimer.Stop(); CancelJobSearch(); await SaveCurrent();
+            if(version!=navigationRevision) return;
+            currentPage=page; notice.IsOpen=false;
+            await DetachPreviewAsync(true);
+            if(version!=navigationRevision)return;
+            ResetPageBody();
+            UpdateNavigation(page);
+            switch(page)
+            {
+                case "templates": ShowTemplates(); break;
+                case "resumes": await ShowResumes(); break;
+                case "jobs": await ShowJobs(); break;
+                case "sources": await ShowCompanySources(); break;
+                case "favorites": await ShowFavorites(); break;
+                case "applications": await ShowApplications(); break;
+                case "schedule": await ShowSchedule(); break;
+                case "interviews": await ShowInterviews(); break;
+                case "settings": ShowSettings(); break;
+                default: ShowAbout(); break;
+            }
         }
+        finally { pageTransitionLock.Release(); }
     }
     private void Heading(string title,string subtitle) { pageTitle.Text=title; pageSubtitle.Text=subtitle; }
     private void FillScroll(UIElement child)
@@ -162,14 +179,15 @@ public sealed partial class MainWindow : Window
     }
     private async Task ShowResumes()
     {
+        int generation=navigationRevision;
         Heading("我的简历","每个求职方向都可以有一份独立简历，编辑时自动保存。");
         var panel=Stack(18); var toolbar=Row(); toolbar.Children.Add(Button("＋ 新建简历",()=>Navigate("templates"),true)); toolbar.Children.Add(Button("导入备份",ImportResume)); panel.Children.Add(toolbar);
         var list=await api.Get<List<Resume>>("resumes");
-        if(currentPage!="resumes") return;
+        if(!PageIsCurrent("resumes",generation)) return;
         if(list.Count==0) panel.Children.Add(Card(Text("还没有简历。从模板中心选择一套模板，开始填写你的经历。",16)));
         foreach(var r in list)
         {
-            var c=Stack(12); c.Children.Add(Text(r.Title,20,true)); c.Children.Add(Text($"{r.Profile.Name}  ·  {r.Profile.Role}  ·  {templates.First(t=>t.Id==r.TemplateId).Name}",13)); c.Children.Add(Text("最近保存："+LocalDate(r.UpdatedAt),11));
+            var c=Stack(12); c.Children.Add(Text(r.Title,20,true)); c.Children.Add(Text($"{r.Profile.Name}  ·  {r.Profile.Role}  ·  {templates.FirstOrDefault(t=>t.Id==r.TemplateId)?.Name??"模板不可用"}",13)); c.Children.Add(Text("最近保存："+LocalDate(r.UpdatedAt),11));
             var actions=Row(); actions.Children.Add(Button("继续编辑",async ()=> { current=r; dirty=false; await OpenEditor(); },true)); actions.Children.Add(Button("复制",async ()=> { var clone=JsonSerializer.Deserialize<Resume>(JsonSerializer.Serialize(r,BackendClient.Json),BackendClient.Json)!; clone.Id=Guid.NewGuid().ToString(); clone.Title+=" · 副本"; await api.Save("resumes",clone); await Navigate("resumes"); })); actions.Children.Add(Button("删除",async ()=> { if(await Confirm("删除这份简历？",r.Title+"，删除后无法在应用内恢复。")) { await api.Delete("resumes/"+r.Id); if(current?.Id==r.Id) current=null; await Navigate("resumes"); } })); c.Children.Add(actions); panel.Children.Add(Card(c));
         }
         FillScroll(panel);
@@ -190,7 +208,7 @@ public sealed partial class MainWindow : Window
             while(current is not null&&dirty)
             {
                 int savedRevision=revision; string id=current.Id;
-                var snapshot=JsonSerializer.Deserialize<Resume>(JsonSerializer.Serialize(current,BackendClient.Json),BackendClient.Json)!;
+                var snapshot=CloneResume(current);
                 if(string.IsNullOrWhiteSpace(snapshot.Title)) { saveState.Text="请填写简历名称后保存"; throw new InvalidOperationException("简历名称不能为空，当前修改尚未保存。"); }
                 SaveIndicator("正在保存…",true);
                 var saved=await api.Save("resumes",snapshot);
@@ -206,8 +224,17 @@ public sealed partial class MainWindow : Window
     }
     private async Task PrintPdf(string path)
     {
-        await WaitForPreview(); var settings=preview!.CoreWebView2.Environment.CreatePrintSettings(); settings.ShouldPrintBackgrounds=true; settings.ShouldPrintHeaderAndFooter=false; settings.PageWidth=8.2677; settings.PageHeight=11.6929; settings.MarginTop=0; settings.MarginBottom=0; settings.MarginLeft=0; settings.MarginRight=0;
-        if(!await preview.CoreWebView2.PrintToPdfAsync(path,settings)) throw new IOException("PDF 导出失败，请检查目标文件是否被占用。");
+        renderingPdf=true;previewTimer.Stop();
+        try {
+            await WaitForPreview();await renderLock.WaitAsync();
+            try {
+                var settings=preview!.CoreWebView2.Environment.CreatePrintSettings();settings.ShouldPrintBackgrounds=true;settings.ShouldPrintHeaderAndFooter=false;settings.PageWidth=8.2677;settings.PageHeight=11.6929;settings.MarginTop=0;settings.MarginBottom=0;settings.MarginLeft=0;settings.MarginRight=0;
+                if(!await preview.CoreWebView2.PrintToPdfAsync(path,settings))throw new IOException("PDF 导出失败，请检查目标文件是否被占用。");
+            } finally {renderLock.Release();}
+        } finally {
+            renderingPdf=false;
+            if(currentPage=="editor")await RenderPreview();
+        }
     }
     private async Task ExportJson()
     {
@@ -243,24 +270,36 @@ public sealed partial class MainWindow : Window
     private void InitPicker(object picker) => WinRT.Interop.InitializeWithWindow.Initialize(picker,WinRT.Interop.WindowNative.GetWindowHandle(this));
     private static string SafeName(string text) => string.Join("_",text.Split(Path.GetInvalidFileNameChars(),StringSplitOptions.RemoveEmptyEntries));
     private async Task<bool> Confirm(string title,string message) => await new ContentDialog { XamlRoot=shell.XamlRoot,Title=title,Content=message,PrimaryButtonText="确认",CloseButtonText="取消",DefaultButton=ContentDialogButton.Close }.ShowAsync()==ContentDialogResult.Primary;
-    private void Success(string title,string message) { notice.Title=title; notice.Message=message; notice.Severity=InfoBarSeverity.Success; notice.IsOpen=true; }
+    private void Success(string title,string message) => Feedback(title,message);
     private static string LocalDate(string value) => DateTimeOffset.TryParse(value,out var dt)?dt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"):value;
 
     private Border JobCard(Job j,bool favorite)
     {
-        var c=Stack(12); c.Children.Add(Text(j.Title,20,true)); c.Children.Add(Text($"{j.Company}  ·  {j.Location}  ·  {j.Experience}",13)); c.Children.Add(Text($"{j.Source}  ·  {(string.IsNullOrEmpty(j.PublishedAt)?j.InfoStatus:"更新："+j.PublishedAt)}  ·  {j.Salary}",11));
+        var c=Stack(12);
+        if(!favorite){c.Children.Add(Text(j.Title,20,true)); c.Children.Add(Text($"{j.Company}  ·  {j.Location}  ·  {j.Experience}",13)); c.Children.Add(Text($"{j.Source}  ·  {(string.IsNullOrEmpty(j.PublishedAt)?j.InfoStatus:"更新："+j.PublishedAt)}  ·  {j.Salary}",11));}
         if(!string.IsNullOrWhiteSpace(j.Notes)) c.Children.Add(Text("备注："+j.Notes,12));
-        var description=Text(j.Description,13); description.MaxHeight=145; description.TextTrimming=TextTrimming.CharacterEllipsis; c.Children.Add(description);
+        var description=Text(j.Description,13);
+        if(favorite)c.Children.Add(new ScrollViewer {Content=description,MaxHeight=320,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollMode=ScrollMode.Disabled});
+        else {description.MaxHeight=145;description.TextTrimming=TextTrimming.CharacterEllipsis;c.Children.Add(description);}
         c.Children.Add(JobLink(j));
         var actions=Row(); actions.Children.Add(Button("详情",async ()=> { var content=Stack(); content.Children.Add(Text(j.Company+" · "+j.Location,14,true)); content.Children.Add(Text(j.Description,14)); var dialog=new ContentDialog { XamlRoot=shell.XamlRoot,Title=j.Title,Content=new ScrollViewer { Content=content,MaxHeight=480 },PrimaryButtonText="前往投递",CloseButtonText="返回" }; if(await dialog.ShowAsync()==ContentDialogResult.Primary) await OpenJob(j); })); actions.Children.Add(Button("前往投递 ↗",()=>OpenJob(j),true));
-        actions.Children.Add(Button(favorite?"取消收藏":"收藏职位",async ()=> { if(favorite) { await api.Delete("favorites/"+j.Id); await Navigate("favorites"); } else { await api.Save("favorites",j); Success("已收藏",j.Title); } })); if(favorite) { actions.Children.Add(Button("编辑收藏",()=>EditFavorite(j,false))); actions.Children.Add(Button("自动补全",()=>ResolveFavorite(j))); } actions.Children.Add(Button("复制链接",()=>CopyJobLink(j))); c.Children.Add(actions); c.Children.Add(Button("针对岗位制作简历",()=>FitJob(j))); return Card(c);
+        actions.Children.Add(Button(favorite?"取消收藏":"收藏职位",()=>favorite?RemoveFavorite(j):CollectFavorite(j))); if(favorite) { actions.Children.Add(Button("编辑收藏",()=>EditFavorite(j,false))); actions.Children.Add(Button("自动补全",()=>ResolveFavorite(j))); } actions.Children.Add(Button("复制链接",()=>CopyJobLink(j))); c.Children.Add(actions);
+        var followup=Row();followup.Children.Add(Button("针对岗位制作简历",()=>FitJob(j)));followup.Children.Add(Button("记录／查看投递",()=>EditJobApplication(j)));c.Children.Add(followup);
+        if(!favorite)return Card(c);
+        static string OneLine(string? value)=>System.Text.RegularExpressions.Regex.Replace(value??"",@"\s+"," ").Trim();
+        var summary=Stack(5);var title=Text(OneLine(j.Title),17,true);title.MaxLines=2;title.TextTrimming=TextTrimming.CharacterEllipsis;ToolTipService.SetToolTip(title,j.Title);summary.Children.Add(title);
+        string companyName=System.Text.RegularExpressions.Regex.Replace(OneLine(j.Company),@"^(?:公司名称|企业名称)(?:[:：]\s*|\s+)","");
+        var company=Text(string.Join(" · ",new[]{companyName,OneLine(j.Location)}.Where(x=>x.Length>0)),12);company.MaxLines=1;company.TextTrimming=TextTrimming.CharacterEllipsis;summary.Children.Add(company);
+        summary.Children.Add(Text(string.Join(" · ",new[]{j.Source,j.Salary,j.Experience}.Select(OneLine).Where(x=>x.Length>0)),11));
+        var disclosure=new Expander {Header=summary,Content=c,IsExpanded=false,HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Stretch,Tag="favorite-card"};
+        ToolTipService.SetToolTip(disclosure,"点击展开职位正文和操作，再次点击收起");
+        return Card(disclosure,new Thickness(14));
     }
     private async Task OpenJob(Job job)
     {
         await Launch(job.Url);
-        var records=await api.Get<List<ApplicationRecord>>("applications");
-        if(records.All(r=>r.JobId!=job.Id)) await api.Save("applications",new ApplicationRecord { JobId=job.Id,Title=job.Title,Company=job.Company,Url=job.Url,ResumeTitle=current?.Title??"" });
-        Success("已打开招聘页面","记录状态为“已打开”。完成原站投递后，可在投递记录中更新为“已投递”。");
+        var result=await api.Post<CollectionResult<ApplicationRecord>>("applications/open",job);
+        Success("已打开招聘页面",result.Created?"已记录为“已打开”；完成投递后点击“记录／查看投递”确认进度和所用简历。":"已有投递记录 · "+result.Record.Status+"，可点击“记录／查看投递”继续跟进。");
     }
     private static async Task Launch(string url)
     {
@@ -270,7 +309,7 @@ public sealed partial class MainWindow : Window
     private void ShowAbout()
     {
         Heading("使用说明","简历制作与求职跟进，在一个桌面工作区完成。"); var content=Stack(22);
-        var added=Stack(12); added.Children.Add(Text("本 Fork 的采集与同步",20,true)); added.Children.Add(Text("发现职位下包含主页面和公司来源管理。主页面可打开 BOSS 或牛客，在应用内本人登录、搜索和翻页时自动采集本次浏览得到的职位，再核对收藏。设置中的 WebDAV 同步可手动传输简历、照片、收藏、投递、日程、公司来源和非敏感设置；两端同时修改时先选择保留哪一端，替换前保留本机备份。Cookie、API Key 和同步密码只留在本机。",14)); content.Children.Add(Card(added));
+        var added=Stack(12); added.Children.Add(Text("职位采集与同步",20,true)); added.Children.Add(Text("发现职位或收藏页可打开 BOSS／牛客。在应用内打开一个具体职位详情，点击“收藏当前职位”只保存当前职位及完整正文。浏览、翻页、列表和推荐职位不会自动收藏。正文未加载时提示重试；已有收藏只补全缺失字段并保留手写内容，清空本次记录不会删除收藏。详情编辑和投递跟进统一在收藏页进行。设置中的 WebDAV 同步可手动传输简历、照片、收藏、投递、日程、公司来源和非敏感设置；两端同时修改时先选择保留哪一端，替换前保留本机备份。Cookie、API Key 和同步密码只留在本机。",14)); content.Children.Add(Card(added));
         foreach(var item in new[] {("01  GitHub 高星模板","8 套岗位适配，覆盖前端、后端、嵌入式与通用型，来自 Awesome-CV、billryan/resume、Deedy-Resume 和 Jake’s Resume。卡片显示仓库来源、核实星数和许可。版式从原仓库 LaTeX 模板移植为中文 A4，原文件与许可随应用保存。6 套旧模板保留以兼容已有简历。"),("02  制作与辅助","填写信息与经历 → 调整模块顺序和样式 → 检查模块状态与规则建议 → 查看 A4 内容余量 → 导出 PDF。支持 Markdown 表格与标题日期。支持格式按钮、撤销重做和最近 20 个历史版本；PDF 导出前检查真实分页。岗位对照列出要求与简历依据，可按设置的兼容接口获取 AI 建议，逐条确认后生成独立岗位简历。AI 提示词按钮仍只复制文本。"),("03  招聘与跨平台收藏","21个公司来源可在发现职位汇总查询，支持腾讯及 Greenhouse、Lever、Ashby、SmartRecruiters、Workday；可添加国内外公司官网并查看真实接入状态。BOSS、猎聘、智联、前程无忧、拉勾、牛客和企业官网职位可粘贴详情链接，尝试自动解析公开信息后收藏。也可正常浏览详情并读取可见职位内容。原始链接保留访问参数，规范地址单独去重，可按平台筛选。平台账号收藏不会自动同步。"),("04  直接采集的范围","当前自动获取的是公开职位源。BOSS 搜索页依赖脚本和访问状态，robots 限制搜索参数路径，当前未实现其匿名批量采集；单个公开详情可尝试直接解析，受限页面可在“浏览并读取”中正常完成验证后读取可见内容。未实现验证码绕过、外部浏览器 Cookie 读取或自动投递。"),("05  投递与数据","“前往投递”打开原页面并记录“已打开”；实际投递在原站完成，再手动更新进度。简历、收藏、投递记录由本地 Java 服务保存。记录进度时间线、笔试／面试日期和复盘，可确认所用简历并固定投递快照。应用运行时提前 24 小时及到期提醒，关闭期间不通知，重新打开补查待办。上一版备份与最多 20 个历史版本压缩保存。"),("06  技术与来源","客户端为原生 WinUI 3 / .NET 8，后端 Java 21，WebView2 用于预览和 PDF。开源模板与 resume-helper 功能来源说明见安装目录 THIRD_PARTY_NOTICES.md。")}) { var s=Stack(); s.Children.Add(Text(item.Item1,20,true)); s.Children.Add(Text(item.Item2,15)); content.Children.Add(Card(s)); }
         content.Children.Add(Card(Text("本机数据目录：\n"+api.DataDirectory,13))); content.Children.Add(Button("打开数据目录",()=> { Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList={api.DataDirectory},UseShellExecute=true }); return Task.CompletedTask; })); FillScroll(content);
     }

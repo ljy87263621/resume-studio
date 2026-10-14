@@ -12,10 +12,77 @@
     "snapshotId": {"type": "string", "minLength": 1, "maxLength": 100},
     "createdAt": {"type": "string", "format": "date-time"},
     "deviceId": {"type": "string", "minLength": 1, "maxLength": 100},
-    "extensions": {"type": "object", "additionalProperties": true},
+    "extensions": {"type": "object", "additionalProperties": true, "properties": {"interviewStudy": {"type": "object", "required": ["version", "decks"], "additionalProperties": true, "properties": {"version": {"const": 1}, "decks": {"type": "array", "maxItems": 5000, "items": {"$ref": "#/$defs/interviewDeck"}}}}}},
     "data": {"$ref": "#/$defs/data"}
   },
   "$defs": {
+    "interviewQuestion": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "title",
+        "answer",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "answer": {
+          "type": "string",
+          "maxLength": 50000
+        },
+        "status": {
+          "enum": [
+            "unseen",
+            "learning",
+            "remembered"
+          ]
+        },
+        "reviewedAt": {
+          "type": "string"
+        }
+      }
+    },
+    "interviewDeck": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "title",
+        "questions"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "sourceName": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "questions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2000,
+          "items": {
+            "$ref": "#/$defs/interviewQuestion"
+          }
+        }
+      }
+    },
     "id": {"type": "string", "pattern": "^[a-zA-Z0-9_-]{1,100}$"},
     "nonblank": {"type": "string", "pattern": "\\S"},
     "httpsUrl": {

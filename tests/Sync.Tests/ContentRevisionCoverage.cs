@@ -30,7 +30,8 @@ static class ContentRevisionCoverage
                 {
                     puts++;matched=request.Headers["If-Match"];
                     Check(matched is null or "*" or "\"strong\"","local hash never sent as server ETag");
-                    if((request.Headers["If-None-Match"]=="*"&&stored is not null)||(matched=="*"&&stored is null)) response.StatusCode=412;
+                    if(matched=="*"&&mode is "reject-any" or "reject-changed") {response.StatusCode=412;if(mode=="reject-changed")stored=Encoding.UTF8.GetBytes("other-device");}
+                    else if((request.Headers["If-None-Match"]=="*"&&stored is not null)||(matched=="*"&&stored is null)) response.StatusCode=412;
                     else {using var buffer=new MemoryStream();await request.InputStream.CopyToAsync(buffer);stored=corrupt?Encoding.UTF8.GetBytes("corrupted"):buffer.ToArray();response.StatusCode=201;}
                 }
                 response.Close();
@@ -46,6 +47,11 @@ static class ContentRevisionCoverage
             var fetched=await dav.ReadAsync(default);Check(fetched!.ETag==Fingerprint(first),"unchanged content has stable token");
             mode="weak";Check((await dav.ReadAsync(default))!.ETag==fetched.ETag,"weak ETag uses the same content fingerprint");
             Check(await dav.WriteAsync(second,fetched.ETag,default)==Fingerprint(second)&&matched=="*","fallback replacement rechecks bytes and requires an existing file");
+            stored=first;mode="reject-any";
+            Check(await dav.WriteAsync(second,Fingerprint(first),default)==Fingerprint(second)&&matched is null,"unchanged content can retry when a DAV server rejects wildcard If-Match");
+            stored=first;mode="reject-changed";int rejectedBefore=puts;
+            await Error(()=>dav.WriteAsync(second,Fingerprint(first),default),"云端资料已改变");Check(puts==rejectedBefore+1,"changed content after a rejected wildcard never starts an unconditional retry");
+            mode="missing-etag";
             int before=puts;stored=first;
             await Error(()=>dav.WriteAsync(second,Fingerprint(second),default),"云端资料已改变");Check(puts==before,"stale hash never starts PUT");
             stored=null;await Error(()=>dav.WriteAsync(second,Fingerprint(first),default),"云端资料已改变");Check(puts==before,"deleted remote never recreated by stale replacement");

@@ -17,15 +17,15 @@ public sealed partial class MainWindow
         var task=PreviewTemplate(template,true);var dialog=await FeatureDialog(template.Name+" · 证件照占位预览");var web=(WebView2)dialog.Content;
         bool loaded=false;for(int n=0;n<160;n++){if(web.CoreWebView2 is not null&&await web.CoreWebView2.ExecuteScriptAsync("!!document.querySelector('.photo-placeholder')&&Array.from(document.fonts).some(f=>f.family==='MiSans'&&f.status==='loaded')")=="true"){loaded=true;break;}await Task.Delay(50);}Check(loaded,"photo preview renders a placeholder using the bundled MiSans font");
         await FeatureClick(dialog,"使用模板");await task;Check(current!.Photo==""&&current.FontFamily=="MiSans","using photo preview creates a clean resume with MiSans default, without saving a fake photo");
-        editorParts!.SelectedIndex=1;await Task.Delay(160);var font=FindCombo(body,"简历字体")??throw new Exception("Font selector missing");font.SelectedIndex=2;await Task.Delay(160);await SaveCurrent();await WaitForPreview();
+        ToggleLayoutSettings();await Task.Delay(160);var layoutContent=editorLayoutPanel!;var font=FindCombo(layoutContent,"简历字体")??throw new Exception("Font selector missing");font.SelectedIndex=2;await Task.Delay(160);await SaveCurrent();await WaitForPreview();
         Check((await api.Get<List<Resume>>("resumes")).Single(r=>r.Id==current.Id).FontFamily=="SimSun"&& (await preview!.CoreWebView2!.ExecuteScriptAsync("getComputedStyle(document.querySelector('article')).fontFamily")).Contains("SimSun"),"native font choice is saved and applied to actual preview");
-        font.SelectedIndex=0;await Task.Delay(160);await SaveCurrent();await WaitForPreview();string pdf=Path.Combine(output,"misans-resume.pdf");await PrintPdf(pdf);
+        font.SelectedIndex=0;ToggleLayoutSettings();await Task.Delay(160);await SaveCurrent();await WaitForPreview();string pdf=Path.Combine(output,"misans-resume.pdf");await PrintPdf(pdf);
         Check(Encoding.Latin1.GetString(await File.ReadAllBytesAsync(pdf)).Contains("MiSans"),"exported PDF embeds MiSans rather than relying on installed system fonts");
         var original=await api.Save("applications",new ApplicationRecord {Title="日程联动笔试",Company="测试公司",Url="https://example.com/schedule-test",Status="笔试中",DueAt=DateTimeOffset.Now.AddHours(2).ToString("O"),EventKind="笔试"});
         await Navigate("schedule");var edit=EditSchedule(new ScheduleItem {StartAt=DateTimeOffset.Now.AddHours(3).ToString("O")});var scheduleDialog=await FeatureDialog("编辑日程");
         (FindTextField(scheduleDialog,"事项名称")??throw new Exception("Schedule title missing")).Text="自定义面试安排";var kind=FindCombo(scheduleDialog,"日程类型")!;kind.SelectedItem="面试";await FeatureClick(scheduleDialog,"保存日程");await edit;
         var items=await api.Get<List<ScheduleItem>>("schedule");var saved=items.Single(i=>i.Title=="自定义面试安排");Check(saved.Kind=="面试"&&DateTimeOffset.TryParse(saved.StartAt,out _),"native schedule dialog saves an event through the backend");
-        var editing=EditSchedule(saved);var existing=await FeatureDialog("编辑日程");var fields=(StackPanel)((ScrollViewer)existing.Content).Content;
+        var editing=EditSchedule(saved);var existing=await FeatureDialog("编辑日程");var fields=(StackPanel)((ContentControl)((ScrollViewer)existing.Content).Content).Content;
         var dayPicker=fields.Children.OfType<CalendarDatePicker>().Single();dayPicker.Date=DateTimeOffset.Now.AddDays(1);
         fields.Children.OfType<CheckBox>().Single(b=>b.Content?.ToString()=="全天事项").IsChecked=true;
         fields.Children.OfType<CheckBox>().Single(b=>b.Content?.ToString()=="软件内提醒").IsChecked=false;

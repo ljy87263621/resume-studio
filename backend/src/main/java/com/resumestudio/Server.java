@@ -24,10 +24,11 @@ public final class Server {
         try {
             if(!token.equals(e.getRequestHeaders().getFirst("X-Resume-Token"))) { send(e,401,Map.of("error","Unauthorized")); return; }
             String path=e.getRequestURI().getPath().substring(5), method=e.getRequestMethod();
-            if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.7.4","java",System.getProperty("java.version"))); return; }
+            if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.9.3","java",System.getProperty("java.version"))); return; }
             if(path.equals("templates")&&method.equals("GET")) { send(e,200,Templates.all()); return; }
             if(path.equals("job-sources")&&method.equals("GET")) { send(e,200,jobs.sources()); return; }
             if(path.equals("sync/snapshot")&&method.equals("GET")) { send(e,200,store.syncSnapshot()); return; }
+            if(path.equals("sync/extended-snapshot")&&method.equals("GET")) { send(e,200,store.syncExtendedSnapshot()); return; }
             if(path.equals("sync/validate")&&method.equals("POST")||path.equals("sync/import")&&method.equals("POST")) {
                 byte[] bytes=e.getRequestBody().readNBytes(SyncStore.MAX_BYTES+1);
                 if(bytes.length>SyncStore.MAX_BYTES) { send(e,413,Map.of("error","同步资料超过 64 MiB")); return; }
@@ -35,6 +36,12 @@ public final class Server {
                 var snapshot=Json.object(request.get("snapshot")); SyncStore.validate(snapshot);
                 if(path.equals("sync/validate")) send(e,200,Map.of("valid",true));
                 else { var result=store.syncImport(Json.str(request,"expectedHash"),snapshot); jobs=new CompanyJobs(store); send(e,200,result); } return;
+            }
+            if(Set.of("favorites/collect","favorites/collect-detail","applications/open","applications/find").contains(path)&&method.equals("POST")) {
+                byte[] bytes=e.getRequestBody().readNBytes(2_000_001);
+                if(bytes.length>2_000_000) { send(e,413,Map.of("error","Document exceeds 2 MB")); return; }
+                var job=Json.object(Json.parse(new String(bytes,StandardCharsets.UTF_8)));validate("favorites",job);
+                send(e,200,switch(path) {case "favorites/collect"->store.collectFavorite(job);case "favorites/collect-detail"->store.collectFavoriteDetail(job);case "applications/find"->store.findApplication(job);default->store.openApplication(job);});return;
             }
             if(Set.of("resume-check","capture-preview").contains(path)&&method.equals("POST")) {
                 byte[] bytes=e.getRequestBody().readNBytes(2_000_001);
@@ -54,11 +61,12 @@ public final class Server {
                 if(parts.length==3&&method.equals("POST")) { store.checkpoint(parts[1],"手动保存"); send(e,200,Map.of("saved",true)); return; }
                 if(parts.length==4&&method.equals("GET")) { send(e,200,store.revision(parts[1],parts[3])); return; }
             }
-            if(Set.of("resumes","favorites","applications","sources","schedule").contains(kind)) {
+            if(Set.of("resumes","favorites","applications","sources","schedule","interviews").contains(kind)) {
                 if(parts.length==1&&method.equals("GET")) { send(e,200,store.list(kind)); return; }
                 if(parts.length==1&&method.equals("POST")) {
-                    byte[] bytes=e.getRequestBody().readNBytes(2_000_001);
-                    if(bytes.length>2_000_000) { send(e,413,Map.of("error","Document exceeds 2 MB")); return; }
+                    int limit=kind.equals("interviews")?4_000_000:2_000_000;
+                    byte[] bytes=e.getRequestBody().readNBytes(limit+1);
+                    if(bytes.length>limit) { send(e,413,Map.of("error","Document exceeds "+(limit/1_000_000)+" MB")); return; }
                     var doc=Json.object(Json.parse(new String(bytes,StandardCharsets.UTF_8))); validate(kind,doc);
                     send(e,200,store.save(kind,doc)); return;
                 }
@@ -71,6 +79,7 @@ public final class Server {
         finally { e.close(); }
     }
     static void validate(String kind,Map<String,Object> doc) {
+        if(kind.equals("interviews")) { InterviewStudy.validate(doc); return; }
         if(kind.equals("sources")) { CompanySources.validate(doc); return; }
         if(kind.equals("schedule")) {
             for(String field:List.of("title","kind","startAt","notes","applicationId")) if(doc.containsKey(field)&&!(doc.get(field) instanceof String)) throw new IllegalArgumentException("日程文本字段无效");
