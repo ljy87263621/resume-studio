@@ -62,23 +62,24 @@ public sealed partial class MainWindow
         string name=provider=="boss"?"BOSS直聘":"牛客";
         string start=provider=="boss"?"https://www.zhipin.com/web/geek/jobs?query="+Uri.EscapeDataString(keyword):"https://www.nowcoder.com/jobs/intern/center";
         var items=new ObservableCollection<Job>(); var byUrl=new Dictionary<string,Job>();
-        var list=new ListView {ItemsSource=items,SelectionMode=ListViewSelectionMode.Multiple,MaxHeight=170,MinHeight=80};
+        var list=new ListView {ItemsSource=items,SelectionMode=ListViewSelectionMode.Multiple};
         list.ItemTemplate=(DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load("""
         <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"><StackPanel Margin="4" Spacing="3"><TextBlock Text="{Binding Title}" FontWeight="SemiBold"/><TextBlock Text="{Binding Company}" FontSize="12"/><StackPanel Orientation="Horizontal" Spacing="10"><TextBlock Text="{Binding Location}" FontSize="12"/><TextBlock Text="{Binding Salary}" FontSize="12"/></StackPanel></StackPanel></DataTemplate>
         """);
         var status=Text("请在页面内本人登录，然后正常搜索和翻页。页面返回的职位会自动加入下方列表；验证需要本人完成。",12);
-        var toggle=new ToggleSwitch {Header="自动采集本次浏览职位",IsOn=true};
+        var toggle=new ToggleSwitch {OnContent="自动采集已开",OffContent="自动采集已暂停",IsOn=true};
+        ToolTipService.SetToolTip(toggle,"自动采集本次正常浏览返回的职位");
         var address=Text(start,11); address.MaxLines=1; address.TextTrimming=TextTrimming.CharacterEllipsis;
-        var web=new WebView2 {Width=Math.Max(500,Math.Min(1000,shell.ActualWidth-140)),Height=Math.Max(260,Math.Min(390,shell.ActualHeight-410))};
         bool closed=false,reading=false,initialized=false; int activeResponses=0,epoch=0; string captureFailure="";
-        var content=Stack(8);
-        var dialog=new ContentDialog {XamlRoot=shell.XamlRoot,Title=name+" · 登录后自动采集",Content=new ScrollViewer {Content=content,MaxHeight=Math.Max(480,shell.ActualHeight-150)},PrimaryButtonText="核对选中职位",CloseButtonText="返回",IsPrimaryButtonEnabled=false};
-        var controls=Row(); controls.Children.Add(toggle);
+        var controls=Row();
+        using var viewport=new CaptureViewport(shell.XamlRoot,controls,status,address,list);
+        var web=viewport.Web;
+        var dialog=new ContentDialog {XamlRoot=shell.XamlRoot,Title=name+" · 登录后自动采集",Content=viewport.Content,PrimaryButtonText="核对选中职位",CloseButtonText="返回",IsPrimaryButtonEnabled=false};
+        dialog.Resources["ContentDialogMaxWidth"]=1460d;
+        controls.Children.Add(toggle);
         controls.Children.Add(Button("读取当前页面",ReadDom));
         controls.Children.Add(Button("全选",()=> {list.SelectAll(); return Task.CompletedTask;}));
         controls.Children.Add(Button("清空结果",()=> {epoch++; items.Clear(); byUrl.Clear(); UpdateStatus(); return Task.CompletedTask;}));
-        content.Children.Add(controls); content.Children.Add(status); content.Children.Add(address); content.Children.Add(web); content.Children.Add(Text("选择需要收藏的职位（最多 50 条）；详情和缺失字段可在收藏中继续核对。",12)); content.Children.Add(list);
-        dialog.Resources["ContentDialogMaxWidth"]=1120d;
         var timer=new DispatcherTimer {Interval=TimeSpan.FromSeconds(3)};
         void UpdateStatus() {status.Text=$"本次已采集 {items.Count} 条 · 选中 {list.SelectedItems.Count} 条。{(toggle.IsOn?"正在自动采集":"已暂停")}"+(captureFailure==""?"":"\n"+captureFailure); dialog.IsPrimaryButtonEnabled=list.SelectedItems.Count is >0 and <=50;}
         void PauseForFailure(string message) {captureFailure=message; toggle.IsOn=false; UpdateStatus();}
@@ -148,9 +149,10 @@ public sealed partial class MainWindow
                 webEnvironment??=CreateWebEnvironment(); await web.EnsureCoreWebView2Async(await webEnvironment);
                 if(closed) return;
                 var core=web.CoreWebView2!; core.Settings.AreDevToolsEnabled=false;
+                core.Settings.IsZoomControlEnabled=false;
                 core.NavigationStarting+=(_,e)=> {if(!e.Uri.StartsWith("https://",StringComparison.OrdinalIgnoreCase)&&e.Uri!="about:blank") e.Cancel=true;};
                 core.NewWindowRequested+=(_,e)=> {e.Handled=true; if(e.Uri.StartsWith("https://",StringComparison.OrdinalIgnoreCase)) core.Navigate(e.Uri);};
-                core.NavigationCompleted+=async (_,_)=> {if(closed) return; address.Text=core.Source; if(toggle.IsOn) await ReadDom();};
+                core.NavigationCompleted+=async (_,_)=> {if(closed) return; address.Text=core.Source;await viewport.FitAsync(); if(!closed&&toggle.IsOn) await ReadDom();};
                 core.WebResourceResponseReceived+=ResponseReceived;
                 core.Navigate(start); timer.Start();
             }
@@ -158,7 +160,7 @@ public sealed partial class MainWindow
         };
         List<Job> selected=[];
         try {if(await dialog.ShowAsync()==ContentDialogResult.Primary) selected=list.SelectedItems.Cast<Job>().Take(50).ToList();}
-        finally {closed=true; epoch++; timer.Stop(); if(web.CoreWebView2 is not null) web.CoreWebView2.WebResourceResponseReceived-=ResponseReceived; web.Close();}
+        finally {closed=true; epoch++; timer.Stop();viewport.Dispose(); if(web.CoreWebView2 is not null) web.CoreWebView2.WebResourceResponseReceived-=ResponseReceived; web.Close();}
         if(selected.Count==0) return;
         var review=Stack(12);
         review.Children.Add(Text($"确认收藏 {selected.Count} 条职位。这里只保存职位数据，账号登录状态留在本机。",14));

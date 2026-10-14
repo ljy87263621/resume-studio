@@ -16,7 +16,7 @@ public sealed partial class MainWindow
     private IReadOnlyList<ReleaseNote> updateNotes=[];
     private string updateNotesError="";
     private ReleaseIdentity? checkedReleaseIdentity;
-    private static bool VerificationSession=>Environment.GetCommandLineArgs().Any(a=>a is "--self-test" or "--feature-test" or "--iteration-test" or "--benchmark" or "--appearance-review" or "--template-assets" or "--workbench-test" or "--navigation-test");
+    private static bool VerificationSession=>Environment.GetCommandLineArgs().Any(a=>a is "--self-test" or "--feature-test" or "--iteration-test" or "--benchmark" or "--appearance-review" or "--template-assets" or "--workbench-test" or "--navigation-test" or "--capture-layout-test");
     private ReleaseUpdate UpdateClient()=>new(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"Assets","UpdatePublicKey.pem")));
     private UIElement UpdateSettingsCard()
     {

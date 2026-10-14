@@ -108,6 +108,7 @@ public sealed partial class MainWindow : Window
         if(Environment.GetCommandLineArgs().Contains("--iteration-test")) { await IterationOnlyTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--feature-test")) { await FeatureTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--navigation-test")) { await NavigationTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--capture-layout-test")) { await CaptureLayoutTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--workbench-test")) { await WorkbenchTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--template-assets")) { await GenerateTemplateAssets(); return; }
         if(Environment.GetCommandLineArgs().Contains("--self-test"))
