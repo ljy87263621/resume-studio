@@ -9,6 +9,15 @@ static class TimeoutCoverage
     {
         await WithServer(async (context,stop)=>
         {
+            if(context.Request.HttpMethod=="MKCOL") await Task.Delay(Timeout.Infinite,stop);
+            else {context.Response.StatusCode=404;context.Response.Close();}
+        },async directory=>
+        {
+            using var dav=Client(directory,TimeSpan.FromMilliseconds(100));using var cancel=new CancellationTokenSource();
+            await ExpectTimeout(dav.ReadAsync(cancel.Token),cancel,"MKCOL stall during first synchronization");
+        });
+        await WithServer(async (context,stop)=>
+        {
             context.Response.Headers["ETag"]="\"stall\""; context.Response.ContentLength64=100;
             await context.Response.OutputStream.WriteAsync(new byte[] {123},stop);
             await context.Response.OutputStream.FlushAsync(stop);
@@ -20,7 +29,12 @@ static class TimeoutCoverage
         });
         await WithServer(async (context,stop)=>
         {
-            if(context.Request.HttpMethod=="PUT")
+            if(context.Request.HttpMethod=="PROPFIND")
+            {
+                context.Response.StatusCode=207;
+                await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes("<d:multistatus xmlns:d=\"DAV:\"><d:response><d:href>/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>"),stop);context.Response.Close();
+            }
+            else if(context.Request.HttpMethod=="PUT")
             {
                 await context.Request.InputStream.CopyToAsync(Stream.Null,stop);
                 await Task.Delay(150,stop); context.Response.StatusCode=201; context.Response.Close();
@@ -47,7 +61,7 @@ static class TimeoutCoverage
             try {await dav.ReadAsync(cancel.Token);throw new Exception("Caller cancellation was ignored");}
             catch(OperationCanceledException) when(cancel.IsCancellationRequested) {}
         });
-        Console.WriteLine("PASS DAV deadlines: stalled GET body, shared PUT/read-back deadline, caller cancellation preserved");
+        Console.WriteLine("PASS DAV deadlines: stalled MKCOL/GET body, shared PUT/read-back deadline, caller cancellation preserved");
     }
     private static async Task ExpectTimeout(Task operation,CancellationTokenSource cancel,string label)
     {
