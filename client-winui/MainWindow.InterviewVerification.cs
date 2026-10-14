@@ -44,8 +44,11 @@ public sealed partial class MainWindow
                 card.IsExpanded=false;await Task.Delay(250);Check(card.ActualHeight<190,style+": favorite can be collapsed again");
                 Check(Math.Abs(Top(second)-secondTop)<=2,style+": collapsing restores the compact neighbor position");
             }
-            foreach(string extension in new[]{"md","txt","docx","blank-headings.docx","pdf","chinese.pdf"}){
-                var import=ImportInterviewFile(Path.Combine(fixtures,extension=="chinese.pdf"?"interview-chinese.pdf":extension=="blank-headings.docx"?"interview-blank-headings.docx":"interview."+extension));var dialog=await FeatureDialog("导入面试题");
+            string? userDocument=Environment.GetEnvironmentVariable("RESUMESTUDIO_INTERVIEW_DOCUMENT");
+            var imports=new[]{"md","txt","docx","blank-headings.docx","numbered.docx","pdf","chinese.pdf"}.ToList();if(!string.IsNullOrWhiteSpace(userDocument))imports.Insert(0,"user-document");
+            foreach(string extension in imports){
+                string file=extension=="user-document"?userDocument!:Path.Combine(fixtures,extension=="chinese.pdf"?"interview-chinese.pdf":extension=="blank-headings.docx"?"interview-blank-headings.docx":extension=="numbered.docx"?"interview-numbered.docx":"interview."+extension);
+                var import=ImportInterviewFile(file);var dialog=await FeatureDialog("导入面试题");
                 ListView? list=null;
                 for(int attempt=0;attempt<50;attempt++){
                     dialog.UpdateLayout();list=InteractionElement<ListView>(dialog,l=>l.Tag?.ToString()=="interview-import-titles");
@@ -54,11 +57,12 @@ public sealed partial class MainWindow
                 }
                 if(list is null)throw new Exception(extension+": import preview did not finish loading");
                 if(extension=="chinese.pdf")(FindTextField(dialog,"题库名称")??throw new Exception("Deck title field missing")).Text="嵌入式基础题";
-                Check(list.Items.Count==2&&dialog.IsPrimaryButtonEnabled,extension+": native import preview exposes two questions");
+                int expected=extension=="user-document"?82:2;
+                Check(list.Items.Count==expected&&dialog.IsPrimaryButtonEnabled,extension+": native import preview exposes all expected questions");
                 await FeatureClick(dialog,"导入题库");await import;await Task.Delay(180);
-                Check(currentPage=="interviews"&&InterviewProgress.Count((await api.Get<List<InterviewDeck>>("interviews")).Single(d=>d.Id==interviewDeckId).Questions).Total==2,extension+": confirmed import saves a complete deck through Java");
+                Check(currentPage=="interviews"&&InterviewProgress.Count((await api.Get<List<InterviewDeck>>("interviews")).Single(d=>d.Id==interviewDeckId).Questions).Total==expected,extension+": confirmed import saves a complete deck through Java");
             }
-            Check((await api.Get<List<InterviewDeck>>("interviews")).Count==6,"importing another document preserves previous decks");
+            Check((await api.Get<List<InterviewDeck>>("interviews")).Count==imports.Count,"importing another document preserves previous decks");
             await Click("✓ 已记住");var deck=(await api.Get<List<InterviewDeck>>("interviews")).Single(d=>d.Id==interviewDeckId);
             Check(deck.Questions[0].Status=="remembered"&&interviewIndex==1,"remembered verdict persists and advances to the second card");
             await Click("未掌握");deck=(await api.Get<List<InterviewDeck>>("interviews")).Single(d=>d.Id==interviewDeckId);

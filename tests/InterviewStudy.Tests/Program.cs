@@ -1,6 +1,7 @@
 using ResumeStudio.Services;
 using System.IO.Compression;
 using System.Text;
+using System.Xml.Linq;
 using UglyToad.PdfPig.Writer;
 using UglyToad.PdfPig.Core;
 using UglyToad.PdfPig.Fonts.Standard14Fonts;
@@ -16,11 +17,15 @@ var document=InterviewImport.Read(Path.Combine(output,"interview.md"));var quest
 Check(InterviewImport.AutoLevel(document)==2&&questions.Count==2,"Markdown categories and answer subheadings are excluded from question boundaries");
 Check(questions[0].Answer.Contains("### 答案")&&questions[0].Answer.Contains("答案列表"),"question answers retain lists and lower headings");
 Check(InterviewImport.Split(document,1).Count==1,"manual heading-level selection can merge a category into one card");
+Check(InterviewImport.Split(new("answers.md",[new("1. 指针是什么？",2),new("答案",1),new("完整解释"),new("1. 第一步",3),new("2. 第二步",3),new("3. 第三步",3),new("2. 任务是什么？",2),new("任务解释")])).Count==2,"question-like headings take priority over numerous answer-list headings and answer labels cannot discard text");
 string fence=new((char)96,3);
 var code=InterviewImport.ParseText("## 1. Code?\n"+fence+"c\n# include\n## still code\n"+fence+"\n## 2. Next?\nAnswer");
 Check(InterviewImport.Split(new("code.md",code)).Count==2,"headings inside fenced code are preserved as answer text");
 var setext=InterviewImport.ParseText("One question?\n---\nAnswer\nTwo questions?\n---\nAnswer");
 Check(InterviewImport.Split(new("setext.md",setext)).Count==2,"setext Markdown headings split correctly");
+foreach(string content in new[]{"一、什么是中断？\n答案\n\n二、什么是任务？\n答案","① 什么是中断？\n答案\n\n② 什么是任务？\n答案","问题：中断是什么\n答案\n\nQ2: 任务是什么\n答案","**中断机制**\n答案\n\n**任务调度**\n答案"})Check(InterviewImport.Split(new("extended.txt",InterviewImport.ParseText(content))).Count==2,"Chinese/circled/labeled/bold question headings split");
+var plainCode=InterviewImport.Split(new("code.txt",InterviewImport.ParseText("Q1: 指针\n答案\n"+fence+"c\nQ99: example\n1. code line\n"+fence+"\n1. 答案步骤\n2. 第二步骤\n\nQ2: 内存\n答案")));
+Check(plainCode.Count==2&&plainCode[0].Answer.Contains("Q99")&&plainCode[0].Answer.Contains("第二步骤"),"plain text fallback preserves fenced code and numbered answer steps");
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 string plain="1. 中断是什么？\n响应异步事件。\n\n2. 什么是任务？\n调度单位。";
 File.WriteAllBytes(Path.Combine(output,"interview.txt"),Encoding.GetEncoding(54936).GetBytes(plain));
@@ -44,6 +49,21 @@ var spacedWord=InterviewImport.Split(InterviewImport.Read(Path.Combine(output,"i
 Check(spacedWord.Count==2&&spacedWord.All(q=>!string.IsNullOrWhiteSpace(q.Title))&&spacedWord[0].Answer.Contains("补充答案"),"empty Word heading paragraphs create no invalid questions and retain subsequent answer text");
 Check(InterviewImport.Split(new("blank.docx",[new("",1),new("1. Question?",2),new("Answer"),new("  ",1),new("continued answer")]))[0].Answer.Contains("continued answer"),"blank category headings do not terminate the current question");
 Check(InterviewImport.AutoLevel(new("blank.docx",[new("",1),new(" ",1),new("Question",2)]))==2,"automatic heading selection ignores empty formatted paragraphs");
+string numberedBody=$"""<w:document xmlns:w="{ns}"><w:body><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>TCP 与 UDP 的区别</w:t></w:r></w:p><w:p><w:r><w:t>保留第一题答案。</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>答案中的嵌套列表</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr><w:r><w:t>取消编号的正文</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>线程与进程的区别</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>表格中的编号内容</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>""";
+string numberedPath=Path.Combine(output,"interview-numbered.docx");Docx(numberedPath,styles,numberedBody);
+using(var zip=ZipFile.Open(numberedPath,ZipArchiveMode.Update)){using var stream=new StreamWriter(zip.CreateEntry("word/numbering.xml").Open());stream.Write($"""<w:numbering xmlns:w="{ns}"><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/></w:lvl><w:lvl w:ilvl="1"><w:numFmt w:val="decimal"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>""");}
+var numbered=InterviewImport.Split(InterviewImport.Read(numberedPath));
+Check(numbered.Count==2&&numbered[0].Title=="TCP 与 UDP 的区别"&&numbered[0].Answer.Contains("嵌套列表")&&numbered[0].Answer.Contains("取消编号")&&numbered[1].Answer.Contains("表格中的编号"),"Word automatic numbering splits questions without treating nested lists, disabled numbering or tables as questions");
+foreach(string emphasis in new[]{"<w:b/>","<w:sz w:val=\"36\"/>"}){
+    string visualPath=Path.Combine(output,"visual-"+(emphasis.Contains("w:b")?"bold":"size")+".docx");
+    string visualBody=$"""<w:document xmlns:w="{ns}"><w:body><w:p><w:r><w:rPr>{emphasis}</w:rPr><w:t>指针与内存</w:t></w:r></w:p><w:p><w:r><w:t>正常正文，保存完整解释。</w:t></w:r></w:p><w:p><w:r><w:rPr>{emphasis}</w:rPr><w:t>任务与调度</w:t></w:r></w:p><w:p><w:r><w:t>正常正文，说明任务的机制。</w:t></w:r></w:p></w:body></w:document>""";
+    Docx(visualPath,styles,visualBody);Check(InterviewImport.Split(InterviewImport.Read(visualPath)).Count==2,"Word standalone bold or large-font headings are recognized without heading styles");
+}
+string inheritedPath=Path.Combine(output,"inherited-numbering.docx");Docx(inheritedPath,styles.Replace("</w:styles>","<w:style w:styleId=\"AutoList\"><w:pPr><w:numPr><w:numId w:val=\"1\"/></w:numPr></w:pPr></w:style></w:styles>"),numberedBody.Replace("<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr>","<w:pStyle w:val=\"AutoList\"/>").Replace("<w:numPr><w:numId w:val=\"1\"/></w:numPr>","<w:pStyle w:val=\"AutoList\"/>"));
+using(var target=ZipFile.Open(inheritedPath,ZipArchiveMode.Update)){using var origin=ZipFile.OpenRead(numberedPath);using var sourceStream=origin.GetEntry("word/numbering.xml")!.Open();using var destinationStream=target.CreateEntry("word/numbering.xml").Open();sourceStream.CopyTo(destinationStream);}
+Check(InterviewImport.Split(InterviewImport.Read(inheritedPath)).Count==2,"Word numbering inherited from paragraph styles is recognized");
+if(args.Length>2){var userDocument=InterviewImport.Read(args[2]);var userQuestions=InterviewImport.Split(userDocument);Check(userQuestions.Count==82&&userQuestions[0].Title=="tcp和udp的区别"&&userQuestions[^1].Title=="extern关键字的作用？","actual user Word document splits all 82 numbered question titles in order");Check(userQuestions[0].Answer.Contains("连接方式")&&userQuestions[0].Answer.Contains("无流量控制")&&userQuestions[0].Answer.Contains("TCP"),"actual document keeps comparison table text in the first answer");File.WriteAllText(Path.Combine(output,"user-import-result.json"),System.Text.Json.JsonSerializer.Serialize(userQuestions));}
+if(args.Length>2){using var zip=ZipFile.OpenRead(args[2]);using var stream=zip.GetEntry("word/document.xml")!.Open();var xml=XDocument.Load(stream);XNamespace w=ns;var expected=xml.Descendants(w+"p").Where(p=>p.Element(w+"pPr")?.Element(w+"numPr")?.Element(w+"numId")?.Attribute(w+"val")?.Value=="1").Select(p=>string.Concat(p.Descendants(w+"t").Select(t=>t.Value)).Trim()).ToArray();Check(InterviewImport.Split(InterviewImport.Read(args[2])).Select(q=>q.Title).SequenceEqual(expected),"every actual document question title matches the original 82 numbered paragraphs exactly");}
 var builder=new PdfDocumentBuilder();var font=builder.AddStandard14Font(Standard14Font.Helvetica);var page=builder.AddPage(PageSize.A4);
 page.AddText("1. What is a mutex?",16,new PdfPoint(40,740),font);page.AddText("Mutual exclusion protects shared data.",11,new PdfPoint(40,710),font);
 page.AddText("2. What is a semaphore?",16,new PdfPoint(40,640),font);page.AddText("A counter limits concurrent access.",11,new PdfPoint(40,610),font);
