@@ -37,8 +37,19 @@ public sealed partial class MainWindow
         headerFrame.LayoutUpdated+=(_,_)=>UpdateGlassDragRegions();
         shell.Loaded+=(_,_)=>shell.XamlRoot.Changed+=(_,_)=>UpdateGlassDragRegions();
         shell.SizeChanged+=(_,e)=>UpdateClassicNavigationLayout(e.NewSize.Width);
-        Grid.SetRow(notice,1); contentHost.Children.Add(notice); Grid.SetRow(body,2); contentHost.Children.Add(body);
+        Grid.SetRow(notice,1); contentHost.Children.Add(notice);
+        pageHost.Child=body; Grid.SetRow(pageHost,2); contentHost.Children.Add(pageHost);
         Grid.SetRow(feedback,3); contentHost.Children.Add(feedback);
+    }
+    private void ResetPageBody()
+    {
+        // Retire the whole page instead of clearing a live collection containing focused
+        // ComboBox/CommandBar controls. WinUI can AV in Clear after a native dropdown closes.
+        body=new Grid(); Entrance(body); pageHost.Child=body;
+        editorParts=null; editorFields=null; editorLayoutPanel=null; layoutButton=null;
+        examplePreviewToggle=null; editorProgressText=null; editorContentCount=null;
+        editorProgress=null; capacityText=null; editorModules=[];
+        draggingEditorModule=false; updatingDirectory=false;
     }
     private void BuildShell()
     {

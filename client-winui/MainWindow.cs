@@ -16,7 +16,8 @@ public sealed partial class MainWindow : Window
 {
     private readonly BackendClient api = new();
     private readonly Grid shell = new();
-    private readonly Grid body = new();
+    private Grid body = new();
+    private readonly Border pageHost = new();
     private readonly TextBlock pageTitle = Text("模板中心",28,true);
     private readonly TextBlock pageSubtitle = Text("从一份清晰的简历，开始下一段旅程。",13);
     private readonly TextBlock saveState = Text("正在连接本地服务…",12);
@@ -136,6 +137,8 @@ public sealed partial class MainWindow : Window
     private async Task Navigate(string page)
     {
         int version=++navigationRevision;
+        // Let the triggering control finish handling input before replacing the page.
+        await Task.Yield();
         await pageTransitionLock.WaitAsync();
         try
         {
@@ -144,7 +147,7 @@ public sealed partial class MainWindow : Window
             currentPage=page; notice.IsOpen=false;
             await DetachPreviewAsync(true);
             if(version!=navigationRevision)return;
-            body.Children.Clear(); body.ColumnDefinitions.Clear(); body.RowDefinitions.Clear();
+            ResetPageBody();
             UpdateNavigation(page);
             switch(page)
             {

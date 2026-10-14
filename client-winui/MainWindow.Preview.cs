@@ -25,9 +25,7 @@ public sealed partial class MainWindow
             var web=preview;
             if(release){preview=null;lastRenderedHtml="";renderMarker="";capacityText=null;}
             if(web is not null){
-                // Detach the native WebView from the XAML tree before closing its HWND/CoreWebView2.
-                // Closing it while still parented can leave UIElementCollection with an invalid native
-                // child; the next page transition then AVs when clearing the editor body.
+                // The native WebView must leave the XAML tree before its resources are closed.
                 var host=previewHost;
                 previewHost=null;
                 if(host?.Children.Contains(web)==true)host.Children.Remove(web);

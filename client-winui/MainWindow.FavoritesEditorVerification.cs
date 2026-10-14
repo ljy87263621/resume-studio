@@ -76,12 +76,21 @@ public sealed partial class MainWindow
                 FindTextField(body,"姓名")!.Text=marker;
                 await Task.Delay(60);
                 if(n>0) {
-                    ToggleLayoutSettings();await Task.Delay(80);
+                    if(!layoutExpanded)ToggleLayoutSettings();await Task.Delay(80);
                     FindCombo(editorLayoutPanel!,"简历字体")!.SelectedIndex=n%3;
                     var template=FindCombo(editorLayoutPanel!,"模板");
-                    if(template is not null&&n>=2)template.SelectedIndex=(template.SelectedIndex+1)%templates.Count;
+                    if(template is not null&&n>=2){
+                        Check(template.Focus(Microsoft.UI.Xaml.FocusState.Programmatic),"template selector receives native focus "+mode+" "+n);
+                        template.IsDropDownOpen=true;await Task.Delay(100);
+                        int index=(template.SelectedIndex+1)%templates.Count;
+                        var item=template.ContainerFromIndex(index) as ComboBoxItem??throw new Exception("Native template dropdown item missing");
+                        item.IsSelected=true;template.IsDropDownOpen=false;await Task.Delay(100);
+                        Check(template.SelectedIndex==index,"native dropdown switches the selected template "+mode+" "+n);
+                    }
                     var size=InteractionElement<Slider>(editorLayoutPanel!,s=>s.Header?.ToString()=="正文字号");if(size is not null)size.Value=11+n;
-                    await Task.Delay(40);ToggleLayoutSettings();
+                    await Task.Delay(40);
+                    if(template is not null&&n>=2){template.Focus(Microsoft.UI.Xaml.FocusState.Programmatic);await SaveCurrent();await WaitForPreview();}
+                    Check(editorLayoutPanel!.Visibility==Microsoft.UI.Xaml.Visibility.Visible,"layout settings remain expanded when leaving editor "+mode+" "+n);
                 }
                 await Stage(mode+" pending render and navigation "+n);var render=RenderPreview();
                 if(haruStyle)modernNavigation!.SelectedItem=modernNavigationItems["templates"];

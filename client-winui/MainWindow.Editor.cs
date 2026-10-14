@@ -33,6 +33,7 @@ public sealed partial class MainWindow
     {
         if(current is null) return;
         int generation=++navigationRevision;
+        await Task.Yield();
         await pageTransitionLock.WaitAsync();
         try
         {
@@ -47,7 +48,7 @@ public sealed partial class MainWindow
         CancelJobSearch();
         InitializeUndo();
         if(editorResumeId!=current.Id) { selectedEditorPart=0; editorResumeId=current.Id; }
-        currentPage="editor";await DetachPreviewAsync();if(!PageIsCurrent("editor",generation))return;body.Children.Clear();body.ColumnDefinitions.Clear();body.RowDefinitions.Clear();
+        currentPage="editor";await DetachPreviewAsync();if(!PageIsCurrent("editor",generation))return;ResetPageBody();
         Heading("简历工作台","选择模块编辑，右侧保留预览；自动保存与预览独立运行。"); UpdateNavigation("editor");
         body.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto });body.RowDefinitions.Add(new RowDefinition {Height=GridLength.Auto}); body.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) });
         body.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(480) }); body.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(16) }); body.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(1,GridUnitType.Star) });
@@ -87,15 +88,17 @@ public sealed partial class MainWindow
         moduleColumn.Children.Add(Text("拖动模块调整顺序",11));
         editorModules=new ObservableCollection<ResumeSection>(current.Sections);
         editorParts=new ListView {HorizontalAlignment=HorizontalAlignment.Stretch,BorderThickness=new Thickness(0),Background=PanelMaterial,SelectionMode=ListViewSelectionMode.Single,CanDragItems=true,CanReorderItems=true,AllowDrop=true,ItemsSource=editorModules};
+        var parts=editorParts;
         ToolTipService.SetToolTip(editorParts,"按住模块并拖动；也可在模块设置中使用上移／下移");
         editorParts.SelectionChanged+=(_,_)=> {
-            if(draggingEditorModule||updatingDirectory)return;
-            if(editorParts.SelectedIndex>=0){selectedEditorPart=editorParts.SelectedIndex+2;ShowEditorPart();}
+            if(!PageIsCurrent("editor",generation)||parts!=editorParts||draggingEditorModule||updatingDirectory)return;
+            if(parts.SelectedIndex>=0){selectedEditorPart=parts.SelectedIndex+2;ShowEditorPart();}
         };
-        editorParts.DragItemsStarting+=(_,_)=>draggingEditorModule=true;
+        editorParts.DragItemsStarting+=(_,_)=>{if(PageIsCurrent("editor",generation)&&parts==editorParts)draggingEditorModule=true;};
         editorParts.DragItemsCompleted+=async (_,args)=>await Run(async ()=> {
+            if(!PageIsCurrent("editor",generation)||parts!=editorParts)return;
             draggingEditorModule=false;
-            var selected=editorParts.SelectedItem as ResumeSection??args.Items.OfType<ResumeSection>().FirstOrDefault();
+            var selected=parts.SelectedItem as ResumeSection??args.Items.OfType<ResumeSection>().FirstOrDefault();
             if(CommitEditorOrder(selected)){ShowEditorPart();await SaveCurrent();await RenderPreview();Feedback("模块顺序已保存","预览与导出将使用新的顺序。");}
         });moduleColumn.Children.Add(editorParts);
         moduleColumn.Children.Add(Button("＋ 添加模块",async ()=> { current.Sections.Add(new ResumeSection { Title="自定义模块" }); Changed(); selectedEditorPart=current.Sections.Count+1; await SaveCurrent(); await OpenEditor(); }));
@@ -111,7 +114,8 @@ public sealed partial class MainWindow
         var previewPanel=new Grid(); previewPanel.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto }); previewPanel.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) });
         var previewHeader=Stack(4);previewHeader.Margin=new Thickness(12,9,12,9);
         examplePreviewToggle=new ToggleSwitch {Header="未填写处显示模板示例",IsOn=showPreviewExamples};
-        examplePreviewToggle.Toggled+=async (_,_)=>await Run(async ()=> {showPreviewExamples=examplePreviewToggle.IsOn;await RenderPreview();});previewHeader.Children.Add(examplePreviewToggle);
+        var examples=examplePreviewToggle;
+        examples.Toggled+=async (_,_)=>await Run(async ()=> {if(!PageIsCurrent("editor",generation)||examples!=examplePreviewToggle)return;showPreviewExamples=examples.IsOn;await RenderPreview();});previewHeader.Children.Add(examples);
         capacityText=Text("正在估算 A4 内容容量…",11);previewHeader.Children.Add(capacityText);previewPanel.Children.Add(previewHeader); Grid.SetRow(preview,1); previewPanel.Children.Add(preview);
         previewHost=previewPanel;
         var frame=Card(previewPanel,new Thickness(0)); Grid.SetColumn(frame,2); Grid.SetRow(frame,2); body.Children.Add(frame);
@@ -206,21 +210,23 @@ public sealed partial class MainWindow
 
     private UIElement LayoutSettings(Resume resume)
     {
-        void UpdateLayout(){Changed();previewTimer.Stop();previewTimer.Start();}
+        int generation=navigationRevision;
+        bool Active()=>PageIsCurrent("editor",generation)&&ReferenceEquals(current,resume);
+        void UpdateLayout(){if(!Active())return;Changed();previewTimer.Stop();previewTimer.Start();}
         var fields=new Grid {ColumnSpacing=18,RowSpacing=8};
         for(int column=0;column<3;column++)fields.ColumnDefinitions.Add(new ColumnDefinition {Width=new GridLength(1,GridUnitType.Star)});
         fields.RowDefinitions.Add(new RowDefinition {Height=GridLength.Auto});fields.RowDefinitions.Add(new RowDefinition {Height=GridLength.Auto});
         void Add(FrameworkElement control,int row,int column){Grid.SetRow(control,row);Grid.SetColumn(control,column);fields.Children.Add(control);}
         var choices=new ComboBox {Header="模板",ItemsSource=templates,SelectedItem=templates.First(t=>t.Id==resume.TemplateId),HorizontalAlignment=HorizontalAlignment.Stretch};
-        choices.SelectionChanged+=async (_,_)=>await Run(async ()=> {if(choices.SelectedItem is Template t){resume.TemplateId=t.Id;resume.Color=t.Color;Changed();await RenderPreview();}});Add(choices,0,0);
+        choices.SelectionChanged+=async (_,_)=>await Run(async ()=> {if(Active()&&choices.SelectedItem is Template t){resume.TemplateId=t.Id;resume.Color=t.Color;Changed();await RenderPreview();}});Add(choices,0,0);
         var font=new ComboBox {Header="简历字体",ItemsSource=ResumeTypography.Labels,SelectedIndex=Array.IndexOf(ResumeTypography.Names,ResumeTypography.Normalize(resume.FontFamily)),HorizontalAlignment=HorizontalAlignment.Stretch};
-        font.SelectionChanged+=async (_,_)=>await Run(async ()=> {if(font.SelectedIndex>=0){resume.FontFamily=ResumeTypography.Names[font.SelectedIndex];Changed();await RenderPreview();}});Add(font,0,1);
+        font.SelectionChanged+=async (_,_)=>await Run(async ()=> {if(Active()&&font.SelectedIndex>=0){resume.FontFamily=ResumeTypography.Names[font.SelectedIndex];Changed();await RenderPreview();}});Add(font,0,1);
         var palette=Stack(4);palette.Children.Add(Text("主题色",13));
         var colors=Row(5);foreach(string color in new[] {"#245AE8","#167D78","#353D59","#222222","#7955B4","#1E668A"}) {
-            var button=Button("●",()=> {resume.Color=color;UpdateLayout();return Task.CompletedTask;});button.Foreground=Brush(color);button.Padding=new Thickness(6,4,6,4);ToolTipService.SetToolTip(button,"主题色 "+color);colors.Children.Add(button);
+            var button=Button("●",()=> {if(Active()){resume.Color=color;UpdateLayout();}return Task.CompletedTask;});button.Foreground=Brush(color);button.Padding=new Thickness(6,4,6,4);ToolTipService.SetToolTip(button,"主题色 "+color);colors.Children.Add(button);
         }palette.Children.Add(colors);Add(palette,0,2);
-        var size=new Slider {Header="正文字号",Minimum=10,Maximum=16,StepFrequency=.5,Value=resume.FontSize};size.ValueChanged+=(_,_)=> {resume.FontSize=size.Value;UpdateLayout();};Add(size,1,0);
-        var spacing=new Slider {Header="行间距",Minimum=1.2,Maximum=2,StepFrequency=.1,Value=resume.LineHeight};spacing.ValueChanged+=(_,_)=> {resume.LineHeight=spacing.Value;UpdateLayout();};Add(spacing,1,1);
+        var size=new Slider {Header="正文字号",Minimum=10,Maximum=16,StepFrequency=.5,Value=resume.FontSize};size.ValueChanged+=(_,_)=> {if(Active()){resume.FontSize=size.Value;UpdateLayout();}};Add(size,1,0);
+        var spacing=new Slider {Header="行间距",Minimum=1.2,Maximum=2,StepFrequency=.1,Value=resume.LineHeight};spacing.ValueChanged+=(_,_)=> {if(Active()){resume.LineHeight=spacing.Value;UpdateLayout();}};Add(spacing,1,1);
         Add(Text("MiSans 随软件提供；其他字体使用本机字体。\nPDF 使用白色纸张，仅包含你填写的内容。",11),1,2);
         return fields;
     }
