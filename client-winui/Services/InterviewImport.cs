@@ -10,7 +10,7 @@ namespace ResumeStudio.Services;
 public sealed record InterviewBlock(string Text,int Level=0);
 public sealed record InterviewImportDocument(string SourceName,IReadOnlyList<InterviewBlock> Blocks)
 {
-    public int[] HeadingLevels=>Blocks.Where(b=>b.Level>0).Select(b=>b.Level).Distinct().Order().ToArray();
+    public int[] HeadingLevels=>Blocks.Where(b=>b.Level>0&&!string.IsNullOrWhiteSpace(b.Text)).Select(b=>b.Level).Distinct().Order().ToArray();
 }
 
 /// <summary>Reads text only; document macros, images and original files are not retained.</summary>
@@ -64,7 +64,7 @@ public static partial class InterviewImport
     }
     public static int AutoLevel(InterviewImportDocument document)
     {
-        return document.Blocks.Where(b=>b.Level>0&&!AnswerHeading(b.Text)).GroupBy(b=>b.Level)
+        return document.Blocks.Where(b=>b.Level>0&&!string.IsNullOrWhiteSpace(b.Text)&&!AnswerHeading(b.Text)).GroupBy(b=>b.Level)
             .OrderByDescending(g=>g.Count(b=>QuestionTitle(b.Text))).ThenByDescending(g=>g.Count()).ThenBy(g=>g.Key).Select(g=>g.Key).FirstOrDefault();
     }
     public static List<InterviewQuestion> Split(InterviewImportDocument document,int level=0)
@@ -73,14 +73,18 @@ public static partial class InterviewImport
         var questions=new List<InterviewQuestion>();InterviewQuestion? current=null;var answer=new StringBuilder();
         void Flush(){if(current is null)return;current.Answer=answer.ToString().Trim();if(current.Answer.Length>50000)throw new IOException("单题正文超过 50000 个字符，请增加题目标题分段。");questions.Add(current);current=null;answer.Clear();}
         foreach(var block in document.Blocks){
+            // Word often leaves empty paragraphs with a heading style. They are spacing,
+            // not question boundaries, and must not discard the following answer text.
+            if(string.IsNullOrWhiteSpace(block.Text)){if(current is not null)answer.AppendLine();continue;}
             if(level>0&&block.Level==level&&!AnswerHeading(block.Text)){
-                Flush();if(block.Text.Length>300)throw new IOException("题目标题超过 300 个字符，请整理小标题。");current=new(){Title=block.Text.Trim()};
+                Flush();string title=block.Text.Trim();if(title.Length>300)throw new IOException("题目标题超过 300 个字符，请整理小标题。");current=new(){Title=title};
             }else if(level>0&&block.Level>0&&block.Level<level){Flush();}
             else if(current is not null){answer.AppendLine(block.Level>0?new string('#',Math.Min(block.Level,6))+" "+block.Text:block.Text);}
         }
         Flush();
-        if(level==0){string content=string.Join("\n",document.Blocks.Select(b=>b.Text)).Trim();if(content.Length>50000)throw new IOException("未发现小标题，无法拆分长文档。请添加小标题后导入。");questions.Add(new(){Title=Path.GetFileNameWithoutExtension(document.SourceName),Answer=content});}
+        if(level==0){string content=string.Join("\n",document.Blocks.Select(b=>b.Text)).Trim();if(content.Length>50000)throw new IOException("未发现小标题，无法拆分长文档。请添加小标题后导入。");string title=Path.GetFileNameWithoutExtension(document.SourceName).Trim();questions.Add(new(){Title=string.IsNullOrWhiteSpace(title)?"导入的面试题":title,Answer=content});}
         if(questions.Count==0||questions.Count>2000)throw new IOException("该标题层级应识别出 1–2000 道题，请调整拆分层级。");
+        if(questions.Any(q=>string.IsNullOrWhiteSpace(q.Title)||q.Title.Length>300))throw new IOException("题目标题须为 1–300 个字符，请整理小标题后导入。");
         if(questions.Sum(q=>q.Title.Length+q.Answer.Length)>MaxTextLength)throw new IOException("拆分后的题库超过 50 万字符，请拆分文档后导入。");
         return questions;
     }
@@ -100,7 +104,7 @@ public static partial class InterviewImport
             length+=text.Length;if(length>MaxTextLength)throw new IOException("Word 文档文字超过 50 万字符。");
             var properties=paragraph.Element(W+"pPr");int level=StyleLevel(properties?.Element(W+"pStyle")?.Attribute(W+"val")?.Value,[]);
             if(int.TryParse(properties?.Element(W+"outlineLvl")?.Attribute(W+"val")?.Value,out int direct)&&direct is >=0 and <=5)level=direct+1;
-            blocks.Add(new(text,level));
+            blocks.Add(new(text,string.IsNullOrWhiteSpace(text)?0:level));
         }
         if(!blocks.Any(b=>b.Level>0))return ParseText(string.Join("\n",blocks.Select(b=>b.Text)));
         return blocks;

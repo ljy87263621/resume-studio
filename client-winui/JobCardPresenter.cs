@@ -16,7 +16,7 @@ public sealed class JobCardPresenter : ContentControl
     public JobCardPresenter()
     {
         HorizontalContentAlignment=HorizontalAlignment.Stretch;
-        MinHeight=220;
+        VerticalContentAlignment=VerticalAlignment.Top;
         Loaded+=(_,_)=>RefreshCard();
         DataContextChanged+=(_,_)=>RefreshCard();
         Unloaded+=(_,_)=>Content=null;

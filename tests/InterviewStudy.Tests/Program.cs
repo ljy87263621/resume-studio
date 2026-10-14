@@ -37,6 +37,13 @@ string body=$"""<w:document xmlns:w="{ns}"><w:body><w:p><w:pPr><w:pStyle w:val="
 Docx(Path.Combine(output,"interview.docx"),styles,body);
 var word=InterviewImport.Split(InterviewImport.Read(Path.Combine(output,"interview.docx")));
 Check(word.Count==2&&word[0].Title.Contains("栈")&&word[1].Answer.Contains("显式"),"DOCX custom inherited styles, outline levels and table text import");
+string blankHeading="<w:p><w:pPr><w:pStyle w:val=\"Derived\"/></w:pPr><w:r><w:t>   </w:t></w:r></w:p>";
+string spacedBody=body.Replace("<w:body>","<w:body>"+blankHeading).Replace("自动管理的数据区。</w:t></w:r></w:p>","自动管理的数据区。</w:t></w:r></w:p>"+blankHeading+"<w:p><w:r><w:t>空白标题后的补充答案。</w:t></w:r></w:p>").Replace("</w:body>",blankHeading+"</w:body>");
+Docx(Path.Combine(output,"interview-blank-headings.docx"),styles,spacedBody);
+var spacedWord=InterviewImport.Split(InterviewImport.Read(Path.Combine(output,"interview-blank-headings.docx")));
+Check(spacedWord.Count==2&&spacedWord.All(q=>!string.IsNullOrWhiteSpace(q.Title))&&spacedWord[0].Answer.Contains("补充答案"),"empty Word heading paragraphs create no invalid questions and retain subsequent answer text");
+Check(InterviewImport.Split(new("blank.docx",[new("",1),new("1. Question?",2),new("Answer"),new("  ",1),new("continued answer")]))[0].Answer.Contains("continued answer"),"blank category headings do not terminate the current question");
+Check(InterviewImport.AutoLevel(new("blank.docx",[new("",1),new(" ",1),new("Question",2)]))==2,"automatic heading selection ignores empty formatted paragraphs");
 var builder=new PdfDocumentBuilder();var font=builder.AddStandard14Font(Standard14Font.Helvetica);var page=builder.AddPage(PageSize.A4);
 page.AddText("1. What is a mutex?",16,new PdfPoint(40,740),font);page.AddText("Mutual exclusion protects shared data.",11,new PdfPoint(40,710),font);
 page.AddText("2. What is a semaphore?",16,new PdfPoint(40,640),font);page.AddText("A counter limits concurrent access.",11,new PdfPoint(40,610),font);
