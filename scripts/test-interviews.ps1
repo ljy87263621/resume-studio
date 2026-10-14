@@ -26,7 +26,7 @@ if($ApplicationPath){
         $process=Start-Process -FilePath ([IO.Path]::GetFullPath($ApplicationPath)) -ArgumentList '--interview-test' -WindowStyle Hidden -PassThru
         if(!$process.WaitForExit(180000)){Stop-Process -Id $process.Id -Force;throw 'Native interview test timed out'}
         $result=Get-Content -LiteralPath (Join-Path $OutputDirectory 'interview-result.json') -Raw|ConvertFrom-Json
-        if($result.status -ne 'passed'){throw $result.error}
+        if($result.status -ne 'passed'){Write-Output ($result|ConvertTo-Json -Depth 5);throw $result.error}
         Write-Output "PASS: $($result.checks.Count) native compact favorite and interview study checks"
     } finally {$env:RESUMESTUDIO_TEST_DATA=$savedData;$env:RESUMESTUDIO_TEST_OUTPUT=$savedOutput;$env:RESUMESTUDIO_INTERVIEW_FIXTURES=$savedFixtures}
 }

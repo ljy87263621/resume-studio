@@ -46,8 +46,14 @@ public sealed partial class MainWindow
             }
             foreach(string extension in new[]{"md","txt","docx","blank-headings.docx","pdf","chinese.pdf"}){
                 var import=ImportInterviewFile(Path.Combine(fixtures,extension=="chinese.pdf"?"interview-chinese.pdf":extension=="blank-headings.docx"?"interview-blank-headings.docx":"interview."+extension));var dialog=await FeatureDialog("导入面试题");
-                if(extension=="chinese.pdf")FindTextField(dialog,"题库名称")!.Text="嵌入式基础题";
-                var list=InteractionElement<ListView>(dialog,l=>l.Tag?.ToString()=="interview-import-titles")!;
+                ListView? list=null;
+                for(int attempt=0;attempt<50;attempt++){
+                    dialog.UpdateLayout();list=InteractionElement<ListView>(dialog,l=>l.Tag?.ToString()=="interview-import-titles");
+                    if(list is not null&&FindTextField(dialog,"题库名称") is not null)break;
+                    await Task.Delay(100);
+                }
+                if(list is null)throw new Exception(extension+": import preview did not finish loading");
+                if(extension=="chinese.pdf")(FindTextField(dialog,"题库名称")??throw new Exception("Deck title field missing")).Text="嵌入式基础题";
                 Check(list.Items.Count==2&&dialog.IsPrimaryButtonEnabled,extension+": native import preview exposes two questions");
                 await FeatureClick(dialog,"导入题库");await import;await Task.Delay(180);
                 Check(currentPage=="interviews"&&InterviewProgress.Count((await api.Get<List<InterviewDeck>>("interviews")).Single(d=>d.Id==interviewDeckId).Questions).Total==2,extension+": confirmed import saves a complete deck through Java");
