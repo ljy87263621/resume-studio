@@ -66,7 +66,8 @@ static class BackendIntegration
         await cb.ExecuteAsync(await cb.InspectAsync());
         var preserved=SyncProtocol.Parse((await remote.ReadAsync(default))!.Bytes); Check(preserved["futureEnvelope"]!["retained"]!.GetValue<bool>(),"unknown envelope retained on upload");
         var observing=await ca.InspectAsync();
-        cloud=await remote.ReadAsync(default); await remote.WriteAsync(cloud!.Bytes,cloud.ETag,default);
+        cloud=await remote.ReadAsync(default);var changedEnvelope=SyncProtocol.Parse(cloud!.Bytes);changedEnvelope["snapshotId"]=Guid.NewGuid().ToString("N");
+        await remote.WriteAsync(Encoding.UTF8.GetBytes(changedEnvelope.ToJsonString()),cloud.ETag,default);
         try { await ca.ExecuteAsync(observing); throw new Exception("Stale cloud plan silently applied"); } catch(IOException) { }
         Console.WriteLine("PASS backend/DAV integration: two Java stores, all collections/history/photo/snapshots, keys excluded, roundtrip/update/delete, conflict backup, local/cloud stale plans, extensions");
         Console.WriteLine("Integration fixtures: "+fixture);

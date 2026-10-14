@@ -37,15 +37,17 @@ Schema 详细描述当前客户端生成的可互操作已知字段格式，并�
 
 ## 基线、冲突与删除
 
-客户端对 data 计算 SHA-256：对象键按序排序，数组顺序保留，数字从原始 JSON token 按任意精度系数/指数规范化，避免 decimal/double 舍入掩盖未知字段里的细微数字变化；等值数字表示规范化为同一内容。封装时间、snapshotId、extensions 不参与 data hash。后端导出将实体按 id 排序，history 按 resumeId:id 排序。后端 API 另计算本机 CAS hash，按接口返回值原样提交 expectedHash；不要将两种实现的 hash 或远端 ETag 混用。远端写入依赖强 ETag。
+客户端对 data 计算 SHA-256：对象键按序排序，数组顺序保留，数字从原始 JSON token 按任意精度系数/指数规范化，避免 decimal/double 舍入掩盖未知字段里的细微数字变化；等值数字表示规范化为同一内容。封装时间、snapshotId、extensions 不参与 data hash。后端导出将实体按 id 排序，history 按 resumeId:id 排序。后端 API 另计算本机 CAS hash，按接口返回值原样提交 expectedHash；不要将两种实现的 hash 或远端版本标识混用。远端版本标识优先为强 ETag，缺失或为弱 ETag 时为完整文件原始字节的 `sha256:<64位小写十六进制>`。该指纹包含封装和扩展字段，是客户端观察标识，不是服务器 ETag。
 
 本机 `sync-baseline.json` 记录 Target/DataHash/ETag/At；Target 由标准化目录 URL 和用户名确定。已有相同快照无需替换；仅本机相对基线变化则上传，仅云端变化则下载。首次关联不同快照、双方都变化、或有基线但云端文件消失都会进入冲突。用户明确选择“用本机替换云端”或“用云端替换本机”，也可取消；这是 **whole snapshot conflict，整套资料显式择一**，没有按实体/字段合并，也没有自动选较新时间戳。云端不存在时不能选择下载，只能取消或明确重新上传。
 
-替换采用集合完整镜像：目标中不在新快照内的实体和历史会删除，因此删除会传播。settings 白名单字段也完整替换；本机非白名单设置（包括密钥）保留。检查后执行前再次读取本机 hash 与云端 ETag，任何变化均拒绝旧计划；本机导入用 expectedHash 做 CAS。整个流程仅成功校验后建立基线。
+替换采用集合完整镜像：目标中不在新快照内的实体和历史会删除，因此删除会传播。settings 白名单字段也完整替换；本机非白名单设置（包括密钥）保留。检查后执行前再次读取本机 hash 与云端版本标识，观察到变化即拒绝旧计划；本机导入用 expectedHash 做 CAS。整个流程仅成功校验后建立基线。内容校验模式无法封闭最后一次读取与 PUT 之间的竞争窗口，不能声称具备原子并发保护；请避免多个设备同时同步。
 
 ## WebDAV 与本机凭据
 
-用户先在服务端创建目录，填写最终 HTTPS 目录 URL；当前不会 MKCOL，不跟随重定向。URL 不允许 userinfo/query/fragment 或路径穿越；仅离线测试允许 loopback HTTP。服务必须对 GET 返回强 ETag，支持条件 PUT；首次创建用 `If-None-Match: *`，覆盖用 `If-Match: <观察到的强ETag>`。404 表示同步文件不存在，409/412 表示并发冲突；弱 ETag 或缺失 ETag 拒绝。上传后 GET 回读并检查实际字节一致才提交基线，请求超时 90 秒。
+填写服务提供的 HTTPS 入口或已有文件夹 URL，新配置自动选择其下 `ResumeStudio/`，已保存的实际同步目录继续使用；旧坚果云 `/dav/` 入口会改为 `/dav/ResumeStudio/`，目标目录变化时需重新填写应用密码。缺失目录使用 `PROPFIND Depth: 0` 检查、无正文 MKCOL 创建并回查确认，405 时回查处理并发创建，409 时提示父目录不存在。不会递归创建服务入口，不跟随重定向。URL 不允许 userinfo/query/fragment 或路径穿越；仅离线测试允许 loopback HTTP。
+
+服务应支持条件 PUT。首次创建用 `If-None-Match: *`；有强 ETag 时覆盖用 `If-Match: <观察到的强ETag>`。缺少强 ETag 时读取完整内容生成版本指纹，覆盖前再读取并比较该指纹；若此时服务器提供了强 ETag，恢复使用该 ETag，否则用 `If-Match: *` 只保证目标仍存在，不保证内容未被另一设备同时修改。本地指纹不发送为服务器 ETag。412 表示条件失败，停止写入；上传后 GET 回读并检查实际字节一致才提交基线。创建目录、复查、上传和回读共用单次操作的 90 秒期限。界面会明确提示内容校验模式的并发限制。
 
 用户名、目录、设备 id 与受保护密码存在本机数据目录 `sync-local.json`；密码由 Windows `DataProtectionProvider("LOCAL=user")` 保护，仅当前 Windows 用户在本机使用，跨机器不迁移。AI Key、Cookie 和同步密码不上传；改变目录或用户名后重新填写凭据。清除本机同步密码只清除本机保存值。
 
@@ -62,7 +64,7 @@ Schema 详细描述当前客户端生成的可互操作已知字段格式，并�
 ```csharp
 Task<SyncRemote?> ReadAsync(CancellationToken cancellationToken);
 Task<string> WriteAsync(byte[] bytes, string? expectedETag, CancellationToken cancellationToken);
-// SyncRemote = byte[] Bytes + string ETag
+// SyncRemote = byte[] Bytes + string ETag（历史命名；实际为不透明版本标识）
 ```
 
 未来 GitHub provider 可以用文件 blob/commit SHA 作为不透明版本令牌，Read 返回内容与令牌，Write 必须以观察到的令牌做原子条件更新，null 表示仅允许创建；创建失败/远端变化必须拒绝。还需验证提交内容、保存凭据在本机及明确私密存储方式。当前只实现 WebDAV，不存在 GitHub 同步 UI 或实际 GitHub provider。
