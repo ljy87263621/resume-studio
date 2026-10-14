@@ -10,6 +10,9 @@ import android.graphics.pdf.PdfRenderer;
 import android.print.*;
 import org.json.*;
 import java.io.*;
+import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.concurrent.*;
 
 /** Runs against the signed production APK; no test bridge or debugging mode is shipped in the app. */
@@ -19,13 +22,14 @@ public final class AcceptanceInstrumentation extends Instrumentation {
     private WebView find(View v){if(v instanceof WebView)return(WebView)v;if(v instanceof ViewGroup g)for(int i=0;i<g.getChildCount();i++){WebView w=find(g.getChildAt(i));if(w!=null)return w;}return null;}
     private String js(String script)throws Exception{CompletableFuture<String> result=new CompletableFuture<>();runOnMainSync(()->web.evaluateJavascript(script,result::complete));return result.get(120,TimeUnit.SECONDS);}
     @Override public void onStart(){Bundle results=new Bundle();try{
+        verifyUpdaterSignature();
         Intent i=new Intent();i.setClassName("com.resumestudio.mobile","com.resumestudio.MainActivity");i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);Activity a=startActivitySync(i);runOnMainSync(()->web=find(a.getWindow().getDecorView()));
         for(int n=0;n<100;n++){if("true".equals(js("typeof actions==='object' && state.templates.length===14 && document.querySelector('#content h1')!==null")))break;Thread.sleep(200);}
         js("window.testDavPort="+JSONObject.quote(davPort));String script;try(InputStream in=getContext().getAssets().open("acceptance.js")){script=new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}js(script);
         String report="null";for(int n=0;n<600;n++){report=js("window.acceptanceResult||null");if(!report.equals("null"))break;Thread.sleep(200);}
         File dir=new File(getTargetContext().getExternalFilesDir(null),"acceptance");dir.mkdirs();
         try(FileOutputStream out=new FileOutputStream(new File(dir,"result.json"))){out.write(report.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
-        Bitmap bitmap=getUiAutomation().takeScreenshot();try(FileOutputStream out=new FileOutputStream(new File(dir,"screen.png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,out);}bitmap.recycle();
+        js("document.querySelector('#notice').hidden=true;document.querySelector('#content').classList.remove('page-enter');true");Thread.sleep(450);Bitmap bitmap=getUiAutomation().takeScreenshot();try(FileOutputStream out=new FileOutputStream(new File(dir,"screen.png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,out);}bitmap.recycle();
         if(!report.contains("\"error\"")&&!report.equals("null")){
             String html=(String)new JSONTokener(js("window.exportFixtureHtml")).nextValue();File pdf=export(a,dir,html);
             try(ParcelFileDescriptor fd=ParcelFileDescriptor.open(pdf,ParcelFileDescriptor.MODE_READ_ONLY);PdfRenderer renderer=new PdfRenderer(fd)){
@@ -37,6 +41,14 @@ public final class AcceptanceInstrumentation extends Instrumentation {
         }
         results.putString("report",report);finish(report.contains("\\\"error\\\"")||report.contains("\"error\"")||report.equals("null")?1:0,results);
     }catch(Exception ex){Throwable cause=ex;while(cause.getCause()!=null)cause=cause.getCause();android.util.Log.e("ResumeStudioTest","Acceptance failed",ex);results.putString("error",cause.toString());finish(1,results);}}
+    private void verifyUpdaterSignature()throws Exception{
+        JSONObject signed;try(InputStream in=getContext().getAssets().open("stable-channel.json")){signed=new JSONObject(new String(in.readAllBytes(),StandardCharsets.UTF_8));}
+        byte[] data=Base64.getDecoder().decode(signed.getString("data")),signature=Base64.getDecoder().decode(signed.getString("signature"));
+        String publicKey;try(InputStream in=getTargetContext().getAssets().open("UpdatePublicKey.pem")){publicKey=new String(in.readAllBytes(),StandardCharsets.US_ASCII);}
+        Class<?> verifier=Class.forName("com.resumestudio.AndroidUpdateClient",true,getTargetContext().getClassLoader());Method method=verifier.getDeclaredMethod("verifySignature",String.class,byte[].class,byte[].class);method.setAccessible(true);
+        if(!Boolean.TRUE.equals(method.invoke(null,publicKey,data,signature)))throw new IOException("Production Android RSA-PSS verifier rejected signed release fixture");
+        data[0]^=1;if(Boolean.TRUE.equals(method.invoke(null,publicKey,data,signature)))throw new IOException("Production Android RSA-PSS verifier accepted modified metadata");
+    }
     private File export(Activity activity,File dir,String html)throws Exception{
         String name="android-resume-acceptance-"+System.currentTimeMillis();js("api('print',{title:"+JSONObject.quote(name)+",html:window.exportFixtureHtml});true");
         Thread.sleep(2500);waitClick("com.android.printspooler:id/destination_spinner",null);Thread.sleep(700);waitClick(null,"Save as PDF");Thread.sleep(1000);
@@ -45,7 +57,7 @@ public final class AcceptanceInstrumentation extends Instrumentation {
         try(FileOutputStream out=new FileOutputStream(new File(dir,"print-tree.txt"))){out.write(tree.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));}
         Bitmap screenshot=getUiAutomation().takeScreenshot();try(FileOutputStream out=new FileOutputStream(new File(dir,"print-screen.png"))){screenshot.compress(Bitmap.CompressFormat.PNG,100,out);}screenshot.recycle();
         waitClick("android:id/button1",null);Thread.sleep(2500);
-        byte[] bytes;try(ParcelFileDescriptor output=getUiAutomation().executeShellCommand("cat /sdcard/Download/"+name+".pdf");InputStream input=new ParcelFileDescriptor.AutoCloseInputStream(output)){bytes=input.readAllBytes();}
+        byte[] bytes=new byte[0];for(int attempt=0;attempt<20&&bytes.length<1000;attempt++){try(ParcelFileDescriptor output=getUiAutomation().executeShellCommand("cat /sdcard/Download/"+name+".pdf");InputStream input=new ParcelFileDescriptor.AutoCloseInputStream(output)){bytes=input.readAllBytes();}if(bytes.length<1000)Thread.sleep(500);}
         if(bytes.length<1000||bytes[0]!='%'||bytes[1]!='P')throw new IOException("System PDF file was not saved");File pdf=new File(dir,"resume.pdf");try(FileOutputStream out=new FileOutputStream(pdf)){out.write(bytes);}return pdf;
     }
     private void describe(android.view.accessibility.AccessibilityNodeInfo node,StringBuilder out,int depth){if(node==null)return;out.append(" ".repeat(depth)).append(node.getViewIdResourceName()).append(" | ").append(node.getText()).append(" | ").append(node.getContentDescription()).append('\n');for(int n=0;n<node.getChildCount();n++)describe(node.getChild(n),out,depth+1);}

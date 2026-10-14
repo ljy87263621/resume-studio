@@ -27,18 +27,27 @@ public final class MainActivity extends Activity {
     private static volatile java.lang.ref.WeakReference<MainActivity> foregroundActivity=new java.lang.ref.WeakReference<>(null);
     private WebView web; private MobileApi api; private MobileSecrets secrets; private MobileSync sync; private MobileSync.Plan plan;
     private AndroidUpdateClient.Release availableAndroidUpdate;
+    private android.window.OnBackInvokedCallback backCallback;
+    private int systemInsetLeft,systemInsetTop,systemInsetRight,systemInsetBottom;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();private final Handler timer=new Handler(Looper.getMainLooper());
     private boolean destroyed=false;private String shared="";private WebView printWeb;
     private final Runnable reminders=new Runnable(){public void run(){if(destroyed)return;worker.execute(()->checkReminders());timer.postDelayed(this,60000);}};
     @Override public void onCreate(Bundle state){
-        super.onCreate(state);getWindow().setStatusBarColor(Color.rgb(246,248,247));getWindow().setNavigationBarColor(Color.WHITE);
+        super.onCreate(state);configureSystemBars();
         try{api=new MobileApi(getFilesDir().toPath().resolve("data"));secrets=new MobileSecrets(this);PDFBoxResourceLoader.init(getApplicationContext());}
         catch(Exception ex){TextView error=new TextView(this);error.setText("本机资料无法打开："+ex.getMessage());setContentView(error);return;}
         web=new WebView(this);FrameLayout frame=new FrameLayout(this);frame.addView(web,new FrameLayout.LayoutParams(-1,-1));setContentView(frame);
-        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
-        frame.setOnApplyWindowInsetsListener((v,insets)->{v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets.consumeSystemWindowInsets();});
+        frame.setOnApplyWindowInsetsListener((v,insets)->{
+            if(Build.VERSION.SDK_INT>=30){android.graphics.Insets safe=insets.getInsets(android.view.WindowInsets.Type.systemBars()|android.view.WindowInsets.Type.displayCutout());systemInsetLeft=safe.left;systemInsetTop=safe.top;systemInsetRight=safe.right;systemInsetBottom=safe.bottom;}
+            else{systemInsetLeft=insets.getSystemWindowInsetLeft();systemInsetTop=insets.getSystemWindowInsetTop();systemInsetRight=insets.getSystemWindowInsetRight();systemInsetBottom=insets.getSystemWindowInsetBottom();}
+            sendInsetsToWeb();
+            return insets;
+        });
+        frame.requestApplyInsets();
         configure(web,true);web.addJavascriptInterface(new Bridge(),"ResumeNative");
+        registerPredictiveBack();
         web.setWebViewClient(new WebViewClient(){
+            @Override public void onPageFinished(WebView view,String url){super.onPageFinished(view,url);sendInsetsToWeb();}
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
                 String url=request.getUrl().toString();if(!url.startsWith(ORIGIN))return empty();
                 String name=Uri.parse(url).getPath().substring(1);if(name.isEmpty())name="index.html";if(name.contains("..")||name.contains("\\"))return empty();
@@ -63,6 +72,7 @@ public final class MainActivity extends Activity {
     @Override protected void onStop(){if(foregroundActivity.get()==this)foregroundActivity=new java.lang.ref.WeakReference<>(null);super.onStop();}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);readShare(intent);event("share",shared);}
     private void event(String name,Object value){runOnUiThread(()->{if(!destroyed)web.evaluateJavascript("window.nativeEvent("+Json.write(name)+","+Json.write(value)+")",null);});}
+    private void sendInsetsToWeb(){if(web!=null&&!destroyed)web.evaluateJavascript("window.setSystemInsets&&window.setSystemInsets("+systemInsetLeft+","+systemInsetTop+","+systemInsetRight+","+systemInsetBottom+")",null);}
     public final class Bridge {
         @JavascriptInterface public void post(String token,String method,String input){
             if(token.length()>100||input.length()>8_000_000)return;
@@ -84,6 +94,7 @@ public final class MainActivity extends Activity {
             case "setAutoSync":{
                 boolean enabled=Boolean.TRUE.equals(request.get("enabled"));getSharedPreferences("resume-studio",0).edit().putBoolean("autoSyncEnabled",enabled).apply();MobileSyncJob.schedule(this,enabled);return enabled;
             }
+            case "systemBars":{boolean dark=Boolean.TRUE.equals(request.get("dark"));runOnUiThread(()->applySystemBarAppearance(dark));return true;}
             case "checkAndroidUpdate":return checkAndroidUpdate();
             case "downloadAndroidUpdate":return downloadAndroidUpdate();
             case "saveCredentials":{
@@ -199,6 +210,31 @@ public final class MainActivity extends Activity {
             getPreferences(0).edit().putBoolean(key,true).apply();event("reminder",MobileCompat.map("title",s.get("title"),"id",s.get("id")));
         }
     }catch(Exception ex){android.util.Log.w("ResumeStudio","reminders",ex);}}
-    @Override public void onBackPressed(){if(web!=null)web.evaluateJavascript("window.appBack()",null);else super.onBackPressed();}
-    @Override protected void onDestroy(){destroyed=true;if(foregroundActivity.get()==this)foregroundActivity=new java.lang.ref.WeakReference<>(null);timer.removeCallbacksAndMessages(null);worker.shutdownNow();if(web!=null){web.stopLoading();web.onPause();web.removeJavascriptInterface("ResumeNative");if(web.getParent() instanceof android.view.ViewGroup parent)parent.removeView(web);web.destroy();web=null;}if(printWeb!=null){printWeb.stopLoading();if(printWeb.getParent() instanceof android.view.ViewGroup parent)parent.removeView(printWeb);printWeb.destroy();printWeb=null;}super.onDestroy();}
+    private void configureSystemBars(){
+        Window window=getWindow();window.setStatusBarColor(Color.TRANSPARENT);window.setNavigationBarColor(Color.TRANSPARENT);
+        if(Build.VERSION.SDK_INT>=29){window.setNavigationBarContrastEnforced(false);window.setStatusBarContrastEnforced(false);}
+        if(Build.VERSION.SDK_INT>=30)window.setDecorFitsSystemWindows(false);
+        else getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        applySystemBarAppearance(false);
+    }
+    private void applySystemBarAppearance(boolean dark){
+        View decor=getWindow().getDecorView();int flags=decor.getSystemUiVisibility();
+        if(Build.VERSION.SDK_INT>=30){android.view.WindowInsetsController controller=getWindow().getInsetsController();if(controller!=null){int appearance=dark?0:android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;controller.setSystemBarsAppearance(appearance,android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);}}
+        else{if(dark)flags&=~(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);else flags|=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;decor.setSystemUiVisibility(flags);}
+    }
+    private void registerPredictiveBack(){
+        if(Build.VERSION.SDK_INT<33)return;
+        if(Build.VERSION.SDK_INT>=34)backCallback=new android.window.OnBackAnimationCallback(){
+            @Override public void onBackStarted(android.window.BackEvent event){sendBackProgress(event.getProgress());}
+            @Override public void onBackProgressed(android.window.BackEvent event){sendBackProgress(event.getProgress());}
+            @Override public void onBackCancelled(){if(web!=null)web.evaluateJavascript("window.cancelBackProgress&&window.cancelBackProgress()",null);}
+            @Override public void onBackInvoked(){handleWebBack();}
+        };
+        else backCallback=this::handleWebBack;
+        getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,backCallback);
+    }
+    private void sendBackProgress(float progress){if(web!=null)web.evaluateJavascript("window.setBackProgress&&window.setBackProgress("+Math.max(0,Math.min(1,progress))+")",null);}
+    private void handleWebBack(){if(web!=null)web.evaluateJavascript("window.appBack()",null);else finish();}
+    @Override public void onBackPressed(){if(Build.VERSION.SDK_INT<33)handleWebBack();else super.onBackPressed();}
+    @Override protected void onDestroy(){destroyed=true;if(Build.VERSION.SDK_INT>=33&&backCallback!=null)getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);if(foregroundActivity.get()==this)foregroundActivity=new java.lang.ref.WeakReference<>(null);timer.removeCallbacksAndMessages(null);worker.shutdownNow();if(web!=null){web.stopLoading();web.onPause();web.removeJavascriptInterface("ResumeNative");if(web.getParent() instanceof android.view.ViewGroup parent)parent.removeView(web);web.destroy();web=null;}if(printWeb!=null){printWeb.stopLoading();if(printWeb.getParent() instanceof android.view.ViewGroup parent)parent.removeView(printWeb);printWeb.destroy();printWeb=null;}super.onDestroy();}
 }

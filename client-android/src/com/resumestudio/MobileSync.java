@@ -15,9 +15,9 @@ public final class MobileSync {
         public Fetched(byte[] bytes,String etag) {this.bytes=bytes;this.etag=etag;}
     }
     public static final class Plan {
-        final String action,localHash,etag,target; final Map<String,Object> envelope;final int localDecks,remoteDecks;
-        Plan(String action,String localHash,String etag,String target,Map<String,Object> envelope,int localDecks,int remoteDecks){this.action=action;this.localHash=localHash;this.etag=etag;this.target=target;this.envelope=envelope;this.localDecks=localDecks;this.remoteDecks=remoteDecks;}
-        public Map<String,Object> display(){return MobileCompat.map("action",action,"remoteExists",envelope!=null,"contentCheck",etag!=null&&etag.startsWith("sha256:"),"remoteDevice",envelope==null?"":Json.str(envelope,"deviceId"),"remoteTime",envelope==null?"":Json.str(envelope,"createdAt"),"localInterviewDecks",localDecks,"remoteInterviewDecks",remoteDecks);}
+        final String action,localHash,etag,target,localTime,decision; final Map<String,Object> envelope;final int localDecks,remoteDecks;
+        Plan(String action,String localHash,String etag,String target,Map<String,Object> envelope,int localDecks,int remoteDecks,String localTime,String decision){this.action=action;this.localHash=localHash;this.etag=etag;this.target=target;this.envelope=envelope;this.localDecks=localDecks;this.remoteDecks=remoteDecks;this.localTime=localTime;this.decision=decision;}
+        public Map<String,Object> display(){return MobileCompat.map("action",action,"remoteExists",envelope!=null,"contentCheck",etag!=null&&etag.startsWith("sha256:"),"remoteDevice",envelope==null?"":Json.str(envelope,"deviceId"),"remoteTime",envelope==null?"":Json.str(envelope,"createdAt"),"localTime",localTime,"decision",decision,"localInterviewDecks",localDecks,"remoteInterviewDecks",remoteDecks);}
     }
     private final Store store; private final Path root; private final Remote remote; private final String target,device;
     public MobileSync(Store store,Path root,Remote remote,String target,String device){this.store=store;this.root=root;this.remote=remote;this.target=target;this.device=device;}
@@ -42,7 +42,29 @@ public final class MobileSync {
             action=l.equals(r)?"unchanged":baseline==null?"conflict":l.equals(baseline)?"pull":r.equals(baseline)?"push":"conflict";
             if(action.equals("unchanged")&&!Json.object(envelope.get("extensions")).containsKey("interviewStudy"))action="push";}
         int localDecks=Json.array(Json.object(local.get("snapshot")).get("interviews")).size();int remoteDecks=envelope!=null&&Json.object(envelope.get("extensions")).containsKey("interviewStudy")?Json.array(Json.object(Json.object(envelope.get("extensions")).get("interviewStudy")).get("decks")).size():0;
-        return new Plan(action,Json.str(local,"hash"),fetched==null?null:fetched.etag,target,envelope,localDecks,remoteDecks);
+        return new Plan(action,Json.str(local,"hash"),fetched==null?null:fetched.etag,target,envelope,localDecks,remoteDecks,latestLocalTime(),"");
+    }
+    /** Resolves divergent automatic syncs by comparing cloud snapshot time with local data mtimes. */
+    public Plan inspectAuto() throws IOException {
+        Plan plan=inspect();if(!plan.action.equals("conflict")||plan.envelope==null)return plan;
+        Instant local=parseTime(plan.localTime),cloud=parseTime(Json.str(plan.envelope,"createdAt"));
+        if(local==null||cloud==null||local.equals(cloud))return plan;
+        boolean upload=local.isAfter(cloud);String reason=upload?"本机资料时间较新，自动上传":"云端资料时间较新，自动下载";
+        return new Plan(upload?"push":"pull",plan.localHash,plan.etag,plan.target,plan.envelope,plan.localDecks,plan.remoteDecks,plan.localTime,reason);
+    }
+    private static Instant parseTime(String value){try{return OffsetDateTime.parse(value).toInstant();}catch(Exception ex){try{return Instant.parse(value);}catch(Exception ignored){return null;}}}
+    private String latestLocalTime() throws IOException {
+        Instant latest=Instant.EPOCH;if(!Files.exists(root))return latest.toString();
+        try(var paths=Files.walk(root,8)){
+            var iterator=paths.iterator();while(iterator.hasNext()){
+                Path path=iterator.next();
+                Path relative=root.relativize(path);if(relative.getNameCount()==0)continue;
+                boolean excluded=false;for(Path part:relative)if(part.toString().startsWith("sync-")){excluded=true;break;}if(excluded)continue;
+                if(!Files.isDirectory(path)&&!path.getFileName().toString().endsWith(".json"))continue;
+                Instant modified=Files.getLastModifiedTime(path).toInstant();if(modified.isAfter(latest))latest=modified;
+            }
+        }
+        return latest.toString();
     }
     public String execute(Plan plan,String direction) throws IOException {
         if(!plan.target.equals(target))throw new IOException("同步目标改变，请重新检查");

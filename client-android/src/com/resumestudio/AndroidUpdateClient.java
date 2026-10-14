@@ -28,8 +28,7 @@ final class AndroidUpdateClient {
         byte[] envelope=read(index,route,64000);Map<String,Object> signed=Json.object(Json.parse(new String(envelope,StandardCharsets.UTF_8)));
         byte[] data=Base64.getDecoder().decode(Json.str(signed,"data"));String signature=Json.str(signed,"signature");
         if(data.length>16000)throw new IOException("签名索引过大");
-        Signature verifier=Signature.getInstance("RSASSA-PSS");verifier.initVerify(KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(pem(publicKey))));verifier.setParameter(new PSSParameterSpec("SHA-256","MGF1",MGF1ParameterSpec.SHA256,32,1));verifier.update(data);
-        if(!verifier.verify(Base64.getDecoder().decode(signature)))throw new IOException("更新签名校验失败，已停止检查");
+        if(!verifySignature(publicKey,data,Base64.getDecoder().decode(signature)))throw new IOException("更新签名校验失败，已停止检查");
         Map<String,Object> metadata=Json.object(Json.parse(new String(data,StandardCharsets.UTF_8)));
         if(!channel.equals(Json.str(metadata,"channel")))throw new IOException("签名更新通道不匹配");
         String version=Json.str(metadata,"version"),tag=Json.str(metadata,"tag"),commit=Json.str(metadata,"commit"),name=Json.str(metadata,"androidPackageName"),sha=Json.str(metadata,"androidSha256"),versionName=Json.str(metadata,"androidVersionName");
@@ -60,4 +59,9 @@ final class AndroidUpdateClient {
     }
     private static List<URI> routes(URI uri,String route){if(!route.equals("auto")&&!route.equals("direct")&&!route.equals("proxy"))throw new IllegalArgumentException("更新线路无效");List<URI> urls=new ArrayList<>();if(!route.equals("proxy"))urls.add(uri);if(!route.equals("direct"))urls.add(URI.create("https://gh-proxy.org/"+uri));return urls;}
     private static byte[] pem(String text)throws GeneralSecurityException{String value=text.replace("-----BEGIN PUBLIC KEY-----","").replace("-----END PUBLIC KEY-----","").replaceAll("\\s","");return Base64.getDecoder().decode(value);}
+    static boolean verifySignature(String publicKey,byte[] data,byte[] signature)throws GeneralSecurityException{
+        Signature verifier=Signature.getInstance("SHA256withRSA/PSS");
+        verifier.setParameter(new PSSParameterSpec("SHA-256","MGF1",MGF1ParameterSpec.SHA256,32,1));
+        verifier.initVerify(KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(pem(publicKey))));verifier.update(data);return verifier.verify(signature);
+    }
 }
