@@ -25,6 +25,7 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherTimer editTimer = new() { Interval=TimeSpan.FromMilliseconds(650) };
     private readonly DispatcherTimer previewTimer = new();
     private readonly SemaphoreSlim saveLock = new(1,1);
+    private readonly SemaphoreSlim pageTransitionLock = new(1,1);
     private List<Template> templates = [];
     private Resume? current;
     private WebView2? preview;
@@ -135,25 +136,30 @@ public sealed partial class MainWindow : Window
     private async Task Navigate(string page)
     {
         int version=++navigationRevision;
-        editTimer.Stop(); previewTimer.Stop(); CancelJobSearch(); await SaveCurrent();
-        if(version!=navigationRevision) return;
-        currentPage=page; notice.IsOpen=false;
-        await DetachPreviewAsync(true);
-        if(version!=navigationRevision)return;
-        body.Children.Clear(); body.ColumnDefinitions.Clear(); body.RowDefinitions.Clear();
-        UpdateNavigation(page);
-        switch(page)
+        await pageTransitionLock.WaitAsync();
+        try
         {
-            case "templates": ShowTemplates(); break;
-            case "resumes": await ShowResumes(); break;
-            case "jobs": await ShowJobs(); break;
-            case "sources": await ShowCompanySources(); break;
-            case "favorites": await ShowFavorites(); break;
-            case "applications": await ShowApplications(); break;
-            case "schedule": await ShowSchedule(); break;
-            case "settings": ShowSettings(); break;
-            default: ShowAbout(); break;
+            editTimer.Stop(); previewTimer.Stop(); CancelJobSearch(); await SaveCurrent();
+            if(version!=navigationRevision) return;
+            currentPage=page; notice.IsOpen=false;
+            await DetachPreviewAsync(true);
+            if(version!=navigationRevision)return;
+            body.Children.Clear(); body.ColumnDefinitions.Clear(); body.RowDefinitions.Clear();
+            UpdateNavigation(page);
+            switch(page)
+            {
+                case "templates": ShowTemplates(); break;
+                case "resumes": await ShowResumes(); break;
+                case "jobs": await ShowJobs(); break;
+                case "sources": await ShowCompanySources(); break;
+                case "favorites": await ShowFavorites(); break;
+                case "applications": await ShowApplications(); break;
+                case "schedule": await ShowSchedule(); break;
+                case "settings": ShowSettings(); break;
+                default: ShowAbout(); break;
+            }
         }
+        finally { pageTransitionLock.Release(); }
     }
     private void Heading(string title,string subtitle) { pageTitle.Text=title; pageSubtitle.Text=subtitle; }
     private void FillScroll(UIElement child)

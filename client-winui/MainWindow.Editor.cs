@@ -32,7 +32,19 @@ public sealed partial class MainWindow
     private async Task OpenEditor()
     {
         if(current is null) return;
-        int generation=++navigationRevision;CancelJobSearch();
+        int generation=++navigationRevision;
+        await pageTransitionLock.WaitAsync();
+        try
+        {
+            if(generation!=navigationRevision||current is null)return;
+            await OpenEditorCore(generation);
+        }
+        finally { pageTransitionLock.Release(); }
+    }
+    private async Task OpenEditorCore(int generation)
+    {
+        if(current is null) return;
+        CancelJobSearch();
         InitializeUndo();
         if(editorResumeId!=current.Id) { selectedEditorPart=0; editorResumeId=current.Id; }
         currentPage="editor";await DetachPreviewAsync();if(!PageIsCurrent("editor",generation))return;body.Children.Clear();body.ColumnDefinitions.Clear();body.RowDefinitions.Clear();
