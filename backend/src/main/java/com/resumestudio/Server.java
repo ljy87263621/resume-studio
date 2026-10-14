@@ -60,11 +60,12 @@ public final class Server {
                 if(parts.length==3&&method.equals("POST")) { store.checkpoint(parts[1],"手动保存"); send(e,200,Map.of("saved",true)); return; }
                 if(parts.length==4&&method.equals("GET")) { send(e,200,store.revision(parts[1],parts[3])); return; }
             }
-            if(Set.of("resumes","favorites","applications","sources","schedule").contains(kind)) {
+            if(Set.of("resumes","favorites","applications","sources","schedule","interviews").contains(kind)) {
                 if(parts.length==1&&method.equals("GET")) { send(e,200,store.list(kind)); return; }
                 if(parts.length==1&&method.equals("POST")) {
-                    byte[] bytes=e.getRequestBody().readNBytes(2_000_001);
-                    if(bytes.length>2_000_000) { send(e,413,Map.of("error","Document exceeds 2 MB")); return; }
+                    int limit=kind.equals("interviews")?4_000_000:2_000_000;
+                    byte[] bytes=e.getRequestBody().readNBytes(limit+1);
+                    if(bytes.length>limit) { send(e,413,Map.of("error","Document exceeds "+(limit/1_000_000)+" MB")); return; }
                     var doc=Json.object(Json.parse(new String(bytes,StandardCharsets.UTF_8))); validate(kind,doc);
                     send(e,200,store.save(kind,doc)); return;
                 }
@@ -77,6 +78,7 @@ public final class Server {
         finally { e.close(); }
     }
     static void validate(String kind,Map<String,Object> doc) {
+        if(kind.equals("interviews")) { InterviewStudy.validate(doc); return; }
         if(kind.equals("sources")) { CompanySources.validate(doc); return; }
         if(kind.equals("schedule")) {
             for(String field:List.of("title","kind","startAt","notes","applicationId")) if(doc.containsKey(field)&&!(doc.get(field) instanceof String)) throw new IllegalArgumentException("日程文本字段无效");

@@ -40,6 +40,7 @@ jobs:
           node --version
           ./scripts/test-features.ps1 -ReuseBackendTestClasses
           ./scripts/test-workbench.ps1
+          ./scripts/test-interviews.ps1 -ApplicationPath release/ResumeStudio/ResumeStudio.exe
           ./scripts/test-maintenance.ps1
           ./scripts/package.ps1
       - name: Install verified installer build tools

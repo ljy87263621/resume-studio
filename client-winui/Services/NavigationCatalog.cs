@@ -18,6 +18,7 @@ public static class NavigationCatalog
         new("favorites", "职位收藏", "\uE734"),
         new("applications", "投递记录", "\uE73E"),
         new("schedule", "求职日程", "\uE787"),
+        new("interviews", "面试题背诵", "\uE82D"),
         new("about", "使用说明", "\uE946", true),
         new("settings", "设置", "\uE713", true)
     };

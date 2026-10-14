@@ -23,7 +23,7 @@
     <TrimMode Condition="'$(LightweightPublish)' == 'true'">partial</TrimMode>
     <JsonSerializerIsReflectionEnabledByDefault Condition="'$(LightweightPublish)' == 'true'">true</JsonSerializerIsReflectionEnabledByDefault>
     <BuiltInComInteropSupport Condition="'$(LightweightPublish)' == 'true'">true</BuiltInComInteropSupport>
-    <Version>0.8.9</Version>
+    <Version>0.9.0</Version>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
@@ -41,6 +41,7 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
     <!-- Reference only the WinUI stack; the umbrella package also ships unused AI/ML and Widgets runtimes. -->
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="1.8.260224000" />
+    <PackageReference Include="PdfPig" Version="0.1.16" />
   </ItemGroup>
   <!-- Preserve the complete application (including JSON models / XAML bindings) and native interop.
        Only unused framework code is removed. Do not switch to full trimming or AOT here. -->
@@ -50,5 +51,6 @@
     <TrimmerRootAssembly Include="Microsoft.WinUI" />
     <TrimmerRootAssembly Include="Microsoft.Web.WebView2.Core.Projection" />
     <TrimmerRootAssembly Include="System.Text.Json" />
+    <TrimmerRootAssembly Include="UglyToad.PdfPig" />
   </ItemGroup>
 </Project>

@@ -32,6 +32,10 @@ v0.3.0 企业招聘系统接入依据官方公开资料：[Greenhouse Job Board 
 
 原始 MiSans-Regular.ttf 的 SHA-256：9c120f0a849bc0aa5048daae2a3c0f6eecd828b5b33fce682a9622833f5feea6。
 
+## PDF 题目导入
+
+面试题 PDF 的文字与版面读取使用 [PdfPig 0.1.16](https://github.com/UglyToad/PdfPig)，由 UglyToad 与贡献者维护，采用 Apache-2.0。完整许可随应用保存在 `ThirdParty/PdfPig/LICENSE.txt`；本应用不执行 PDF 脚本，也不保留用户导入的原文档。
+
 ## Windows 安装器
 
 Setup 使用 Inno Setup 6.7.3 构建，来源为 [JRSoftware 官方发行版](https://github.com/jrsoftware/issrc/releases/tag/is-6_7_3)。安装器安装 Inno Setup 的完整许可至 licenses/InnoSetup-LICENSE.txt。构建工具的原始 SHA-256 为 9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732，并验证 Pyrsys B.V. 的 Authenticode 签名。

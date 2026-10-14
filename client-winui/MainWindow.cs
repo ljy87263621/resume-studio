@@ -112,6 +112,7 @@ public sealed partial class MainWindow : Window
         if(Environment.GetCommandLineArgs().Contains("--navigation-test")) { await NavigationTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--capture-layout-test")) { await CaptureLayoutTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--favorites-editor-test")) { await FavoritesEditorTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--interview-test")) { await InterviewFeatureTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--lightweight-test")) { await LightweightTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--workbench-test")) { await WorkbenchTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--template-assets")) { await GenerateTemplateAssets(); return; }
@@ -158,6 +159,7 @@ public sealed partial class MainWindow : Window
                 case "favorites": await ShowFavorites(); break;
                 case "applications": await ShowApplications(); break;
                 case "schedule": await ShowSchedule(); break;
+                case "interviews": await ShowInterviews(); break;
                 case "settings": ShowSettings(); break;
                 default: ShowAbout(); break;
             }
@@ -273,13 +275,25 @@ public sealed partial class MainWindow : Window
 
     private Border JobCard(Job j,bool favorite)
     {
-        var c=Stack(12); c.Children.Add(Text(j.Title,20,true)); c.Children.Add(Text($"{j.Company}  ·  {j.Location}  ·  {j.Experience}",13)); c.Children.Add(Text($"{j.Source}  ·  {(string.IsNullOrEmpty(j.PublishedAt)?j.InfoStatus:"更新："+j.PublishedAt)}  ·  {j.Salary}",11));
+        var c=Stack(12);
+        if(!favorite){c.Children.Add(Text(j.Title,20,true)); c.Children.Add(Text($"{j.Company}  ·  {j.Location}  ·  {j.Experience}",13)); c.Children.Add(Text($"{j.Source}  ·  {(string.IsNullOrEmpty(j.PublishedAt)?j.InfoStatus:"更新："+j.PublishedAt)}  ·  {j.Salary}",11));}
         if(!string.IsNullOrWhiteSpace(j.Notes)) c.Children.Add(Text("备注："+j.Notes,12));
-        var description=Text(j.Description,13); description.MaxHeight=145; description.TextTrimming=TextTrimming.CharacterEllipsis; c.Children.Add(description);
+        var description=Text(j.Description,13);
+        if(favorite)c.Children.Add(new ScrollViewer {Content=description,MaxHeight=320,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollMode=ScrollMode.Disabled});
+        else {description.MaxHeight=145;description.TextTrimming=TextTrimming.CharacterEllipsis;c.Children.Add(description);}
         c.Children.Add(JobLink(j));
         var actions=Row(); actions.Children.Add(Button("详情",async ()=> { var content=Stack(); content.Children.Add(Text(j.Company+" · "+j.Location,14,true)); content.Children.Add(Text(j.Description,14)); var dialog=new ContentDialog { XamlRoot=shell.XamlRoot,Title=j.Title,Content=new ScrollViewer { Content=content,MaxHeight=480 },PrimaryButtonText="前往投递",CloseButtonText="返回" }; if(await dialog.ShowAsync()==ContentDialogResult.Primary) await OpenJob(j); })); actions.Children.Add(Button("前往投递 ↗",()=>OpenJob(j),true));
         actions.Children.Add(Button(favorite?"取消收藏":"收藏职位",()=>favorite?RemoveFavorite(j):CollectFavorite(j))); if(favorite) { actions.Children.Add(Button("编辑收藏",()=>EditFavorite(j,false))); actions.Children.Add(Button("自动补全",()=>ResolveFavorite(j))); } actions.Children.Add(Button("复制链接",()=>CopyJobLink(j))); c.Children.Add(actions);
-        var followup=Row();followup.Children.Add(Button("针对岗位制作简历",()=>FitJob(j)));followup.Children.Add(Button("记录／查看投递",()=>EditJobApplication(j)));c.Children.Add(followup);return Card(c);
+        var followup=Row();followup.Children.Add(Button("针对岗位制作简历",()=>FitJob(j)));followup.Children.Add(Button("记录／查看投递",()=>EditJobApplication(j)));c.Children.Add(followup);
+        if(!favorite)return Card(c);
+        static string OneLine(string? value)=>System.Text.RegularExpressions.Regex.Replace(value??"",@"\s+"," ").Trim();
+        var summary=Stack(5);var title=Text(OneLine(j.Title),17,true);title.MaxLines=2;title.TextTrimming=TextTrimming.CharacterEllipsis;ToolTipService.SetToolTip(title,j.Title);summary.Children.Add(title);
+        string companyName=System.Text.RegularExpressions.Regex.Replace(OneLine(j.Company),@"^(?:公司名称|企业名称)(?:[:：]\s*|\s+)","");
+        var company=Text(string.Join(" · ",new[]{companyName,OneLine(j.Location)}.Where(x=>x.Length>0)),12);company.MaxLines=1;company.TextTrimming=TextTrimming.CharacterEllipsis;summary.Children.Add(company);
+        summary.Children.Add(Text(string.Join(" · ",new[]{j.Source,j.Salary,j.Experience}.Select(OneLine).Where(x=>x.Length>0)),11));
+        var disclosure=new Expander {Header=summary,Content=c,IsExpanded=false,HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Stretch,Tag="favorite-card"};
+        ToolTipService.SetToolTip(disclosure,"点击展开职位正文和操作，再次点击收起");
+        return Card(disclosure,new Thickness(14));
     }
     private async Task OpenJob(Job job)
     {

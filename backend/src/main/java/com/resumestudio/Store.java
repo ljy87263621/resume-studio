@@ -17,7 +17,7 @@ public final class Store {
     }
     public synchronized Map<String,Object> syncImport(String expectedHash,Map<String,Object> snapshot) throws IOException { return SyncStore.replace(root,this,expectedHash,snapshot); }
     private Path path(String kind,String id) throws IOException {
-        if (!Set.of("resumes","favorites","applications","sources","schedule").contains(kind)) throw new IllegalArgumentException("Invalid collection");
+        if (!Set.of("resumes","favorites","applications","sources","schedule","interviews").contains(kind)) throw new IllegalArgumentException("Invalid collection");
         if (!id.matches("[a-zA-Z0-9_-]{1,100}")) throw new IllegalArgumentException("Invalid identifier");
         Path dir=root.resolve(kind); Files.createDirectories(dir); return dir.resolve(id+".json");
     }

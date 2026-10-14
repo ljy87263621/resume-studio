@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../client-winui/Services/InterviewStudy.cs" Link="InterviewStudy.cs"/>
+    <Compile Include="../../client-winui/Services/InterviewImport.cs" Link="InterviewImport.cs"/>
+    <PackageReference Include="PdfPig" Version="0.1.16"/>
+  </ItemGroup>
+</Project>
