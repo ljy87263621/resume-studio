@@ -26,6 +26,11 @@ jobs:
           if($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version"){throw 'Tag and project version disagree'}
           if(!(Test-Path ".github/release-notes/v$version.md")){throw 'Release notes missing'}
           Add-Content $env:GITHUB_OUTPUT "version=$version"
+      - name: Require successful signed Nightly for this source
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/verify-nightly-before-stable.ps1 -Commit "$env:GITHUB_SHA" -Version '${{ steps.version.outputs.version }}' -Repository "$env:GITHUB_REPOSITORY"
       - name: Install verified release JDK
         shell: pwsh
         run: ./scripts/setup-release-jdk.ps1
