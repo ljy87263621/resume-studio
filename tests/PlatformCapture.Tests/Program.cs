@@ -60,4 +60,16 @@ Check(sink.Added==1&&sink.Pending==2&&sink.Error.Contains("disk full")&&!sink.Bu
 int failedSends=sends;await sink.SaveAsync();Check(sends==failedSends,"failed automatic save waits for explicit retry instead of spinning");
 fail=false;await sink.SaveAsync(true);Check(sink.Added==2&&sink.Existing==1&&sink.Pending==0&&sink.Error=="","retry drains remaining jobs without resaving successful ones");
 sink.Accept(Captured("first"));sink.Accept(Captured("second"));await sink.SaveAsync();Check(sends==4,"repeated DOM reads do not create repeated write requests");
+const string current="""
+{"url":"https://www.zhipin.com/web/geek/jobs","pageTitle":"职位","targetUrl":"https://www.zhipin.com/job_detail/current.html","detailVisible":true,"jobs":[{"url":"https://www.zhipin.com/job_detail/current.html","title":"嵌入式开发","company":"公司","description":"负责嵌入式系统开发与驱动调试，要求熟悉 C 语言、Linux 和 RTOS。"}]}
+""";
+Check(PlatformCapture.ExtractCurrentDetail("boss",current)?.Description.Contains("RTOS")==true,"single visible selected detail retains real duties and requirements");
+Check(PlatformCapture.ExtractCurrentDetail("boss",current.Replace("\"detailVisible\":true","\"detailVisible\":false")) is null,"a list page without an opened detail cannot save");
+Check(PlatformCapture.ExtractCurrentDetail("boss",current.Replace("负责嵌入式系统开发与驱动调试，要求熟悉 C 语言、Linux 和 RTOS。","")) is null,"summary without full description cannot save");
+Check(PlatformCapture.ExtractCurrentDetail("boss",current.Replace("\"targetUrl\":\"https://www.zhipin.com/job_detail/current.html\"","\"targetUrl\":\"https://www.zhipin.com/job_detail/other.html\"")) is null,"target identity must match parsed job identity");
+var noDescription=current.Replace("负责嵌入式系统开发与驱动调试，要求熟悉 C 语言、Linux 和 RTOS。","");
+var cache=new Job {CanonicalUrl="https://www.zhipin.com/job_detail/current.html",Url="https://www.zhipin.com/job_detail/current.html",Title="开发",Description="岗位职责：完成嵌入式设备的软件研发、驱动调试和通信模块实现。"};
+Check(PlatformCapture.ExtractCurrentDetail("boss",noDescription,[cache])?.Description==cache.Description,"matching detail response can enrich current DOM only");
+cache.CanonicalUrl="https://www.zhipin.com/job_detail/other.html";
+Check(PlatformCapture.ExtractCurrentDetail("boss",noDescription,[cache]) is null,"unrelated detail response cannot fill current summary");
 Console.WriteLine($"PASS: {checks} platform capture checks");

@@ -54,6 +54,15 @@ public final class WorkflowTest {
         var platform=new LinkedHashMap<String,Object>(Map.of("id","manual-nowcoder","title","手写标题","url","https://www.nowcoder.com/jobs/detail/position?channel=manual","notes","手写备注"));store.save("favorites",platform);
         var captured=new LinkedHashMap<>(platform);captured.put("id","external-nowcoder");captured.put("url","https://www.nowcoder.com/jobs/detail/position?channel=capture&pageSource=search");captured.put("notes","");
         var matched=store.collectFavorite(captured);require(!(Boolean)matched.get("created")&&Json.str(Json.object(matched.get("record")),"notes").equals("手写备注"),"capture tracking aliases preserve an existing favorite and its manual notes");
+        captured.put("company","新公司");captured.put("location","深圳");captured.put("salary","15-25K");captured.put("description","岗位职责：开发嵌入式系统并调试驱动，任职要求：熟悉 C 语言和 Linux。");
+        platform.put("description","我的手写正文");platform.put("company","我已核对公司");platform.put("infoStatus","用户核对");platform.put("customData",Map.of("keep",true));store.save("favorites",platform);
+        var detail=store.collectFavoriteDetail(captured);var repaired=Json.object(detail.get("record"));
+        require(!(Boolean)detail.get("created")&&(Boolean)detail.get("updated")&&Json.str(repaired,"location").equals("深圳"),"explicit detail capture fills missing fields on existing favorite");
+        require(Json.str(repaired,"title").equals("手写标题")&&Json.str(repaired,"description").equals("我的手写正文")&&Json.str(repaired,"company").equals("我已核对公司")&&Json.str(repaired,"notes").equals("手写备注"),"detail enrichment preserves nonempty manual fields and notes");
+        require(repaired.containsKey("customData")&&Json.str(repaired,"infoStatus").equals("用户核对"),"detail enrichment preserves unknown fields and manual verification state");
+        require(!(Boolean)store.collectFavoriteDetail(captured).get("updated"),"repeated detail collection avoids unnecessary file writes");
+        var summaryOnly=new LinkedHashMap<>(captured);summaryOnly.put("description","");
+        try {store.collectFavoriteDetail(summaryOnly);throw new AssertionError("empty detail accepted");}catch(IllegalArgumentException expected){checks++;}
         System.out.println("PASS: "+checks+" offline workflow checks; fixtures: "+root);
     }
 }

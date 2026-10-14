@@ -119,6 +119,7 @@ public sealed class CollectionResult<T>
 {
     public T Record { get; set; } = default!;
     public bool Created { get; set; }
+    public bool Updated { get; set; }
 }
 public sealed class ScheduleItem
 {

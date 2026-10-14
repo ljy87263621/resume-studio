@@ -24,7 +24,7 @@ public final class Server {
         try {
             if(!token.equals(e.getRequestHeaders().getFirst("X-Resume-Token"))) { send(e,401,Map.of("error","Unauthorized")); return; }
             String path=e.getRequestURI().getPath().substring(5), method=e.getRequestMethod();
-            if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.8.2","java",System.getProperty("java.version"))); return; }
+            if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.8.3","java",System.getProperty("java.version"))); return; }
             if(path.equals("templates")&&method.equals("GET")) { send(e,200,Templates.all()); return; }
             if(path.equals("job-sources")&&method.equals("GET")) { send(e,200,jobs.sources()); return; }
             if(path.equals("sync/snapshot")&&method.equals("GET")) { send(e,200,store.syncSnapshot()); return; }
@@ -36,11 +36,11 @@ public final class Server {
                 if(path.equals("sync/validate")) send(e,200,Map.of("valid",true));
                 else { var result=store.syncImport(Json.str(request,"expectedHash"),snapshot); jobs=new CompanyJobs(store); send(e,200,result); } return;
             }
-            if(Set.of("favorites/collect","applications/open","applications/find").contains(path)&&method.equals("POST")) {
+            if(Set.of("favorites/collect","favorites/collect-detail","applications/open","applications/find").contains(path)&&method.equals("POST")) {
                 byte[] bytes=e.getRequestBody().readNBytes(2_000_001);
                 if(bytes.length>2_000_000) { send(e,413,Map.of("error","Document exceeds 2 MB")); return; }
                 var job=Json.object(Json.parse(new String(bytes,StandardCharsets.UTF_8)));validate("favorites",job);
-                send(e,200,switch(path) {case "favorites/collect"->store.collectFavorite(job);case "applications/find"->store.findApplication(job);default->store.openApplication(job);});return;
+                send(e,200,switch(path) {case "favorites/collect"->store.collectFavorite(job);case "favorites/collect-detail"->store.collectFavoriteDetail(job);case "applications/find"->store.findApplication(job);default->store.openApplication(job);});return;
             }
             if(Set.of("resume-check","capture-preview").contains(path)&&method.equals("POST")) {
                 byte[] bytes=e.getRequestBody().readNBytes(2_000_001);

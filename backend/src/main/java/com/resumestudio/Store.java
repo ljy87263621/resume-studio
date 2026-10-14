@@ -65,6 +65,20 @@ public final class Store {
         for(var saved:list("favorites")) if(JobWorkflow.sameJob(job,saved,false)) return Map.of("record",saved,"created",false);
         return Map.of("record",save("favorites",job),"created",true);
     }
+    /** An explicit current-detail capture may fill gaps, but cannot overwrite user content. */
+    public synchronized Map<String,Object> collectFavoriteDetail(Map<String,Object> job) throws IOException {
+        if(Json.str(job,"description").trim().length()<20)throw new IllegalArgumentException("职位正文未加载完整，请打开详情后重试。");
+        for(var saved:list("favorites")) if(JobWorkflow.sameJob(job,saved,false)) {
+            var enriched=new LinkedHashMap<String,Object>(saved);boolean changed=false;
+            for(String field:List.of("company","location","salary","description","experience","publishedAt")) {
+                String before=Json.str(saved,field),after=Json.str(job,field);
+                boolean unreadable=!Json.str(saved,"infoStatus").equals("用户核对")&&before.matches("(?s).*[\\uE000-\\uF8FF\\uFFFD].*");
+                if((before.isBlank()||unreadable)&&!after.isBlank()) {enriched.put(field,after);changed=true;}
+            }
+            return Map.of("record",changed?save("favorites",enriched):saved,"created",false,"updated",changed);
+        }
+        return Map.of("record",save("favorites",job),"created",true,"updated",false);
+    }
     public synchronized Map<String,Object> openApplication(Map<String,Object> job) throws IOException {
         for(var saved:list("applications")) if(JobWorkflow.sameJob(job,saved,true)) return Map.of("record",saved,"created",false);
         var record=new LinkedHashMap<String,Object>();
