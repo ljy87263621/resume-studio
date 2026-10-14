@@ -14,6 +14,7 @@ public final class MobileInterop {
         while((line=input.readLine())!=null){try{var r=Json.object(Json.parse(line));String method=Json.str(r,"method");Object result;
             switch(method){
                 case "inspect":plan=sync.inspect();result=plan.display();break;
+                case "inspectAuto":plan=sync.inspectAuto();result=plan.display();break;
                 case "execute":result=sync.execute(Objects.requireNonNull(plan),Json.str(r,"direction"));break;
                 case "seed":{var doc=Json.object(r.get("doc"));Server.validate(Json.str(r,"kind"),doc);result=api.store.save(Json.str(r,"kind"),doc);break;}
                 case "import":result=api.store.syncImport(Json.str(api.store.syncExtendedSnapshot(),"hash"),Json.object(r.get("snapshot")));break;

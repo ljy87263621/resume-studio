@@ -37,9 +37,9 @@ public final class MobileSyncJob extends JobService {
                         String device=preferences.getString("deviceId","");
                         if(device.isEmpty()){device=UUID.randomUUID().toString();preferences.edit().putString("deviceId",device).apply();}
                         MobileSync sync=new MobileSync(api.store,api.root,new MobileSync.Dav(directory,user,password),directory+"|"+user,device);
-                        MobileSync.Plan plan=sync.inspect();
+                        MobileSync.Plan plan=sync.inspectAuto();
                         if(plan.action.equals("conflict"))status="自动同步遇到两端不同修改，请打开设置选择保留方向";
-                        else {String action=sync.execute(plan,null);status=switch(action){case "push"->"已自动上传";case "pull"->"已自动下载并备份";default->"两端资料一致";};}
+                        else {String action=sync.execute(plan,null);status=switch(action){case "push"->"已自动上传（本机时间较新）";case "pull"->"已自动下载并备份（云端时间较新）";default->"两端资料一致";};}
                     }
                 }
             }catch(Exception ex){status="自动同步未完成："+Objects.toString(ex.getMessage(),"网络或配置异常");}
