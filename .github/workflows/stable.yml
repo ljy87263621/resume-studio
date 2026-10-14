@@ -37,6 +37,8 @@ jobs:
           ./scripts/test-updater.ps1
           ./scripts/test-channel-publication.ps1
           ./scripts/test-schedule.ps1
+          node --version
+          ./scripts/test-features.ps1 -ReuseBackendTestClasses
           ./scripts/test-workbench.ps1
           ./scripts/test-maintenance.ps1
           ./scripts/package.ps1

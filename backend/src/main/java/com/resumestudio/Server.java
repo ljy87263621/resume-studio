@@ -8,7 +8,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public final class Server {
-    private final Store store; private final CompanyJobs jobs; private final String token;
+    private final Store store; private volatile CompanyJobs jobs; private final String token;
     private final HttpServer server;
     private final ExecutorService executor=Executors.newFixedThreadPool(6);
     public Server(int port,Path data,String token) throws Exception {
@@ -27,6 +27,15 @@ public final class Server {
             if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.7.7","java",System.getProperty("java.version"))); return; }
             if(path.equals("templates")&&method.equals("GET")) { send(e,200,Templates.all()); return; }
             if(path.equals("job-sources")&&method.equals("GET")) { send(e,200,jobs.sources()); return; }
+            if(path.equals("sync/snapshot")&&method.equals("GET")) { send(e,200,store.syncSnapshot()); return; }
+            if(path.equals("sync/validate")&&method.equals("POST")||path.equals("sync/import")&&method.equals("POST")) {
+                byte[] bytes=e.getRequestBody().readNBytes(SyncStore.MAX_BYTES+1);
+                if(bytes.length>SyncStore.MAX_BYTES) { send(e,413,Map.of("error","同步资料超过 64 MiB")); return; }
+                var request=Json.object(Json.parse(new String(bytes,StandardCharsets.UTF_8)));
+                var snapshot=Json.object(request.get("snapshot")); SyncStore.validate(snapshot);
+                if(path.equals("sync/validate")) send(e,200,Map.of("valid",true));
+                else { var result=store.syncImport(Json.str(request,"expectedHash"),snapshot); jobs=new CompanyJobs(store); send(e,200,result); } return;
+            }
             if(Set.of("favorites/collect","applications/open","applications/find").contains(path)&&method.equals("POST")) {
                 byte[] bytes=e.getRequestBody().readNBytes(2_000_001);
                 if(bytes.length>2_000_000) { send(e,413,Map.of("error","Document exceeds 2 MB")); return; }
@@ -62,7 +71,8 @@ public final class Server {
                 if(parts.length==2&&method.equals("DELETE")) { store.delete(kind,parts[1]); send(e,200,Map.of("deleted",true)); return; }
             }
             send(e,404,Map.of("error","Route not found"));
-        } catch(IllegalArgumentException ex) { try { send(e,400,Map.of("error",Objects.toString(ex.getMessage(),"Invalid input"))); } catch(Exception ignored) {} }
+        } catch(ConcurrentModificationException ex) { try { send(e,409,Map.of("error",Objects.toString(ex.getMessage(),"同步冲突"))); } catch(Exception ignored) {} }
+        catch(IllegalArgumentException ex) { try { send(e,400,Map.of("error",Objects.toString(ex.getMessage(),"Invalid input"))); } catch(Exception ignored) {} }
         catch(Exception ex) { ex.printStackTrace(System.err); try { send(e,500,Map.of("error","无法完成请求，请查看后端日志")); } catch(Exception ignored) {} }
         finally { e.close(); }
     }

@@ -16,7 +16,7 @@ public sealed partial class MainWindow
     private IReadOnlyList<ReleaseNote> updateNotes=[];
     private string updateNotesError="";
     private ReleaseIdentity? checkedReleaseIdentity;
-    private static bool VerificationSession=>Environment.GetCommandLineArgs().Any(a=>a is "--self-test" or "--feature-test" or "--iteration-test" or "--benchmark" or "--appearance-review" or "--template-assets" or "--workbench-test");
+    private static bool VerificationSession=>Environment.GetCommandLineArgs().Any(a=>a is "--self-test" or "--feature-test" or "--iteration-test" or "--benchmark" or "--appearance-review" or "--template-assets" or "--workbench-test" or "--navigation-test");
     private ReleaseUpdate UpdateClient()=>new(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"Assets","UpdatePublicKey.pem")));
     private UIElement UpdateSettingsCard()
     {
@@ -26,7 +26,7 @@ public sealed partial class MainWindow
         var route=new ComboBox {Header="更新连接方式",ItemsSource=new[] {"自动 · 直连失败时使用公益代理","GitHub 直连","GH-Proxy 公益代理"},SelectedIndex=preferences.UpdateRoute=="direct"?1:preferences.UpdateRoute=="proxy"?2:0,HorizontalAlignment=HorizontalAlignment.Stretch};
         route.SelectionChanged+=async (_,_)=>await Run(async ()=> {preferences.UpdateRoute=route.SelectedIndex==1?"direct":route.SelectedIndex==2?"proxy":"auto"; await preferences.SaveAsync(api.DataDirectory);}); panel.Children.Add(route);
         var automatic=new ToggleSwitch {Header="启动时检查更新",IsOn=preferences.CheckUpdatesOnStartup}; automatic.Toggled+=async (_,_)=>await Run(async ()=> {preferences.CheckUpdatesOnStartup=automatic.IsOn; await preferences.SaveAsync(api.DataDirectory);}); panel.Children.Add(automatic);
-        panel.Children.Add(Text("Stable 为正式稳定版；Nightly 根据最新提交每日生成，有源码变化才发布。更新从拾简 GitHub Releases 读取，签名和文件校验通过后才能安装。",12));
+        panel.Children.Add(Text("Stable 为正式稳定版；Nightly 根据最新提交每日生成，有源码变化才发布。更新来源："+ReleaseUpdate.Repository+"，签名和文件校验通过后才能安装。",12));
         panel.Children.Add(Text("公益代理仅用于公开的更新信息和程序包，不传输简历、API Key 或登录信息。",12));
         updateStatus=Text(availableUpdate is null?"尚未检查更新。":"可更新到："+availableUpdate.Identity.Display,13); panel.Children.Add(updateStatus);
         var actions=Row(); actions.Children.Add(Button("检查更新",()=>CheckForUpdates(false),true)); installUpdateButton=Button("下载并安装",InstallAvailableUpdate); installUpdateButton.IsEnabled=availableUpdate is not null; actions.Children.Add(installUpdateButton); actions.Children.Add(Button("查看发行记录 ↗",()=>Launch("https://github.com/"+ReleaseUpdate.Repository+"/releases"))); panel.Children.Add(actions);
@@ -84,13 +84,14 @@ public sealed partial class MainWindow
                 File.Delete(zip); // The verified extracted payload is sufficient; avoid keeping both copies.
             }
             finally {loading.Hide(); await shown;}
+            closeRequested=true; await FinishSyncBeforeClose();
             await maintenanceLock.WaitAsync(cancellation.Token);maintenanceLock.Release();
             editTimer.Stop(); previewTimer.Stop(); await SaveCurrent();
             await UpdateInstaller.Launch(source,workspace,AppContext.BaseDirectory,api.DataDirectory);
             reminderTimer.Stop(); CancelJobSearch(); closing=true; updateCancellation.Cancel(); preview?.Close(); api.Dispose(); Close();
         }
         catch(OperationCanceledException) {Success("更新已取消","当前程序保持原样。");}
-        finally {updateBusy=false;}
+        finally {updateBusy=false;if(!closing) closeRequested=false;}
     }
     private async Task AcknowledgeUpdateStartup()
     {

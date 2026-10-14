@@ -38,6 +38,7 @@ backend/build/
 *.pfx
 *.p12
 *.key
+.codegraph/
 *.pem
 !/client-winui/Assets/UpdatePublicKey.pem
 

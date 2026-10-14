@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace ResumeStudio;
 
 public sealed class Template
@@ -25,6 +28,7 @@ public sealed class Template
 }
 public sealed class Profile
 {
+    [JsonExtensionData] public Dictionary<string,JsonElement>? ExtensionData { get; set; }
     public string Name { get; set; } = "";
     public string Role { get; set; } = "";
     public string Phone { get; set; } = "";
@@ -35,6 +39,7 @@ public sealed class Profile
 }
 public sealed class ResumeSection
 {
+    [JsonExtensionData] public Dictionary<string,JsonElement>? ExtensionData { get; set; }
     public string Title { get; set; } = "";
     public string Content { get; set; } = "";
     public bool Visible { get; set; } = true;
@@ -42,6 +47,7 @@ public sealed class ResumeSection
 }
 public sealed class Resume
 {
+    [JsonExtensionData] public Dictionary<string,JsonElement>? ExtensionData { get; set; }
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string Title { get; set; } = "我的简历";
     public string TemplateId { get; set; } = "campus";
@@ -56,6 +62,7 @@ public sealed class Resume
 }
 public sealed class Job
 {
+    [JsonExtensionData] public Dictionary<string,JsonElement>? ExtensionData { get; set; }
     public string Id { get; set; } = "";
     public string Title { get; set; } = "";
     public string Company { get; set; } = "";
@@ -90,6 +97,7 @@ public sealed class CapturePreview
 }
 public sealed class ApplicationRecord
 {
+    [JsonExtensionData] public Dictionary<string,JsonElement>? ExtensionData { get; set; }
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string JobId { get; set; } = "";
     public string Title { get; set; } = "";
@@ -114,6 +122,7 @@ public sealed class CollectionResult<T>
 }
 public sealed class ScheduleItem
 {
+    [JsonExtensionData] public Dictionary<string,JsonElement>? ExtensionData { get; set; }
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string Title { get; set; } = "";
     public string Kind { get; set; } = "自定义";
@@ -128,12 +137,14 @@ public sealed class ScheduleItem
 }
 public sealed class ApplicationEvent
 {
+    [JsonExtensionData] public Dictionary<string,JsonElement>? ExtensionData { get; set; }
     public string Status { get; set; } = "";
     public string At { get; set; } = "";
     public string Note { get; set; } = "";
 }
 public sealed class ResumeRevision
 {
+    [JsonExtensionData] public Dictionary<string,JsonElement>? ExtensionData { get; set; }
     public string Id { get; set; } = "";
     public string CreatedAt { get; set; } = "";
     public string Label { get; set; } = "";
@@ -152,6 +163,7 @@ public sealed class JobResult
 }
 public sealed class CompanySource
 {
+    [JsonExtensionData] public Dictionary<string,JsonElement>? ExtensionData { get; set; }
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string Name { get; set; } = "";
     public string Adapter { get; set; } = "jsonld";

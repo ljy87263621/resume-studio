@@ -29,6 +29,7 @@ public sealed partial class MainWindow : Window
     private Resume? current;
     private WebView2? preview;
     private bool dirty, closing, ready;
+    private bool closeRequested;
     private int revision;
     private string currentPage="templates";
     private string jobKeyword="",jobCity="",jobProvider="all";
@@ -58,7 +59,13 @@ public sealed partial class MainWindow : Window
         {
             if(closing) return;
             args.Cancel=true;
-            _=Run(async ()=> { editTimer.Stop(); previewTimer.Stop(); reminderTimer.Stop(); feedbackTimer.Stop(); CancelJobSearch(); await SaveCurrent(); closing=true; updateCancellation.Cancel(); preview?.Close(); api.Dispose(); Close(); });
+            if(closeRequested) return;
+            closeRequested=true;
+            _=Run(async ()=>
+            {
+                try { await FinishSyncBeforeClose(); editTimer.Stop(); previewTimer.Stop(); reminderTimer.Stop(); feedbackTimer.Stop(); CancelJobSearch(); await SaveCurrent(); closing=true; updateCancellation.Cancel(); preview?.Close(); api.Dispose(); Close(); }
+                finally { if(!closing) closeRequested=false; }
+            });
         };
     }
     private static SolidColorBrush Brush(string hex)
@@ -100,6 +107,7 @@ public sealed partial class MainWindow : Window
         if(Environment.GetCommandLineArgs().Contains("--benchmark")) { await Benchmark(); return; }
         if(Environment.GetCommandLineArgs().Contains("--iteration-test")) { await IterationOnlyTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--feature-test")) { await FeatureTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--navigation-test")) { await NavigationTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--workbench-test")) { await WorkbenchTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--template-assets")) { await GenerateTemplateAssets(); return; }
         if(Environment.GetCommandLineArgs().Contains("--self-test"))
@@ -112,16 +120,14 @@ public sealed partial class MainWindow : Window
     private void BuildSidebar()
     {
         var side=new Grid { Background=Brush("#14233F"),Padding=new Thickness(17,28,17,20) };
+        classicSidebar=side;
         side.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto }); side.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) }); side.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto });
-        var brand=Stack(5); var name=Text("拾简",30,true); name.Foreground=Brush("#FFFFFF"); var mark=Row(10); mark.Children.Add(BrandLogo(46)); mark.Children.Add(name); brand.Children.Add(mark); var sub=Text("RESUME STUDIO",10); sub.CharacterSpacing=150; sub.Foreground=Brush("#8CA6D2"); brand.Children.Add(sub); side.Children.Add(brand);
+        var brand=Stack(5); var name=Text("拾简",30,true); name.Foreground=Brush("#FFFFFF"); var mark=Row(10); mark.Children.Add(BrandLogo(46)); mark.Children.Add(name); brand.Children.Add(mark); var sub=Text("RESUME STUDIO",10); sub.CharacterSpacing=150; sub.Foreground=Brush("#8CA6D2"); brand.Children.Add(sub); side.Children.Add(brand); classicBrandName=name; classicBrandSubtitle=sub;
         var menu=Stack(7); menu.Margin=new Thickness(0,35,0,0);
-        foreach(var item in Pages)
-        {
-            var key=item.Key;
-            var b=Button(item.Label,()=>Navigate(key)); b.Tag=key; b.HorizontalAlignment=HorizontalAlignment.Stretch; b.HorizontalContentAlignment=HorizontalAlignment.Left; b.Foreground=Brush("#CBD7EB"); b.Background=new SolidColorBrush(Colors.Transparent); b.BorderThickness=new Thickness(0); b.Padding=new Thickness(14,13,14,13); navigation.Add(b); menu.Children.Add(b);
-        }
-        Grid.SetRow(menu,1); side.Children.Add(menu);
-        var footer=Stack(8); var tagline=Text("把经历写清楚\n让机会更靠近",13); tagline.Foreground=Brush("#A9BEDC"); footer.Children.Add(tagline); var v=Text($"v{typeof(MainWindow).Assembly.GetName().Version?.ToString(3)}  ·  Windows 桌面版",10); v.Foreground=Brush("#7189AE"); footer.Children.Add(v); Grid.SetRow(footer,2); side.Children.Add(footer); shell.Children.Add(side);
+        BuildClassicNavigationMenu(menu,NavigationCatalog.Roots);
+        var menuScroll=new ScrollViewer { Content=menu,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,HorizontalScrollMode=ScrollMode.Disabled };
+        Grid.SetRow(menuScroll,1); side.Children.Add(menuScroll);
+        var footer=Stack(8); var tagline=Text("把经历写清楚\n让机会更靠近",13); tagline.Foreground=Brush("#A9BEDC"); footer.Children.Add(tagline); var v=Text($"v{typeof(MainWindow).Assembly.GetName().Version?.ToString(3)}  ·  Windows 桌面版",10); v.Foreground=Brush("#7189AE"); footer.Children.Add(v); Grid.SetRow(footer,2); side.Children.Add(footer); classicFooter=footer; shell.Children.Add(side);
     }
     private async Task Navigate(string page)
     {
@@ -276,6 +282,7 @@ public sealed partial class MainWindow : Window
     private void ShowAbout()
     {
         Heading("使用说明","简历制作与求职跟进，在一个桌面工作区完成。"); var content=Stack(22);
+        var added=Stack(12); added.Children.Add(Text("职位采集与同步",20,true)); added.Children.Add(Text("发现职位下包含主页面和公司来源管理。主页面可打开 BOSS 或牛客，在应用内本人登录、搜索和翻页时自动采集本次浏览得到的职位，再核对收藏。设置中的 WebDAV 同步可手动传输简历、照片、收藏、投递、日程、公司来源和非敏感设置；两端同时修改时先选择保留哪一端，替换前保留本机备份。Cookie、API Key 和同步密码只留在本机。",14)); content.Children.Add(Card(added));
         foreach(var item in new[] {("01  GitHub 高星模板","8 套岗位适配，覆盖前端、后端、嵌入式与通用型，来自 Awesome-CV、billryan/resume、Deedy-Resume 和 Jake’s Resume。卡片显示仓库来源、核实星数和许可。版式从原仓库 LaTeX 模板移植为中文 A4，原文件与许可随应用保存。6 套旧模板保留以兼容已有简历。"),("02  制作与辅助","填写信息与经历 → 调整模块顺序和样式 → 检查模块状态与规则建议 → 查看 A4 内容余量 → 导出 PDF。支持 Markdown 表格与标题日期。支持格式按钮、撤销重做和最近 20 个历史版本；PDF 导出前检查真实分页。岗位对照列出要求与简历依据，可按设置的兼容接口获取 AI 建议，逐条确认后生成独立岗位简历。AI 提示词按钮仍只复制文本。"),("03  招聘与跨平台收藏","21个公司来源可在发现职位汇总查询，支持腾讯及 Greenhouse、Lever、Ashby、SmartRecruiters、Workday；可添加国内外公司官网并查看真实接入状态。BOSS、猎聘、智联、前程无忧、拉勾、牛客和企业官网职位可粘贴详情链接，尝试自动解析公开信息后收藏。也可正常浏览详情并读取可见职位内容。原始链接保留访问参数，规范地址单独去重，可按平台筛选。平台账号收藏不会自动同步。"),("04  直接采集的范围","当前自动获取的是公开职位源。BOSS 搜索页依赖脚本和访问状态，robots 限制搜索参数路径，当前未实现其匿名批量采集；单个公开详情可尝试直接解析，受限页面可在“浏览并读取”中正常完成验证后读取可见内容。未实现验证码绕过、外部浏览器 Cookie 读取或自动投递。"),("05  投递与数据","“前往投递”打开原页面并记录“已打开”；实际投递在原站完成，再手动更新进度。简历、收藏、投递记录由本地 Java 服务保存。记录进度时间线、笔试／面试日期和复盘，可确认所用简历并固定投递快照。应用运行时提前 24 小时及到期提醒，关闭期间不通知，重新打开补查待办。上一版备份与最多 20 个历史版本压缩保存。"),("06  技术与来源","客户端为原生 WinUI 3 / .NET 8，后端 Java 21，WebView2 用于预览和 PDF。开源模板与 resume-helper 功能来源说明见安装目录 THIRD_PARTY_NOTICES.md。")}) { var s=Stack(); s.Children.Add(Text(item.Item1,20,true)); s.Children.Add(Text(item.Item2,15)); content.Children.Add(Card(s)); }
         content.Children.Add(Card(Text("本机数据目录：\n"+api.DataDirectory,13))); content.Children.Add(Button("打开数据目录",()=> { Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList={api.DataDirectory},UseShellExecute=true }); return Task.CompletedTask; })); FillScroll(content);
     }
