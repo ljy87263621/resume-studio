@@ -14,6 +14,7 @@ public sealed partial class MainWindow
         var jobs=await api.Get<List<Job>>("favorites"); if(!PageIsCurrent("favorites",generation)) return;
         body.RowDefinitions.Add(new RowDefinition {Height=GridLength.Auto}); body.RowDefinitions.Add(new RowDefinition {Height=new GridLength(1,GridUnitType.Star)});
         var controls=Stack(12); controls.Margin=new Thickness(0,0,0,14); controls.Children.Add(Button("＋ 从 BOSS 等平台链接收藏",ImportExternalFavorite,true));
+        var browsing=Row();browsing.Children.Add(Button("BOSS 浏览并收藏",()=>OpenPlatformCaptureAsync("boss")));browsing.Children.Add(Button("牛客浏览并收藏",()=>OpenPlatformCaptureAsync("nowcoder")));controls.Children.Add(browsing);
         var filters=Row(); var query=new TextBox { PlaceholderText="职位 / 公司 / 备注",Width=280,Text=favoriteQuery };
         var sources=new[] {"全部平台"}.Concat(jobs.Select(j=>j.Source).Where(s=>s.Length>0).Distinct()).ToList();
         var source=new ComboBox { ItemsSource=sources,SelectedItem=sources.Contains(favoriteSource)?favoriteSource:sources[0],Width=180 }; filters.Children.Add(query); filters.Children.Add(source);filters.Children.Add(Button("清空筛选",()=>{query.Text="";source.SelectedIndex=0;return Task.CompletedTask;})); controls.Children.Add(filters);

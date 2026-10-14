@@ -51,6 +51,9 @@ public final class WorkflowTest {
         try {for(int i=0;i<20;i++)tasks.add(pool.submit(()->store.collectFavorite(pasted)));for(var task:tasks)require(!(Boolean)task.get().get("created"),"concurrent repeated favorite is idempotent");}
         finally {pool.shutdownNow();}
         require(store.list("applications").size()==2&&store.list("favorites").size()==1,"atomic collection and tracking keep one record per matched job");
+        var platform=new LinkedHashMap<String,Object>(Map.of("id","manual-nowcoder","title","手写标题","url","https://www.nowcoder.com/jobs/detail/position?channel=manual","notes","手写备注"));store.save("favorites",platform);
+        var captured=new LinkedHashMap<>(platform);captured.put("id","external-nowcoder");captured.put("url","https://www.nowcoder.com/jobs/detail/position?channel=capture&pageSource=search");captured.put("notes","");
+        var matched=store.collectFavorite(captured);require(!(Boolean)matched.get("created")&&Json.str(Json.object(matched.get("record")),"notes").equals("手写备注"),"capture tracking aliases preserve an existing favorite and its manual notes");
         System.out.println("PASS: "+checks+" offline workflow checks; fixtures: "+root);
     }
 }

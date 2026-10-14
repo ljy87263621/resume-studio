@@ -62,6 +62,7 @@ public sealed partial class MainWindow
             using(var stream=await screenshot.OpenAsync(Windows.Storage.FileAccessMode.ReadWrite))await viewport.Web.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png,stream);
             await SaveNativePreview(Path.Combine(output,"capture-dialog.png"));await FeatureClick(dialog,"返回");await shown;viewport.Dispose();viewport.Web.Close();
             Check(!Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(shell.XamlRoot).Any(p=>p.Child is ContentDialog),"capture dialog closes normally after repeated resizing");
+            await VerifyDirectCapture(checks);
             await File.WriteAllTextAsync(Path.Combine(output,"capture-layout-result.json"),JsonSerializer.Serialize(new {status="passed",checks,measurements},BackendClient.Json));
         }catch(Exception ex){await File.WriteAllTextAsync(Path.Combine(output,"capture-layout-result.json"),JsonSerializer.Serialize(new {status="failed",checks,measurements,error=ex.ToString()},BackendClient.Json));}
         finally {closing=true;api.Dispose();Close();}

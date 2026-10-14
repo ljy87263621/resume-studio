@@ -35,7 +35,7 @@ Windows + PowerShell 7 + .NET 8 SDK + JDK 21。设置 `JAVA_HOME`；脚本优先
 | `test-installer.ps1` | 仅 GitHub 临时 runner：安装、快捷方式、覆盖和卸载数据保留 |
 | `--workbench-test` | 隔离目录内的原生顶栏、排序、预览与 PDF；收藏去重／撤销、投递日程联动、失败重试及快速切页 |
 | `--feature-test`／`--iteration-test` | 既有原生功能与界面回归 |
-| `--capture-layout-test` | 采集窗口多尺寸、自适应网页、缩放点击、独立滚动和结果折叠（本地网页夹具） |
+| `--capture-layout-test` | 窗口布局、缩放点击、手动／连续直接收藏、去重与返回收藏（本地网页夹具＋真实本地存储） |
 
 原生测试可用 `RESUMESTUDIO_TEST_DATA`／`RESUMESTUDIO_TEST_OUTPUT` 指定隔离目录。文件选择器、实际鼠标拖动、外站登录与投递仍需人工验收。自动编译成功不等于完整人工验收。
 

@@ -56,137 +56,119 @@ public sealed partial class MainWindow
     })()
     """;
 
-    private async Task OpenPlatformCaptureAsync(string provider,string keyword="")
+    private async Task OpenPlatformCaptureAsync(string provider,string keyword="",Action<CoreWebView2>? verificationSetup=null)
     {
-        if(provider is not ("boss" or "nowcoder")) throw new ArgumentException("未知招聘平台");
+        if(provider is not ("boss" or "nowcoder"))throw new ArgumentException("未知招聘平台");
+        if(verificationSetup is not null&&!VerificationSession)throw new InvalidOperationException("网页夹具仅可用于隔离验证。");
         string name=provider=="boss"?"BOSS直聘":"牛客";
         string start=provider=="boss"?"https://www.zhipin.com/web/geek/jobs?query="+Uri.EscapeDataString(keyword):"https://www.nowcoder.com/jobs/intern/center";
-        var items=new ObservableCollection<Job>(); var byUrl=new Dictionary<string,Job>();
-        var list=new ListView {ItemsSource=items,SelectionMode=ListViewSelectionMode.Multiple};
+        var items=new ObservableCollection<Job>();var byUrl=new Dictionary<string,Job>();
+        var list=new ListView {ItemsSource=items,SelectionMode=ListViewSelectionMode.None};
         list.ItemTemplate=(DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load("""
         <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"><StackPanel Margin="4" Spacing="3"><TextBlock Text="{Binding Title}" FontWeight="SemiBold"/><TextBlock Text="{Binding Company}" FontSize="12"/><StackPanel Orientation="Horizontal" Spacing="10"><TextBlock Text="{Binding Location}" FontSize="12"/><TextBlock Text="{Binding Salary}" FontSize="12"/></StackPanel></StackPanel></DataTemplate>
         """);
-        var status=Text("请在页面内本人登录，然后正常搜索和翻页。页面返回的职位会自动加入下方列表；验证需要本人完成。",12);
-        var toggle=new ToggleSwitch {OnContent="自动采集已开",OffContent="自动采集已暂停",IsOn=true};
-        ToolTipService.SetToolTip(toggle,"自动采集本次正常浏览返回的职位");
-        var address=Text(start,11); address.MaxLines=1; address.TextTrimming=TextTrimming.CharacterEllipsis;
-        bool closed=false,reading=false,initialized=false; int activeResponses=0,epoch=0; string captureFailure="";
-        var controls=Row();
-        using var viewport=new CaptureViewport(shell.XamlRoot,controls,status,address,list);
+        var status=Text("正常浏览后点击“读取当前页并收藏”。需要连续采集时再开启自动采集。",12);
+        var toggle=new ToggleSwitch {OnContent="自动采集已开",OffContent="自动采集已关",IsOn=false};
+        ToolTipService.SetToolTip(toggle,"开启后，正常浏览和翻页返回的职位会直接加入收藏。");
+        var address=Text(start,11);address.MaxLines=1;address.TextTrimming=TextTrimming.CharacterEllipsis;
+        bool closed=false,ending=false,reading=false,initialized=false,discard=false;int activeResponses=0,epoch=0;string captureFailure="";
+        var controls=Stack(6);var toolbar=Row();controls.Children.Add(toolbar);using var viewport=new CaptureViewport(shell.XamlRoot,controls,status,address,list);
         var web=viewport.Web;
-        var dialog=new ContentDialog {XamlRoot=shell.XamlRoot,Title=name+" · 登录后自动采集",Content=viewport.Content,PrimaryButtonText="核对选中职位",CloseButtonText="返回",IsPrimaryButtonEnabled=false};
+        var dialog=new ContentDialog {XamlRoot=shell.XamlRoot,Title=name+" · 浏览并直接收藏",Content=viewport.Content,PrimaryButtonText="结束并查看收藏",CloseButtonText="返回"};
         dialog.Resources["ContentDialogMaxWidth"]=1460d;
-        controls.Children.Add(toggle);
-        controls.Children.Add(Button("读取当前页面",ReadDom));
-        controls.Children.Add(Button("全选",()=> {list.SelectAll(); return Task.CompletedTask;}));
-        controls.Children.Add(Button("清空结果",()=> {epoch++; items.Clear(); byUrl.Clear(); UpdateStatus(); return Task.CompletedTask;}));
+        var session=new CapturedFavorites(job=>api.Post<CollectionResult<Job>>("favorites/collect",job));
+        Task activeRead=Task.CompletedTask;
+        Button retry=null!,clear=null!;
+        var read=Button("读取当前页并收藏",ReadCurrent);retry=Button("重试未保存职位",()=>session.SaveAsync(true));
+        clear=Button("清空列表",()=>{epoch++;items.Clear();byUrl.Clear();UpdateStatus();return Task.CompletedTask;});
+        ToolTipService.SetToolTip(clear,"仅清空当前窗口的展示，不删除职位收藏。");
+        toolbar.Children.Add(toggle);toolbar.Children.Add(read);toolbar.Children.Add(clear);controls.Children.Add(retry);
         var timer=new DispatcherTimer {Interval=TimeSpan.FromSeconds(3)};
-        void UpdateStatus() {status.Text=$"本次已采集 {items.Count} 条 · 选中 {list.SelectedItems.Count} 条。{(toggle.IsOn?"正在自动采集":"已暂停")}"+(captureFailure==""?"":"\n"+captureFailure); dialog.IsPrimaryButtonEnabled=list.SelectedItems.Count is >0 and <=50;}
-        void PauseForFailure(string message) {captureFailure=message; toggle.IsOn=false; UpdateStatus();}
-        void Add(IEnumerable<Job> jobs)
+        void UpdateStatus()
         {
-            foreach(var candidate in jobs)
-            {
-                var job=candidate;
-                if(byUrl.TryGetValue(job.CanonicalUrl,out var previous))
-                {
-                    bool selected=list.SelectedItems.Contains(previous); int index=items.IndexOf(previous);
-                    job=PlatformCapture.Merge(previous,job); if(ReferenceEquals(job,previous)) continue;
-                    byUrl[job.CanonicalUrl]=job; if(index>=0) items[index]=job; if(selected) list.SelectedItems.Add(job);
-                }
-                else if(items.Count<PlatformCapture.MaxJobs) {byUrl[job.CanonicalUrl]=job; items.Add(job);}
-            }
-            UpdateStatus();
+            if(closed)return;
+            if(session.Error.Length>0&&toggle.IsOn)toggle.IsOn=false;
+            status.Text=$"本次新增 {session.Added} 条 · 已有收藏 {session.Existing} 条 · 待保存 {session.Pending} 条。"+(reading?"正在读取…":session.Busy?"正在保存…":toggle.IsOn?"自动采集已开启":"点击读取当前页可直接收藏。")+(session.Error.Length>0?"\n保存未完成："+session.Error:captureFailure.Length>0?"\n"+captureFailure:"");
+            ToolTipService.SetToolTip(status,status.Text);
+            if(items.Count>=PlatformCapture.MaxJobs)status.Text+="\n本次列表已达 500 条；可清空列表后继续读取，已存收藏保留。";
+            retry.Visibility=session.Error.Length>0?Visibility.Visible:Visibility.Collapsed;
+            retry.IsEnabled=!session.Busy;clear.IsEnabled=session.Pending==0&&!session.Busy&&!reading;
+            dialog.IsPrimaryButtonEnabled=!reading&&!session.Busy&&session.Pending==0;
+            dialog.SecondaryButtonText=session.Error.Length>0&&session.Pending>0?"放弃未保存":"";
         }
+        void PauseForFailure(string message){captureFailure=message;toggle.IsOn=false;UpdateStatus();}
+        async Task Add(IEnumerable<Job> jobs)
+        {
+            foreach(var candidate in jobs) {
+                var job=candidate;
+                if(byUrl.TryGetValue(job.CanonicalUrl,out var previous)) {
+                    job=PlatformCapture.Merge(previous,job);int index=items.IndexOf(previous);byUrl[job.CanonicalUrl]=job;if(index>=0)items[index]=job;
+                }else if(items.Count<PlatformCapture.MaxJobs){byUrl[job.CanonicalUrl]=job;items.Add(job);}
+                else continue;
+                session.Accept(job);
+            }
+            await session.SaveAsync();UpdateStatus();
+        }
+        session.Changed=UpdateStatus;
+        session.Saved=job=>{if(closed)return;string key=PlatformCapture.Canonical(job.Url);if(byUrl.TryGetValue(key,out var previous)){int index=items.IndexOf(previous);byUrl[key]=job;if(index>=0)items[index]=job;}};
+        Task ReadCurrent(){if(reading)return activeRead;activeRead=ReadDom();return activeRead;}
         async Task ReadDom()
         {
-            if(closed||reading||web.CoreWebView2 is null||!PlatformCapture.IsPlatformUrl(provider,web.CoreWebView2.Source)) return;
-            reading=true; int generation=epoch;
-            try
-            {
+            if(closed||ending||web.CoreWebView2 is null||!PlatformCapture.IsPlatformUrl(provider,web.CoreWebView2.Source))return;
+            reading=true;int generation=epoch;UpdateStatus();
+            try {
                 string json=await web.CoreWebView2.ExecuteScriptAsync(PlatformJobsScript);
-                if(closed||generation!=epoch) return;
-                Add(PlatformCapture.ExtractDom(provider,json));
+                if(closed||generation!=epoch)return;
                 using var parsed=JsonDocument.Parse(json);
-                if(parsed.RootElement.TryGetProperty("pageTitle",out var title)&&PlatformCapture.IsChallenge(title.GetString()??"")) PauseForFailure("页面要求登录或安全验证，请本人完成后重新开启采集。已有结果保留。");
-            }
-            catch(Exception) when(closed) { }
-            catch(Exception e) {status.Text="当前页面读取未完成："+e.Message;}
-            finally {reading=false;}
+                if(parsed.RootElement.TryGetProperty("pageTitle",out var title)&&PlatformCapture.IsChallenge(title.GetString()??"")){PauseForFailure("页面要求登录或验证，请本人完成后重新读取。已有收藏保留。");return;}
+                var found=PlatformCapture.ExtractDom(provider,json);await Add(found);
+                if(found.Count==0)captureFailure="当前页面没有可读取的职位，请进入职位列表或详情页后再读取。";
+                else captureFailure="";
+            }catch(Exception) when(closed) { }
+            catch(Exception ex){captureFailure="页面读取未完成："+ex.Message;}
+            finally {reading=false;UpdateStatus();}
         }
         async void ResponseReceived(object? sender,CoreWebView2WebResourceResponseReceivedEventArgs e)
         {
-            if(closed||!toggle.IsOn||activeResponses>=3||web.CoreWebView2 is null||!PlatformCapture.IsPlatformUrl(provider,web.CoreWebView2.Source)) return;
+            if(closed||ending||!toggle.IsOn||activeResponses>=3||web.CoreWebView2 is null||!PlatformCapture.IsPlatformUrl(provider,web.CoreWebView2.Source))return;
             string type=e.Response.Headers.Contains("Content-Type")?e.Response.Headers.GetHeader("Content-Type"):"";
-            if(!PlatformCapture.IsJobResponseUrl(provider,e.Request.Uri)) return;
-            string httpFailure=PlatformCapture.FailureMessage(e.Response.StatusCode,"");
-            if(httpFailure!="") {PauseForFailure(httpFailure); return;}
-            if(e.Response.StatusCode!=200||!PlatformCapture.CanReadResponse(provider,e.Request.Uri,type)) return;
-            int generation=epoch; activeResponses++;
-            try
-            {
-                using var browserStream=await e.Response.GetContentAsync(); if(browserStream is null) return;
-                using var stream=browserStream.AsStreamForRead();
-                using var buffer=new MemoryStream(); var chunk=new byte[16384];
-                while(true) {int count=await stream.ReadAsync(chunk); if(count==0) break; if(buffer.Length+count>PlatformCapture.MaxPayloadBytes) return; await buffer.WriteAsync(chunk.AsMemory(0,count));}
-                if(!closed&&toggle.IsOn&&generation==epoch)
-                {
-                    string json=Encoding.UTF8.GetString(buffer.ToArray()),failure=PlatformCapture.FailureMessage(e.Response.StatusCode,json);
-                    if(failure!="") PauseForFailure(failure); else Add(PlatformCapture.ExtractJson(provider,e.Request.Uri,json));
-                }
-            }
-            catch(Exception) when(closed) { }
-            catch(Exception e2) {status.Text="部分职位响应暂未读取；可继续浏览或读取当前页面。"+e2.Message;}
+            if(!PlatformCapture.IsJobResponseUrl(provider,e.Request.Uri))return;
+            string httpFailure=PlatformCapture.FailureMessage(e.Response.StatusCode,"");if(httpFailure!=""){PauseForFailure(httpFailure);return;}
+            if(e.Response.StatusCode!=200||!PlatformCapture.CanReadResponse(provider,e.Request.Uri,type))return;
+            int generation=epoch;activeResponses++;
+            try {
+                using var browserStream=await e.Response.GetContentAsync();if(browserStream is null)return;
+                using var stream=browserStream.AsStreamForRead();using var buffer=new MemoryStream();var chunk=new byte[16384];
+                while(true){int count=await stream.ReadAsync(chunk);if(count==0)break;if(buffer.Length+count>PlatformCapture.MaxPayloadBytes)return;await buffer.WriteAsync(chunk.AsMemory(0,count));}
+                if(!closed&&!ending&&toggle.IsOn&&generation==epoch){string json=Encoding.UTF8.GetString(buffer.ToArray()),failure=PlatformCapture.FailureMessage(e.Response.StatusCode,json);if(failure!="")PauseForFailure(failure);else await Add(PlatformCapture.ExtractJson(provider,e.Request.Uri,json));}
+            }catch(Exception) when(closed) { }
+            catch(Exception ex){captureFailure="部分职位响应读取未完成："+ex.Message;UpdateStatus();}
             finally {activeResponses--;}
         }
-        list.SelectionChanged+=(_,_)=>UpdateStatus(); toggle.Toggled+=(_,_)=> {epoch++; if(toggle.IsOn) captureFailure=""; UpdateStatus();};
-        timer.Tick+=async (_,_)=> {if(toggle.IsOn) await ReadDom();};
-        dialog.Opened+=async (_,_)=>
-        {
-            if(initialized) return; initialized=true;
-            try
-            {
-                webEnvironment??=CreateWebEnvironment(); await web.EnsureCoreWebView2Async(await webEnvironment);
-                if(closed) return;
-                var core=web.CoreWebView2!; core.Settings.AreDevToolsEnabled=false;
-                core.Settings.IsZoomControlEnabled=false;
-                core.NavigationStarting+=(_,e)=> {if(!e.Uri.StartsWith("https://",StringComparison.OrdinalIgnoreCase)&&e.Uri!="about:blank") e.Cancel=true;};
-                core.NewWindowRequested+=(_,e)=> {e.Handled=true; if(e.Uri.StartsWith("https://",StringComparison.OrdinalIgnoreCase)) core.Navigate(e.Uri);};
-                core.NavigationCompleted+=async (_,_)=> {if(closed) return; address.Text=core.Source;await viewport.FitAsync(); if(!closed&&toggle.IsOn) await ReadDom();};
-                core.WebResourceResponseReceived+=ResponseReceived;
-                core.Navigate(start); timer.Start();
-            }
-            catch(Exception e) {status.Text="浏览器启动失败："+e.Message;}
+        toggle.Toggled+=async (_,_)=>{epoch++;if(toggle.IsOn)captureFailure="";UpdateStatus();if(toggle.IsOn)await ReadCurrent();};
+        timer.Tick+=async (_,_)=>{if(toggle.IsOn)await ReadCurrent();};
+        dialog.SecondaryButtonClick+=(_,_)=>discard=true;
+        dialog.Closing+=async (_,args)=>{
+            var deferral=args.GetDeferral();ending=true;timer.Stop();
+            try {await activeRead;await session.SaveAsync();if(session.Pending>0&&!discard){args.Cancel=true;ending=false;captureFailure="还有职位未保存，请重试，或选择放弃未保存的职位。";timer.Start();UpdateStatus();}}
+            finally {deferral.Complete();}
         };
-        List<Job> selected=[];
-        try {if(await dialog.ShowAsync()==ContentDialogResult.Primary) selected=list.SelectedItems.Cast<Job>().Take(50).ToList();}
-        finally {closed=true; epoch++; timer.Stop();viewport.Dispose(); if(web.CoreWebView2 is not null) web.CoreWebView2.WebResourceResponseReceived-=ResponseReceived; web.Close();}
-        if(selected.Count==0) return;
-        var review=Stack(12);
-        review.Children.Add(Text($"确认收藏 {selected.Count} 条职位。这里只保存职位数据，账号登录状态留在本机。",14));
-        foreach(var job in selected)
-        {
-            var row=Stack(4); row.Children.Add(Text(job.Title+" · "+job.Company,15,true)); row.Children.Add(Text(job.Location+"  "+job.Salary,12)); row.Children.Add(Text(job.Url,11));
-            if(job.Description!="") {var description=Text(job.Description,12); description.MaxLines=5; description.TextTrimming=TextTrimming.CharacterEllipsis; row.Children.Add(description);} else row.Children.Add(Text("当前只有职位摘要；收藏后可用“浏览并读取”补全详情。",12));
-            review.Children.Add(Card(row));
-        }
-        if(await new ContentDialog {XamlRoot=shell.XamlRoot,Title="核对并批量收藏",Content=new ScrollViewer {Content=review,MaxHeight=550},PrimaryButtonText="保存收藏",CloseButtonText="取消"}.ShowAsync()!=ContentDialogResult.Primary) return;
-        int saved=0;
-        try
-        {
-            var savedFavorites=await api.Get<List<Job>>("favorites");
-            var existing=savedFavorites.Select(j=>j.Id).ToHashSet();
-            var existingUrls=savedFavorites.Where(j=>PlatformCapture.IsDetailUrl(provider,j.Url)).Select(j=>PlatformCapture.Canonical(j.Url)).ToHashSet(StringComparer.Ordinal);
-            foreach(var job in selected)
-            {
-                var normalized=await api.Post<CapturePreview>("capture-preview",new {text=job.Url,visibleFields=new {title=job.Title,company=job.Company,location=job.Location,salary=job.Salary,description=job.Description,experience=job.Experience,publishedAt=job.PublishedAt}});
-                if(existing.Contains(normalized.Job.Id)||existingUrls.Contains(job.CanonicalUrl)) continue;
-                normalized.Job.InfoStatus=job.InfoStatus;
-                var result=await api.Post<CollectionResult<Job>>("favorites/collect",normalized.Job);
-                existing.Add(result.Record.Id); existingUrls.Add(job.CanonicalUrl); if(result.Created) saved++;
-            }
-        }
-        catch(Exception e) {throw new IOException($"已保存 {saved} 条，后续保存失败。已保存职位保留，可重试未保存部分："+e.Message,e);}
-        await Navigate("favorites"); Success("职位已收藏",$"新增 {saved} 条；已收藏的职位已跳过，原有备注和人工修改保留。");
+        dialog.Opened+=async (_,_)=>{
+            if(initialized)return;initialized=true;
+            try {
+                webEnvironment??=CreateWebEnvironment();await web.EnsureCoreWebView2Async(await webEnvironment);if(closed)return;
+                var core=web.CoreWebView2!;core.Settings.AreDevToolsEnabled=false;core.Settings.IsZoomControlEnabled=false;
+                core.NavigationStarting+=(_,e)=>{if(!e.Uri.StartsWith("https://",StringComparison.OrdinalIgnoreCase)&&e.Uri!="about:blank")e.Cancel=true;};
+                core.NewWindowRequested+=(_,e)=>{e.Handled=true;if(e.Uri.StartsWith("https://",StringComparison.OrdinalIgnoreCase))core.Navigate(e.Uri);};
+                core.NavigationCompleted+=async (_,_)=>{if(closed)return;address.Text=core.Source;await viewport.FitAsync();if(!closed&&toggle.IsOn)await ReadCurrent();};
+                core.WebResourceResponseReceived+=ResponseReceived;verificationSetup?.Invoke(core);core.Navigate(start);timer.Start();
+            }catch(Exception ex){captureFailure="浏览器启动失败："+ex.Message;UpdateStatus();}
+        };
+        UpdateStatus();ContentDialogResult choice;
+        try {choice=await dialog.ShowAsync();}
+        finally {closed=true;epoch++;timer.Stop();viewport.Dispose();if(web.CoreWebView2 is not null)web.CoreWebView2.WebResourceResponseReceived-=ResponseReceived;web.Close();}
+        if(choice==ContentDialogResult.Primary){favoriteQuery="";favoriteSource=name;await Navigate("favorites");}
+        if(session.Added+session.Existing>0)Success("采集职位已加入收藏",$"本次新增 {session.Added} 条；已有收藏 {session.Existing} 条，原有备注和内容保留。"+(session.Pending>0?$"已放弃 {session.Pending} 条未保存职位。":""));
     }
+
 }
