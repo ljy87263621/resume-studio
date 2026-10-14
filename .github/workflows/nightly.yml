@@ -31,16 +31,18 @@ jobs:
             Write-Output 'Source unchanged since successful Nightly; no new release.'
             exit 0
           }
-          $day=[DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(8)).ToString('yyyyMMdd')
+          $now=[DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(8))
+          $date=$now.ToString('yyyyMMdd')
+          $dayOfYear=$now.DayOfYear
           [xml]$project=Get-Content client-winui/ResumeStudio.csproj
           $base=[string]$project.Project.PropertyGroup.Version
           $short=$sha.Substring(0,8)
-          $parts=$base.Split('.');$day=[DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(8)).DayOfYear
-          $androidCode=[int]$parts[0]*100000000+[int]$parts[1]*1000000+[int]$parts[2]*100000+$day
-          $androidVersion="$base-nightly.$([DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(8)).ToString('yyyyMMdd')).$short"
+          $parts=$base.Split('.')
+          $androidCode=[int]$parts[0]*100000000+[int]$parts[1]*1000000+[int]$parts[2]*100000+$dayOfYear
+          $androidVersion="$base-nightly.$date.$short"
           Add-Content $env:GITHUB_OUTPUT 'changed=true'
-          Add-Content $env:GITHUB_OUTPUT "tag=nightly-$day-$short"
-          Add-Content $env:GITHUB_OUTPUT "label=$base-nightly.$day.$short"
+          Add-Content $env:GITHUB_OUTPUT "tag=nightly-$date-$short"
+          Add-Content $env:GITHUB_OUTPUT "label=$base-nightly.$date.$short"
           Add-Content $env:GITHUB_OUTPUT "sha=$sha"
           Add-Content $env:GITHUB_OUTPUT "android_version=$androidVersion"
           Add-Content $env:GITHUB_OUTPUT "android_code=$androidCode"
