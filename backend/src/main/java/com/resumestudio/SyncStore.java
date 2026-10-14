@@ -50,8 +50,13 @@ final class SyncStore {
         if(Json.write(result).getBytes(StandardCharsets.UTF_8).length>MAX_BYTES) throw new IOException("同步资料超过 64 MiB，请减少历史或照片后重试");
         return result;
     }
+    static Map<String,Object> extendedSnapshot(Path root,Store store) throws IOException {
+        var result=snapshot(root,store);var decks=new ArrayList<>(store.list("interviews"));decks.sort(Comparator.comparing(d->Json.str(d,"id")));result.put("interviews",decks);
+        if(Json.write(result).getBytes(StandardCharsets.UTF_8).length>MAX_BYTES)throw new IOException("同步资料超过 64 MiB");return result;
+    }
     static void validate(Map<String,Object> snapshot) {
-        if(!snapshot.keySet().equals(Set.of("resumes","favorites","applications","sources","schedule","settings","history"))) throw new IllegalArgumentException("同步资料集合不完整或协议不兼容");
+        var keys=new HashSet<>(Set.of("resumes","favorites","applications","sources","schedule","settings","history"));if(snapshot.containsKey("interviews"))keys.add("interviews");
+        if(!snapshot.keySet().equals(keys)) throw new IllegalArgumentException("同步资料集合不完整或协议不兼容");
         if(Json.write(snapshot).getBytes(StandardCharsets.UTF_8).length>MAX_BYTES) throw new IllegalArgumentException("同步资料超过 64 MiB");
         Set<String> resumes=new HashSet<>();
         for(String kind:KINDS) {
@@ -89,6 +94,13 @@ final class SyncStore {
             try { Instant.parse(Json.str(entry,"createdAt")); } catch(Exception ex) { throw new IllegalArgumentException("同步历史时间无效"); }
             var resume=Json.object(entry.get("resume")); if(!resumeId.equals(Json.str(resume,"id"))) throw new IllegalArgumentException("同步历史简历标识无效"); validateTypes("resumes",resume); Server.validate("resumes",resume);
             if(Json.write(entry).getBytes(StandardCharsets.UTF_8).length>2_100_000) throw new IllegalArgumentException("同步历史过大");
+        }
+        if(snapshot.containsKey("interviews")){
+            var decks=Json.array(snapshot.get("interviews"));if(decks.size()>5000)throw new IllegalArgumentException("同步题库过多");Set<String> deckIds=new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+            for(Object value:decks){var deck=Json.object(value);if(!deckIds.add(id(deck.get("id"))))throw new IllegalArgumentException("同步题库标识重复");textFields(deck,"id,title,sourceName,updatedAt");InterviewStudy.validate(deck);
+                for(Object question:Json.array(deck.get("questions")))textFields(Json.object(question),"id,title,answer,status,reviewedAt");
+                if(Json.write(deck).getBytes(StandardCharsets.UTF_8).length>4_000_000)throw new IllegalArgumentException("同步题库超过 4 MB");
+            }
         }
     }
     private static void textFields(Map<String,Object> doc,String fields) {
@@ -134,7 +146,8 @@ final class SyncStore {
         catch(AtomicMoveNotSupportedException ex) { throw new IOException("数据磁盘不支持原子替换，同步已停止",ex); }
     }
     private static void apply(Path root,Map<String,Object> snapshot) throws IOException {
-        for(String kind:KINDS) {
+        var kinds=new ArrayList<>(KINDS);if(snapshot.containsKey("interviews"))kinds.add("interviews");
+        for(String kind:kinds) {
             // Use the filesystem's Path equality, including Windows case-insensitive names.
             Path dir=root.resolve(kind); safe(root,dir); Files.createDirectories(dir); Set<Path> names=new HashSet<>();
             for(Object value:Json.array(snapshot.get(kind))) {
@@ -161,13 +174,13 @@ final class SyncStore {
         var previous=Json.object(Json.parse(Files.readString(journal))); validate(previous); apply(root,previous); Files.delete(journal);
     }
     static Map<String,Object> replace(Path root,Store store,String expectedHash,Map<String,Object> incoming) throws IOException {
-        validate(incoming); var previous=snapshot(root,store);
+        validate(incoming); boolean extended=incoming.containsKey("interviews");var previous=extended?extendedSnapshot(root,store):snapshot(root,store);
         if(!hash(previous).equals(expectedHash)) throw new ConcurrentModificationException("本机资料已改变，请重新检查同步");
         String backupName=Instant.now().toString().replace(':','-')+"-"+UUID.randomUUID()+".json";
         atomic(root,root.resolve("sync-backups").resolve(backupName),Json.write(previous).getBytes(StandardCharsets.UTF_8));
         Path journal=root.resolve("sync-recovery.json"); atomic(root,journal,Json.write(previous).getBytes(StandardCharsets.UTF_8));
         try { apply(root,incoming); Files.delete(journal); }
         catch(IOException|RuntimeException ex) { try { recover(root); } catch(Exception rollback) { ex.addSuppressed(rollback); } throw ex; }
-        var current=snapshot(root,store); return Map.of("snapshot",current,"hash",hash(current),"backup",backupName);
+        var current=extended?extendedSnapshot(root,store):snapshot(root,store); return Map.of("snapshot",current,"hash",hash(current),"backup",backupName);
     }
 }

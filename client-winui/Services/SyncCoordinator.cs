@@ -27,10 +27,11 @@ public sealed class SyncCoordinator(ISyncLocalStore local,ISyncRemoteStore remot
     {
         var current=await local.ReadAsync(cancellationToken); var fetched=await remote.ReadAsync(cancellationToken); var baseline=ReadBaseline();
         if(fetched is null) return new(baseline is null?SyncAction.Push:SyncAction.Conflict,current,null,null,target);
-        var envelope=SyncProtocol.Parse(fetched.Bytes); var data=envelope["data"]!.AsObject();
+        var envelope=SyncProtocol.Parse(fetched.Bytes); var data=SyncProtocol.Snapshot(envelope,current.Snapshot);
         // Backend's schema and document validation runs even before deciding to upload local data over remote.
         await local.ValidateAsync(data,cancellationToken);
         var action=SyncDecision.Choose(SyncProtocol.Hash(current.Snapshot),SyncProtocol.Hash(data),baseline?.DataHash);
+        if(action==SyncAction.Unchanged&&current.Snapshot.ContainsKey("interviews")&&envelope["extensions"]?["interviewStudy"] is null)action=SyncAction.Push;
         return new(action,current,envelope,fetched.ETag,target);
     }
     public async Task<SyncAction> ExecuteAsync(SyncPlan plan,SyncAction? resolution=null,CancellationToken cancellationToken=default)
@@ -48,13 +49,13 @@ public sealed class SyncCoordinator(ISyncLocalStore local,ISyncRemoteStore remot
         if(action==SyncAction.Push)
         {
             var envelope=plan.RemoteEnvelope is null?SyncProtocol.Create(current.Snapshot,deviceId):(JsonObject)plan.RemoteEnvelope.DeepClone();
-            envelope["data"]=current.Snapshot.DeepClone(); envelope["deviceId"]=deviceId; envelope["snapshotId"]=Guid.NewGuid().ToString("N"); envelope["createdAt"]=DateTimeOffset.UtcNow.ToString("O");
+            SyncProtocol.WriteSnapshot(envelope,current.Snapshot); envelope["deviceId"]=deviceId; envelope["snapshotId"]=Guid.NewGuid().ToString("N"); envelope["createdAt"]=DateTimeOffset.UtcNow.ToString("O");
             var bytes=Encoding.UTF8.GetBytes(envelope.ToJsonString()); etag=await remote.WriteAsync(bytes,plan.ETag,cancellationToken); dataHash=SyncProtocol.Hash(current.Snapshot);
         }
         else if(action==SyncAction.Pull)
         {
             if(plan.RemoteEnvelope is null) throw new IOException("云端同步包已不存在，无法下载。可明确选择重新上传本机资料。");
-            var data=plan.RemoteEnvelope["data"]!.AsObject(); var result=await local.ApplyAsync(plan.Local.Hash,data,cancellationToken); dataHash=SyncProtocol.Hash(result.Snapshot);
+            var data=SyncProtocol.Snapshot(plan.RemoteEnvelope,plan.Local.Snapshot); var result=await local.ApplyAsync(plan.Local.Hash,data,cancellationToken); dataHash=SyncProtocol.Hash(result.Snapshot);
             if(dataHash!=SyncProtocol.Hash(data)) throw new IOException("导入结果不一致，本次不建立同步基线，请检查本机备份。");
         }
         else dataHash=SyncProtocol.Hash(current.Snapshot);

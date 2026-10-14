@@ -38,7 +38,7 @@ public sealed partial class MainWindow
         SyncSettings settings;
         try {settings=SyncSettings.Load(api.DataDirectory);} catch(IOException ex) {panel.Children.Add(Card(Text(ex.Message,13)));return;}
         var content=Stack(12); content.Children.Add(Text("跨端同步 · WebDAV",20,true));
-        content.Children.Add(Text("手动同步简历、内嵌照片、历史版本、职位收藏、投递记录、日程、公司来源和非敏感设置。API Key、网站 Cookie、登录会话与同步凭据只留在本机。",13));
+        content.Children.Add(Text("手动同步简历、内嵌照片、历史版本、职位收藏、投递记录、日程、公司来源、面试题库与掌握进度和非敏感设置。电脑和安卓填写相同实际同步目录。API Key、网站 Cookie、登录会话与同步凭据只留在本机。",13));
         var address=new TextBox {Header="WebDAV 地址",PlaceholderText="https://dav.jianguoyun.com/dav/",Text=settings.DirectoryUrl};
         content.Children.Add(Text("填写服务提供的 WebDAV 入口或已有文件夹地址，首次同步自动创建并使用其下的 ResumeStudio 文件夹；已有实际同步目录继续使用。旧坚果云 /dav/ 入口会改为专用目录，目录变化时需重新填写密码。坚果云可直接填 https://dav.jianguoyun.com/dav/，用户名用坚果云账号，密码用第三方应用密码。",12));
         var username=new TextBox {Header="用户名",Text=settings.Username};
@@ -74,7 +74,7 @@ public sealed partial class MainWindow
                 if(closeRequested) return;
                 if(plan.Action==SyncAction.Conflict)
                 {
-                    var localCount=SyncCount(plan.Local.Snapshot); var remoteCount=plan.RemoteEnvelope is null?"云端同步包不存在":SyncCount(plan.RemoteEnvelope["data"]!.AsObject());
+                    var localCount=SyncCount(plan.Local.Snapshot); var remoteCount=plan.RemoteEnvelope is null?"云端同步包不存在":SyncCount(SyncProtocol.Snapshot(plan.RemoteEnvelope,plan.Local.Snapshot));
                     var dialog=new ContentDialog
                     {
                         XamlRoot=shell.XamlRoot,Title="同步需要选择保留哪一端",CloseButtonText="取消",PrimaryButtonText="用本机替换云端",
@@ -96,11 +96,12 @@ public sealed partial class MainWindow
                 if(dav.UsesContentHash) message+=" 当前使用内容校验，无法完全阻止同时上传造成的覆盖；请同一时间只在一台设备同步。";
                 status.Text=message;Success("同步完成",message);
             }
+            catch(Exception ex) {status.Text="同步未完成："+ex.Message;throw;}
             finally {foreach(var (control,enabled) in blockedInputs) control.IsEnabled=enabled;shell.IsHitTestVisible=true;syncBusy=false;syncConflictDialog=null;if(remindersWereRunning&&!closeRequested) reminderTimer.Start();activeSync?.TrySetResult();activeSync=null;}
         },true));
         actions.Children.Add(Button("清除本机同步密码",async ()=> {settings.ProtectedPassword="";await settings.SaveAsync(api.DataDirectory,"");password.Password="";status.Text="已清除本机保存密码。";}));
         content.Children.Add(actions); content.Children.Add(Text("双方仅一端变化时按基线自动选择方向；双方变化时由你选择。支持强 ETag 时使用条件写入；缺少强 ETag 时使用内容校验，请同一时间只在一台设备同步。同步包以明文保存于你选择的 WebDAV，包含个人简历信息；请使用个人目录。每次下载替换前保留本机整包备份，备份需自行管理。",12));
         panel.Children.Add(Card(content));
     }
-    private static string SyncCount(System.Text.Json.Nodes.JsonObject snapshot)=>$"{snapshot["resumes"]!.AsArray().Count} 份简历 / {snapshot["favorites"]!.AsArray().Count} 个收藏 / {snapshot["applications"]!.AsArray().Count} 条投递 / {snapshot["schedule"]!.AsArray().Count} 条日程";
+    private static string SyncCount(System.Text.Json.Nodes.JsonObject snapshot)=>$"{snapshot["resumes"]!.AsArray().Count} 份简历 / {snapshot["favorites"]!.AsArray().Count} 个收藏 / {snapshot["applications"]!.AsArray().Count} 条投递 / {snapshot["schedule"]!.AsArray().Count} 条日程 / {snapshot["interviews"]?.AsArray().Count??0} 个题库";
 }

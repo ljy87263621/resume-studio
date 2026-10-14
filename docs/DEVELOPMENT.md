@@ -6,6 +6,7 @@
 | --- | --- |
 | `client-winui/` | WinUI 3 客户端；`MainWindow.*` 按页面／功能拆分 |
 | `client-winui/Services/` | 排版、示例预览、AI、日程、更新和本地服务调用 |
+| `client-android/` | 安卓离线客户端、触屏界面、Keystore、PDF/文档导入与 WebDAV；业务代码由原 Java 源构建生成 |
 | `backend/src/main/java/com/resumestudio/` | Java 21 本地 HTTP 服务、持久化、模板和职位适配 |
 | `installer/` | 中文 Windows 安装器 |
 | `scripts/`、`tests/` | 构建、打包与验证 |

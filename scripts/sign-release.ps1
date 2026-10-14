@@ -1,8 +1,14 @@
-param([Parameter(Mandatory)][string]$PackagePath,[string]$SourceDirectory='release/ResumeStudio')
+param([Parameter(Mandatory)][string]$PackagePath,[string]$SourceDirectory='release/ResumeStudio',[string]$AndroidPackagePath='',[string]$AndroidVersionName='',[int]$AndroidVersionCode=0)
 $ErrorActionPreference='Stop'
 if(!$env:RESUMESTUDIO_UPDATE_SIGNING_KEY){throw 'Update signing key is not configured'}
 $info=Get-Content (Join-Path $SourceDirectory 'Assets\ReleaseIdentity.json') -Raw | ConvertFrom-Json
 $metadata=[ordered]@{channel=$info.channel;version=$info.version;commit=$info.commit;builtAt=$info.builtAt;tag=$info.tag;packageName=[IO.Path]::GetFileName($PackagePath);sha256=(Get-FileHash -LiteralPath $PackagePath -Algorithm SHA256).Hash.ToLowerInvariant();packageSize=(Get-Item -LiteralPath $PackagePath).Length}
+if($AndroidPackagePath){
+    if(!(Test-Path -LiteralPath $AndroidPackagePath) -or !$AndroidVersionName -or $AndroidVersionCode -le 0){throw 'Android APK metadata is incomplete'}
+    $androidName=[IO.Path]::GetFileName($AndroidPackagePath);$androidExpected=if($info.channel -eq 'stable'){'ResumeStudio-Android-v'+$info.version+'.apk'}else{'ResumeStudio-Android-v'+$info.version+'-nightly.'+$info.tag.Substring(8).Replace('-','.')+'.apk'}
+    if($androidName -ne $androidExpected){throw 'Android APK name and channel version disagree'}
+    $metadata['androidPackageName']=$androidName;$metadata['androidSha256']=(Get-FileHash -LiteralPath $AndroidPackagePath -Algorithm SHA256).Hash.ToLowerInvariant();$metadata['androidPackageSize']=(Get-Item -LiteralPath $AndroidPackagePath).Length;$metadata['androidVersionName']=$AndroidVersionName;$metadata['androidVersionCode']=$AndroidVersionCode
+}
 $notesRoot=Join-Path (Split-Path $PSScriptRoot -Parent) '.github/release-notes'
 $notes=@(Get-ChildItem -LiteralPath $notesRoot -Filter 'v*.md'|Where-Object {$_.BaseName -match '^v\d+\.\d+\.\d+$' -and [version]$_.BaseName.Substring(1) -le [version]$info.version}|Sort-Object {[version]$_.BaseName.Substring(1)} -Descending|ForEach-Object {
     [ordered]@{version=$_.BaseName.Substring(1);body=[IO.File]::ReadAllText($_.FullName).Trim()}

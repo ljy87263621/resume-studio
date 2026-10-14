@@ -43,3 +43,6 @@ Setup 使用 Inno Setup 6.7.3 构建，来源为 [JRSoftware 官方发行版](ht
 简体中文安装器文本保留 [Inno Setup 官方仓库的 ChineseSimplified.isl](https://github.com/jrsoftware/issrc/blob/main/Files/Languages/ChineseSimplified.isl) 原内容与译者署名，固定随源码分发。文件 SHA-256 为 e0b0b350e2245f3c5e65586dfe43d574f6e7f06f2261149aba284954b3fc9a8d。
 
 安装包包含微软官方 WebView2 Evergreen Bootstrapper，仅在所需运行时缺失时安装。来源与分发方式见 [Microsoft WebView2 分发说明](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)，构建时验证 Microsoft Corporation 发布者签名。WebView2 的许可独立于本项目 MIT 许可证。
+# Android PDFBox
+
+Android document import uses [PdfBox-Android](https://github.com/TomRoush/PdfBox-Android) 2.0.27.0, an Android port of Apache PDFBox / FontBox, under Apache License 2.0. Copyright notices and license resources from the original AAR/JAR are retained in the APK. The dependency is downloaded from Maven Central with a pinned SHA-256 during Android build; it is not part of the Windows runtime.

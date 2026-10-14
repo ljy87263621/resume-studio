@@ -11,11 +11,31 @@ public static class SyncProtocol
 {
     public const int MaxBytes=64*1024*1024;
     public static readonly string[] Collections=["resumes","favorites","applications","sources","schedule","history"];
-    public static JsonObject Create(JsonObject snapshot,string deviceId) => new()
+    // v1 core data stays wire compatible. Updated clients carry decks in a named extension.
+    public static JsonObject WireData(JsonObject snapshot) {var data=(JsonObject)snapshot.DeepClone();data.Remove("interviews");return data;}
+    public static JsonObject Snapshot(JsonObject envelope,JsonObject local)
     {
+        var data=(JsonObject)envelope["data"]!.DeepClone();
+        if(local.ContainsKey("interviews")) data["interviews"]=(envelope["extensions"]?["interviewStudy"]?["decks"]??local["interviews"])!.DeepClone();
+        return data;
+    }
+    public static void WriteSnapshot(JsonObject envelope,JsonObject snapshot)
+    {
+        envelope["data"]=WireData(snapshot);
+        if(snapshot["interviews"] is JsonArray decks)
+        {
+            var extensions=envelope["extensions"]!.AsObject();var interview=extensions["interviewStudy"] as JsonObject??new JsonObject();
+            if(interview.Parent is null)extensions["interviewStudy"]=interview;
+            interview["version"]=1;interview["decks"]=decks.DeepClone();
+        }
+    }
+    public static JsonObject Create(JsonObject snapshot,string deviceId)
+    {
+        var result=new JsonObject {
         ["protocol"]="resume-studio-sync", ["schemaVersion"]=1, ["snapshotId"]=Guid.NewGuid().ToString("N"),
-        ["createdAt"]=DateTimeOffset.UtcNow.ToString("O"), ["deviceId"]=deviceId, ["data"]=snapshot.DeepClone(), ["extensions"]=new JsonObject()
-    };
+        ["createdAt"]=DateTimeOffset.UtcNow.ToString("O"), ["deviceId"]=deviceId, ["extensions"]=new JsonObject()
+        };WriteSnapshot(result,snapshot);return result;
+    }
     public static JsonObject Parse(byte[] bytes)
     {
         if(bytes.Length>MaxBytes) throw new IOException("同步包超过 64 MiB。");
@@ -27,6 +47,7 @@ public static class SyncProtocol
             foreach(string key in new[] {"snapshotId","deviceId"}) if(root[key]?.GetValue<string>() is not {Length:>0 and <=100}) throw new IOException("同步包标识无效。");
             if(!DateTimeOffset.TryParse(root["createdAt"]?.GetValue<string>(),CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind,out _)) throw new IOException("同步包时间无效。");
             if(root["extensions"] is not JsonObject) throw new IOException("同步扩展格式无效。");
+            if(root["extensions"]!["interviewStudy"] is JsonNode study && (study is not JsonObject||study["version"]?.GetValue<int>()!=1||study["decks"] is not JsonArray))throw new IOException("面试题同步扩展版本或格式无效。");
             var data=root["data"]!.AsObject();
             if(data.Count!=Collections.Length+1||Collections.Any(key=>data[key] is not JsonArray)||data["settings"] is not JsonObject) throw new IOException("同步资料集合不完整。");
             return root;

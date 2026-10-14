@@ -1,5 +1,7 @@
 # 拾简同步协议 v1
 
+0.9.3 新增可选 `extensions.interviewStudy = {version:1,decks:[...]}`，同步面试题库与掌握进度，不改变核心 `data` 的七个字段。新版内部扩展快照另有 `interviews` 数组，传输前拆入该扩展；原 `/api/sync/snapshot` 保持兼容，新增 `/api/sync/extended-snapshot` 给双端新版使用。扩展题库的 id 按 Windows 大小写不敏感判重，最多 5000 个题库、单库 4 MB，题目继续经过 InterviewStudy.validate 校验。扩展存在时，题库参与基线、CAS、下载前备份和事务恢复。旧包没有扩展时保留本机题库；旧客户端可保留扩展但不编辑，因此题库双向同步要求两端均升级。Android 凭据由 Keystore AES-GCM 保护，详情见[安卓版说明](ANDROID.md)。
+
 当前实现为用户手动触发的 WebDAV 整包同步：设置页保存配置后点击“检查并同步”。同步 JSON 协议版本 `schemaVersion: 1` 与应用发行版本独立；升级应用不必改变协议，改变数据集合或不兼容语义才需要协议迁移。机器可读结构见 [JSON Schema](resume-studio-sync.schema.json)，采用 draft 2020-12。
 
 ## 文件与数据范围
@@ -72,3 +74,7 @@ Task<string> WriteAsync(byte[] bytes, string? expectedETag, CancellationToken ca
 ## 验证边界
 
 `scripts/test-features.ps1` 覆盖 Navigation.Tests、PlatformCapture.Tests、Node.js 浏览提取脚本 fixture、Sync.Tests 及 Java SyncStoreTest。同步测试既有内存 provider 单元检查，也有两套真实 Java 本机存储与实际 loopback HTTP DAV 集成，覆盖上传/下载、五类集合/历史/照片/投递快照/时间线、密钥排除、基线后更新和删除、冲突前备份、本机及云端旧计划拒绝、扩展保留；模型往返测试覆盖正常编辑中未知字段及大小写区别，协议测试覆盖数字精度和非法输入。不连接真实 WebDAV 服务。已构建 Portable 并完成 32 项原生双界面导航检查；公网探测读取了 BOSS 页面壳和牛客公开 HTML。当前仍未进行用户本人网站登录、真实 WebDAV 服务、跨机器 Windows 凭据或无开发环境机器验收，不能把本机模拟通过描述为线上登录后全流程已验证。
+
+### 无 ETag 的条件覆盖兼容
+
+部分 WebDAV 服务对存在的文件仍拒绝 If-Match: * 并返回 412。仅在使用内容指纹的兼容模式下，客户端会再次读取并核对原始字节的 SHA-256；内容未变时重试一次，若出现强 ETag 则继续使用它，否则使用内容校验 PUT。实际变化或删除立即拒绝；首次创建和强 ETag 模式的失败不会降级。这种模式存在最后检查到写入之间的并发窗口，同一时间只在一台设备同步。两端采用相同版本令牌规则，云端和本机都验证成功后才更新基线。

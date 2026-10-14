@@ -24,10 +24,11 @@ public final class Server {
         try {
             if(!token.equals(e.getRequestHeaders().getFirst("X-Resume-Token"))) { send(e,401,Map.of("error","Unauthorized")); return; }
             String path=e.getRequestURI().getPath().substring(5), method=e.getRequestMethod();
-            if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.8.5","java",System.getProperty("java.version"))); return; }
+            if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.9.3","java",System.getProperty("java.version"))); return; }
             if(path.equals("templates")&&method.equals("GET")) { send(e,200,Templates.all()); return; }
             if(path.equals("job-sources")&&method.equals("GET")) { send(e,200,jobs.sources()); return; }
             if(path.equals("sync/snapshot")&&method.equals("GET")) { send(e,200,store.syncSnapshot()); return; }
+            if(path.equals("sync/extended-snapshot")&&method.equals("GET")) { send(e,200,store.syncExtendedSnapshot()); return; }
             if(path.equals("sync/validate")&&method.equals("POST")||path.equals("sync/import")&&method.equals("POST")) {
                 byte[] bytes=e.getRequestBody().readNBytes(SyncStore.MAX_BYTES+1);
                 if(bytes.length>SyncStore.MAX_BYTES) { send(e,413,Map.of("error","同步资料超过 64 MiB")); return; }

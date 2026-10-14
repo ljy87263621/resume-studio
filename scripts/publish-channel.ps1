@@ -22,6 +22,11 @@ foreach($name in @($info.packageName,'release-info.json','release-info.sig')){
 }
 $package=@($published.assets|Where-Object {$_.name -eq $info.packageName})[0]
 if($package.size -ne $info.packageSize){throw 'Published package size does not match the signed index'}
+if($info.PSObject.Properties.Name -contains 'androidPackageName'){
+    if($info.androidPackageName -notmatch '^ResumeStudio-Android-v\d+\.\d+\.\d+(?:-nightly\.\d{8}\.[0-9a-f]{8})?\.apk$' -or $info.androidSha256 -notmatch '^[0-9a-f]{64}$' -or $info.androidPackageSize -le 0 -or $info.androidPackageSize -gt 150000000 -or $info.androidVersionCode -le 0 -or !$info.androidVersionName){throw 'Signed Android APK metadata is invalid'}
+    $apk=@($published.assets|Where-Object {$_.name -eq $info.androidPackageName})
+    if($apk.Count -ne 1 -or $apk[0].size -ne $info.androidPackageSize){throw 'Published Android APK does not match signed metadata'}
+}
 if($info.PSObject.Properties.Name -contains 'changeLogName'){
     $publishedLog=@($published.assets|Where-Object {$_.name -eq $info.changeLogName})
     if($publishedLog.Count -ne 1 -or $publishedLog[0].size -ne $info.changeLogSize){throw 'Signed changelog has not been uploaded completely'}
