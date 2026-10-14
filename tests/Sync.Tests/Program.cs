@@ -8,6 +8,9 @@ static async Task Throws(Func<Task> action,string label) { try { await action();
 static JsonObject Data(string title="") => JsonNode.Parse("{\"resumes\":[],\"favorites\":[],\"applications\":[],\"sources\":[],\"schedule\":[],\"history\":[],\"settings\":{}}")!.AsObject().WithTitle(title);
 var local=Data("one"); var remote=Data("two");
 ModelRoundTrip.Verify();
+await DirectoryCoverage.RunAsync();
+await AutoCreateCoverage.RunAsync();
+await ContentRevisionCoverage.RunAsync();
 Check(SyncDecision.Choose(SyncProtocol.Hash(local),SyncProtocol.Hash(remote),null)==SyncAction.Conflict,"initial conflict");
 Check(SyncDecision.Choose(SyncProtocol.Hash(remote),SyncProtocol.Hash(remote),null)==SyncAction.Unchanged,"initial equal");
 Check(SyncDecision.Choose(SyncProtocol.Hash(local),SyncProtocol.Hash(remote),SyncProtocol.Hash(local))==SyncAction.Pull,"remote changed");
@@ -35,9 +38,10 @@ var server=Task.Run(async ()=> { while(!stop.IsCancellationRequested) {
     HttpListenerContext ctx; try {ctx=await listener.GetContextAsync();} catch(HttpListenerException) { break; } catch(ObjectDisposedException) { break; }
     Interlocked.Increment(ref count);
     if(mode=="redirect") {ctx.Response.StatusCode=302;ctx.Response.RedirectLocation=$"http://127.0.0.1:{port}/leak";ctx.Response.Close();continue;}
-    if(ctx.Request.HttpMethod=="GET") { if(stored is null) ctx.Response.StatusCode=404; else {ctx.Response.StatusCode=200;if(mode!="no-etag") ctx.Response.Headers["ETag"]=etag;await ctx.Response.OutputStream.WriteAsync(stored);} }
+    if(ctx.Request.HttpMethod=="PROPFIND") {ctx.Response.StatusCode=207;ctx.Response.ContentType="application/xml";await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes("<d:multistatus xmlns:d=\"DAV:\"><d:response><d:href>/dav/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>"));}
+    else if(ctx.Request.HttpMethod=="GET") { if(stored is null) ctx.Response.StatusCode=404; else {ctx.Response.StatusCode=200;if(mode!="no-etag") ctx.Response.Headers["ETag"]=etag;await ctx.Response.OutputStream.WriteAsync(stored);} }
     else { sawCreate|=ctx.Request.Headers["If-None-Match"]=="*"; sawReplace|=ctx.Request.Headers["If-Match"]==etag;
-        if(mode=="conflict"||(ctx.Request.Headers["If-None-Match"]=="*"&&stored is not null)||(ctx.Request.Headers["If-Match"] is string condition&&condition!=etag)) ctx.Response.StatusCode=412; else {using var buffer=new MemoryStream();await ctx.Request.InputStream.CopyToAsync(buffer);stored=buffer.ToArray();etag="\""+Interlocked.Increment(ref writeVersion)+"\"";ctx.Response.Headers["ETag"]=etag;ctx.Response.StatusCode=201;} }
+        if(mode=="conflict"||(ctx.Request.Headers["If-None-Match"]=="*"&&stored is not null)||(ctx.Request.Headers["If-Match"] is string condition&&(condition=="*"?stored is null:condition!=etag))) ctx.Response.StatusCode=412; else {using var buffer=new MemoryStream();await ctx.Request.InputStream.CopyToAsync(buffer);stored=buffer.ToArray();etag="\""+Interlocked.Increment(ref writeVersion)+"\"";ctx.Response.Headers["ETag"]=etag;ctx.Response.StatusCode=201;} }
     ctx.Response.Close();
 } });
 using var dav=new SyncWebDav(SyncWebDav.Address($"http://127.0.0.1:{port}/dav/"),"user","password");
@@ -46,10 +50,10 @@ var bytes=Encoding.UTF8.GetBytes(envelope.ToJsonString()); await dav.WriteAsync(
 var fetched=await dav.ReadAsync(default); Check(fetched is not null&&fetched.ETag=="\"2\"","strong ETag read");
 await dav.WriteAsync(bytes,fetched!.ETag,default); Check(sawReplace,"replace condition");
 mode="conflict"; await Throws(()=>dav.WriteAsync(bytes,fetched.ETag,default),"precondition failure");
-mode="no-etag"; await Throws(()=>dav.ReadAsync(default),"no etag refused");
+mode="no-etag";Check((await dav.ReadAsync(default))!.ETag.StartsWith("sha256:",StringComparison.Ordinal),"no ETag uses content revision");
 mode="redirect"; int previous=count; await Throws(()=>dav.ReadAsync(default),"redirect refused"); Check(count==previous+1,"redirect not followed");
 mode="normal";stored=null;
-try { await BackendIntegration.RunAsync(dav); }
+try { await BackendIntegration.RunAsync(dav);mode="no-etag";stored=null;await BackendIntegration.RunAsync(dav); }
 finally { stop.Cancel(); listener.Stop(); await server; }
 await TimeoutCoverage.RunAsync();
 Console.WriteLine("PASS Sync.Tests: conflict decisions, protocol extensions/version/duplicates, canonical hash, actual HTTP conditional PUT/redirect/no-ETag");
