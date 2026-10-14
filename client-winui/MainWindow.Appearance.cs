@@ -179,7 +179,7 @@ public sealed partial class MainWindow
         var programSize=Services.StorageMaintenance.DirectoryBytes(AppContext.BaseDirectory);long program=programSize.Disk,logical=programSize.Logical,oldPrograms=0;
         foreach(var directory in Directory.GetDirectories(Path.GetDirectoryName(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))!,".resumestudio-backup-*"))
             oldPrograms+=Services.StorageMaintenance.DirectoryBytes(directory).Disk;
-        return $"程序磁盘占用：{Size(program)}（逻辑大小 {Size(logical)}）\n更新临时缓存：{Size(updates)}  ·  旧程序备份：{Size(oldPrograms)}\n简历与求职记录：{Size(records)}  ·  历史与文档备份：{Size(backups)}\n预览缓存：{Size(cache)}  ·  日志：{Size(logs)}  ·  设置与其他：{Size(other)}\n合计：{Size(program+oldPrograms+updates+records+backups+cache+logs+other)}\n个人数据目录：{root}";
+        return $"程序磁盘占用：{Size(program)}（逻辑大小 {Size(logical)}）\n更新临时缓存：{Size(updates)}  ·  旧程序备份：{Size(oldPrograms)}\n简历与求职记录：{Size(records)}  ·  历史与文档备份：{Size(backups)}\n浏览器数据（含登录状态）：{Size(cache)}  ·  日志：{Size(logs)}  ·  设置与其他：{Size(other)}\n合计：{Size(program+oldPrograms+updates+records+backups+cache+logs+other)}\n浏览结束后自动维护超过 64 MB 的 HTTP 磁盘缓存，保留登录状态。\n个人数据目录：{root}";
     }
     private async Task ClearPreviewDiskCache()
     {

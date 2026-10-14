@@ -37,8 +37,11 @@ Windows + PowerShell 7 + .NET 8 SDK + JDK 21。设置 `JAVA_HOME`；脚本优先
 | `--feature-test`／`--iteration-test` | 既有原生功能与界面回归 |
 | `--capture-layout-test` | 窗口布局、缩放点击、当前详情单条收藏、正文读取、推荐排除、补全去重与返回收藏（本地网页夹具＋真实本地存储） |
 | `--favorites-editor-test` | 原生收藏多页／筛选／新增删除，以及编辑后切模板中心、重建和关闭预览 |
+| `--lightweight-test` | 精简后的真实 EXE：旧资料扩展字段／数字精度、编辑、PDF、文件选择器、缓存清理保留 Cookie |
 
 原生测试可用 `RESUMESTUDIO_TEST_DATA`／`RESUMESTUDIO_TEST_OUTPUT` 指定隔离目录。文件选择器、实际鼠标拖动、外站登录与投递仍需人工验收。自动编译成功不等于完整人工验收。
+
+Release 使用 `dotnet publish -p:LightweightPublish=true` 部分裁剪，并保留整个应用、JSON、WinUI／WinRT／WebView 交互程序集。JSON 反射与 COM 显式保留，IL2026 诊断不隐藏；新增反射类型或原生交互需在真实精简 EXE 上回归，不能以普通构建代替。构建补齐 XBF／PRI，打包前 `test-lightweight.ps1` 验证资源、原字体／预览、运行时和 150 MiB 预算。Debug 仍使用普通构建。
 
 ## 本地服务与数据
 

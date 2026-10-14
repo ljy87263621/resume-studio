@@ -82,6 +82,6 @@ public sealed partial class MainWindow
                 catch(Exception e) { status.Text="读取未完成："+e.Message; }
             }
         }
-        finally { web.Close(); }
+        finally {if(!VerificationSession&&web.CoreWebView2 is not null)await MaintainBrowserDiskCache(web.CoreWebView2);web.Close();}
     }
 }

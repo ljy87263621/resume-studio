@@ -25,14 +25,26 @@ if ($LASTEXITCODE -ne 0) { throw 'Template catalogue generation failed' }
 $jar = Join-Path $root 'backend\build\resume-backend.jar'
 & (Join-Path $jdk 'bin\jar.exe') --create --file $jar --main-class com.resumestudio.Server -C $classes .
 if ($LASTEXITCODE -ne 0) { throw 'Java package failed' }
-& $dotnet build (Join-Path $root 'client-winui\ResumeStudio.csproj') -t:Rebuild -c $Configuration -p:Platform=x64 --ignore-failed-sources
-if ($LASTEXITCODE -ne 0) { throw 'WinUI build failed' }
 $output = Join-Path $root "client-winui\bin\x64\$Configuration\net8.0-windows10.0.26100.0\win-x64"
 $destination = if ($ReleaseDirectory) { [IO.Path]::GetFullPath($ReleaseDirectory) } else { Join-Path $root 'release\ResumeStudio' }
 # Assemble into an empty, app-owned staging folder so removed NuGet dependencies cannot linger in packages.
 $release = Join-Path $root ('artifacts\distribution-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force $release | Out-Null
-Copy-Item -Path (Join-Path $output '*') -Destination $release -Recurse -Force
+if($Configuration -eq 'Release') {
+    & $dotnet publish (Join-Path $root 'client-winui\ResumeStudio.csproj') -c $Configuration -p:Platform=x64 -p:LightweightPublish=true -o $release --ignore-failed-sources
+} else {
+    & $dotnet build (Join-Path $root 'client-winui\ResumeStudio.csproj') -c $Configuration -p:Platform=x64 --ignore-failed-sources
+    if($LASTEXITCODE -eq 0){Copy-Item -Path (Join-Path $output '*') -Destination $release -Recurse -Force}
+}
+if ($LASTEXITCODE -ne 0) { throw 'WinUI distribution build failed' }
+# WinUI's publish output omits generated XBF / PRI files for an unpackaged project.
+# Copy only those resources, never overlay the untrimmed managed DLLs from build output.
+foreach($resource in Get-ChildItem -LiteralPath $output -Recurse -File|Where-Object {$_.Extension -in @('.xbf','.pri')}) {
+    $target=Join-Path $release ([IO.Path]::GetRelativePath($output,$resource.FullName))
+    New-Item -ItemType Directory -Force -Path (Split-Path $target -Parent)|Out-Null
+    Copy-Item -LiteralPath $resource.FullName -Destination $target -Force
+}
+foreach($name in @('App.xbf','ResumeStudio.pri','ResumeStudio.runtimeconfig.json')){if(!(Test-Path -LiteralPath (Join-Path $release $name))){throw "Missing application resource: $name"}}
 New-Item -ItemType Directory -Force (Join-Path $release 'backend') | Out-Null
 Copy-Item -LiteralPath $jar -Destination (Join-Path $release 'backend\resume-backend.jar') -Force
 New-Item -ItemType Directory -Force (Join-Path $release 'updater') | Out-Null
@@ -41,11 +53,9 @@ foreach($helper in @('Update-App.ps1','sync-distribution.ps1','Compress-App.ps1'
     [IO.File]::WriteAllText((Join-Path $release ('updater\'+$helper)),[IO.File]::ReadAllText((Join-Path $PSScriptRoot $helper)),[Text.UTF8Encoding]::new($true))
 }
 $runtime = Join-Path $release 'runtime'
-if(Test-Path (Join-Path $destination 'runtime\bin\java.exe')) { Copy-Item -LiteralPath (Join-Path $destination 'runtime') -Destination $release -Recurse }
-if (!(Test-Path (Join-Path $runtime 'bin\java.exe'))) {
-    & (Join-Path $jdk 'bin\jlink.exe') --add-modules java.base,java.net.http,jdk.httpserver,jdk.crypto.ec --strip-debug --no-header-files --no-man-pages --compress=2 --output $runtime
-    if ($LASTEXITCODE -ne 0) { throw 'Java runtime creation failed' }
-}
+# Always generate from this build's verified JDK rather than reusing an older install's runtime.
+& (Join-Path $jdk 'bin\jlink.exe') --add-modules java.base,java.net.http,jdk.httpserver,jdk.crypto.ec --strip-debug --no-header-files --no-man-pages --compress=zip-9 --output $runtime
+if ($LASTEXITCODE -ne 0) { throw 'Java runtime creation failed' }
 Copy-Item -LiteralPath (Join-Path $root 'README.md') -Destination $release -Force
 Copy-Item -LiteralPath (Join-Path $root 'THIRD_PARTY_NOTICES.md') -Destination $release -Force
 Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $release -Force

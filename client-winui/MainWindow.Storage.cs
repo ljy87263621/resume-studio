@@ -1,10 +1,26 @@
 using ResumeStudio.Services;
 using System.Text.Json;
+using Microsoft.Web.WebView2.Core;
 
 namespace ResumeStudio;
 
 public sealed partial class MainWindow
 {
+    private const long BrowserDiskCacheBudget=64L*1024*1024;
+    private async Task<bool> MaintainBrowserDiskCache(CoreWebView2 core,bool force=false)
+    {
+        try {
+            string cache=Path.Combine(api.DataDirectory,"WebView2","EBWebView","Default","Cache");
+            long bytes=await Task.Run(()=>StorageMaintenance.DirectoryBytes(cache).Logical);
+            if(force||bytes>BrowserDiskCacheBudget) {
+                await core.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.DiskCache);
+                return true;
+            }
+        }catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException or InvalidOperationException) {
+            System.Diagnostics.Trace.WriteLine("Deferred browser disk-cache maintenance: "+ex.Message);
+        }
+        return false;
+    }
     private readonly SemaphoreSlim maintenanceLock=new(1,1);
     private async Task OptimizeStorage(bool compress=true)
     {

@@ -161,7 +161,7 @@ public sealed partial class MainWindow
         };
         UpdateStatus();ContentDialogResult choice;
         try {choice=await dialog.ShowAsync();}
-        finally {closed=true;epoch++;viewport.Dispose();if(web.CoreWebView2 is not null)web.CoreWebView2.WebResourceResponseReceived-=ResponseReceived;web.Close();}
+        finally {closed=true;epoch++;viewport.Dispose();if(web.CoreWebView2 is not null){web.CoreWebView2.WebResourceResponseReceived-=ResponseReceived;if(!VerificationSession)await MaintainBrowserDiskCache(web.CoreWebView2);}web.Close();}
         if(choice==ContentDialogResult.Primary||session.Added+session.Updated>0)ResetFavoriteView();
         if(choice==ContentDialogResult.Primary){await Navigate("favorites");}
         else if(currentPage=="favorites")await Navigate("favorites");
