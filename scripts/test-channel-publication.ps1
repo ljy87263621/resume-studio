@@ -26,7 +26,7 @@ function gh {
 Push-Location $fixtureRoot
 [Environment]::CurrentDirectory=$fixtureRoot
 try {
-    $env:RESUMESTUDIO_UPDATE_SIGNING_KEY=$rsa.ExportPkcs8PrivateKeyPem();$env:GITHUB_REPOSITORY='scj040921/resume-studio';$env:GITHUB_SHA='a'*40
+    $env:RESUMESTUDIO_UPDATE_SIGNING_KEY=$rsa.ExportPkcs8PrivateKeyPem();$env:GITHUB_REPOSITORY='ljy87263621/resume-studio';$env:GITHUB_SHA='a'*40
     [IO.File]::WriteAllText((Join-Path $fixtureRoot 'client-winui/Assets/UpdatePublicKey.pem'),$rsa.ExportSubjectPublicKeyInfoPem())
     @{channel='stable';version='0.6.0';commit=('a'*40);builtAt='2026-10-13T00:00:00Z';tag='v0.6.0'}|ConvertTo-Json|Set-Content source/Assets/ReleaseIdentity.json -Encoding utf8
     $package=Join-Path $fixtureRoot 'release/ResumeStudio-v0.6.0-windows-x64.zip';[IO.File]::WriteAllBytes($package,[Text.Encoding]::UTF8.GetBytes('isolated channel fixture'))

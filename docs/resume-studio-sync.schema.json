@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:resume-studio:sync:schema:1",
+  "title": "Resume Studio sync protocol v1",
+  "description": "UTF-8 whole snapshot. JSON property names are case-sensitive; known fields receive strict runtime type guards, and unknown fields survive typed model roundtrips. Case-insensitive record id uniqueness for Windows paths, cross-record references, JSON duplicate keys, UTF-8 byte sizes and nesting limits require runtime checks.",
+  "type": "object",
+  "required": ["protocol", "schemaVersion", "snapshotId", "createdAt", "deviceId", "data", "extensions"],
+  "additionalProperties": true,
+  "properties": {
+    "protocol": {"const": "resume-studio-sync"},
+    "schemaVersion": {"const": 1},
+    "snapshotId": {"type": "string", "minLength": 1, "maxLength": 100},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "deviceId": {"type": "string", "minLength": 1, "maxLength": 100},
+    "extensions": {"type": "object", "additionalProperties": true},
+    "data": {"$ref": "#/$defs/data"}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-zA-Z0-9_-]{1,100}$"},
+    "nonblank": {"type": "string", "pattern": "\\S"},
+    "httpsUrl": {
+      "type": "string", "format": "uri", "pattern": "^https://[^/?#@]+(?:[/?#]|$)",
+      "description": "Runtime also requires a parsed HTTPS URI with host and no userinfo. Source URLs have additional public-host, port and Workday restrictions."
+    },
+    "dateOrEmpty": {"anyOf": [{"const": ""}, {"type": "string", "format": "date-time"}]},
+    "profile": {
+      "type": "object", "additionalProperties": true,
+      "properties": {
+        "name": {"type": "string"}, "role": {"type": "string"}, "phone": {"type": "string"},
+        "email": {"type": "string"}, "city": {"type": "string"}, "link": {"type": "string"}, "summary": {"type": "string"}
+      }
+    },
+    "photo": {
+      "type": "string", "pattern": "^(?:|data:image/(?:png|jpeg);base64,[A-Za-z0-9+/=]+)$",
+      "description": "Photo is inline in resume/resumeSnapshot/history.resume. There is no attachments collection in v1; regex is not image-byte validation."
+    },
+    "section": {
+      "type": "object", "additionalProperties": true, "required": ["title", "content", "visible"],
+      "properties": {"title": {"type": "string"}, "content": {"type": "string", "maxLength": 30000}, "visible": {"type": "boolean"}}
+    },
+    "resumeBody": {
+      "type": "object", "additionalProperties": true, "required": ["title", "templateId", "profile", "sections"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "title": {"$ref": "#/$defs/nonblank"},
+        "templateId": {"type": "string", "minLength": 1, "description": "Must exist in the importing application's Templates.all() catalogue; runtime check, independent of protocol version."},
+        "profile": {"$ref": "#/$defs/profile"}, "photo": {"$ref": "#/$defs/photo"},
+        "sections": {"type": "array", "maxItems": 30, "items": {"$ref": "#/$defs/section"}},
+        "color": {"type": "string"}, "fontSize": {"type": "number", "description": "Runtime requires a finite Double-compatible value."}, "lineHeight": {"type": "number", "description": "Runtime requires a finite Double-compatible value."},
+        "fontFamily": {"enum": ["MiSans", "Microsoft YaHei", "SimSun", "Arial", "Times New Roman"]},
+        "updatedAt": {"type": "string"}
+      }
+    },
+    "resume": {"allOf": [{"$ref": "#/$defs/resumeBody"}, {"required": ["id"]}]},
+    "favorite": {
+      "type": "object", "additionalProperties": true, "required": ["id", "title", "url"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "title": {"$ref": "#/$defs/nonblank"}, "url": {"$ref": "#/$defs/httpsUrl"},
+        "canonicalUrl": {"type": "string"}, "company": {"type": "string"}, "location": {"type": "string"},
+        "description": {"type": "string"}, "source": {"type": "string"}, "publishedAt": {"type": "string"},
+        "experience": {"type": "string"}, "salary": {"type": "string"}, "updatedAt": {"type": "string"},
+        "notes": {"type": "string"}, "infoStatus": {"type": "string"}
+      }
+    },
+    "applicationStatus": {"enum": ["已打开", "已投递", "笔试中", "面试中", "已录用", "已结束"]},
+    "timelineEvent": {
+      "type": "object", "additionalProperties": true,
+      "description": "Known event shape written by Store.save; SyncStore requires an object and string types for present status/at/note fields, but does not impose its normal-save 100-event retention rule or date/status semantic validation on imported timeline entries.",
+      "properties": {"status": {"type": "string"}, "at": {"type": "string"}, "note": {"type": "string"}}
+    },
+    "application": {
+      "type": "object", "additionalProperties": true, "required": ["id", "title", "url", "status"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "jobId": {"type": "string"}, "title": {"$ref": "#/$defs/nonblank"},
+        "company": {"type": "string"}, "url": {"$ref": "#/$defs/httpsUrl"}, "status": {"$ref": "#/$defs/applicationStatus"},
+        "resumeTitle": {"type": "string"}, "notes": {"type": "string"}, "createdAt": {"type": "string"}, "updatedAt": {"type": "string"},
+        "resumeSnapshot": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/resumeBody"}]},
+        "timeline": {"type": "array", "items": {"$ref": "#/$defs/timelineEvent"}},
+        "eventKind": {"type": "string"}, "dueAt": {"$ref": "#/$defs/dateOrEmpty"},
+        "reminderDone": {"type": "boolean"}, "review": {"type": "string", "maxLength": 10000}
+      }
+    },
+    "source": {
+      "type": "object", "additionalProperties": true, "required": ["id", "name", "adapter", "url", "enabled"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "name": {"$ref": "#/$defs/nonblank"},
+        "adapter": {"enum": ["tencent", "arbeitnow", "greenhouse", "lever", "ashby", "smartrecruiters", "workday", "jsonld"]},
+        "slug": {"type": "string"}, "url": {"$ref": "#/$defs/httpsUrl"}, "region": {"type": "string"},
+        "enabled": {"type": "boolean"}, "builtin": {"type": "boolean"}, "status": {"type": "string"},
+        "message": {"type": "string"}, "lastCount": {"type": "integer", "minimum": -2147483648, "maximum": 2147483647, "description": "Runtime additionally requires an Int32-compatible integer token; fractional and exponent notation are rejected."}, "lastQueryAt": {"type": "string"}, "updatedAt": {"type": "string"}
+      },
+      "allOf": [{
+        "if": {"properties": {"adapter": {"enum": ["greenhouse", "lever", "ashby", "smartrecruiters"]}}, "required": ["adapter"]},
+        "then": {"required": ["slug"], "properties": {"slug": {"$ref": "#/$defs/id"}}}
+      }],
+      "description": "Custom stored source records only. Builtin catalogue entries are not exported unless saved as overrides. Runtime enforces public HTTPS host, no userinfo, port absent/443, no numeric/local host; Workday host ends .myworkdayjobs.com and board path is a safe id."
+    },
+    "schedule": {
+      "type": "object", "additionalProperties": true,
+      "required": ["id", "title", "kind", "startAt", "allDay", "completed", "reminderEnabled", "reminderMinutes"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "title": {"allOf": [{"$ref": "#/$defs/nonblank"}, {"maxLength": 200}]},
+        "kind": {"enum": ["笔试", "面试", "投递截止", "跟进", "自定义"]}, "startAt": {"type": "string", "format": "date-time"},
+        "allDay": {"type": "boolean"}, "completed": {"type": "boolean"}, "reminderEnabled": {"type": "boolean"},
+        "reminderMinutes": {"enum": [0, 15, 60, 1440]}, "notes": {"type": "string", "maxLength": 10000},
+        "applicationId": {"anyOf": [{"const": ""}, {"$ref": "#/$defs/id"}]}, "updatedAt": {"type": "string"}
+      }
+    },
+    "history": {
+      "type": "object", "additionalProperties": true, "required": ["id", "resumeId", "label", "automatic", "createdAt", "resume"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "resumeId": {"$ref": "#/$defs/id"}, "label": {"type": "string", "maxLength": 100},
+        "automatic": {"type": "boolean"}, "createdAt": {"type": "string", "format": "date-time", "description": "Runtime uses Java Instant.parse."},
+        "resume": {"$ref": "#/$defs/resume"}
+      },
+      "description": "Runtime requires case-sensitive resumeId association with data.resumes, embedded resume.id equal resumeId, case-insensitive uniqueness of (resumeId,id) for Windows paths, and at most 20 entries per resume."
+    },
+    "settings": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "interfaceStyle": {"enum": ["classic", "haru"]}, "theme": {"enum": ["system", "light", "dark"]},
+        "livePreview": {"type": "boolean"}, "motionEnabled": {"type": "boolean"},
+        "previewDelayMs": {"type": "integer", "minimum": 350, "maximum": 2000},
+        "aiEndpoint": {"type": "string", "maxLength": 2048}, "aiModel": {"type": "string", "maxLength": 2048},
+        "updateChannel": {"enum": ["stable", "nightly"]}, "updateRoute": {"enum": ["auto", "direct", "proxy"]},
+        "checkUpdatesOnStartup": {"type": "boolean"}
+      }
+    },
+    "data": {
+      "type": "object", "additionalProperties": false,
+      "required": ["resumes", "favorites", "applications", "sources", "schedule", "history", "settings"],
+      "properties": {
+        "resumes": {"type": "array", "maxItems": 5000, "items": {"$ref": "#/$defs/resume"}},
+        "favorites": {"type": "array", "maxItems": 5000, "items": {"$ref": "#/$defs/favorite"}},
+        "applications": {"type": "array", "maxItems": 5000, "items": {"$ref": "#/$defs/application"}},
+        "sources": {"type": "array", "maxItems": 5000, "items": {"$ref": "#/$defs/source"}},
+        "schedule": {"type": "array", "maxItems": 5000, "items": {"$ref": "#/$defs/schedule"}},
+        "history": {"type": "array", "maxItems": 100000, "items": {"$ref": "#/$defs/history"}},
+        "settings": {"$ref": "#/$defs/settings"}
+      },
+      "description": "Ids must be unique ignoring case within each of the five entity collections to prevent Windows filename collisions; JSON Schema uniqueItems cannot enforce id uniqueness. Property names and history associations are case-sensitive. History total bound follows 5000 resumes times 20 entries, with association verified at runtime."
+    }
+  }
+}

@@ -21,11 +21,6 @@ public sealed partial class MainWindow
     private static string Ink => darkStyle ? "#ECECF5" : haruStyle ? "#292D3E" : "#22304A";
     private static string Surface => darkStyle ? "#24242D" : "#FFFFFF";
     private static string Stroke => darkStyle ? "#41414D" : haruStyle ? "#E3E3EC" : "#E3E8F1";
-    private static readonly (string Key,string Label,string Glyph)[] Pages = [
-        ("templates","模板中心","\uE8A5"),("resumes","我的简历","\uE8A5"),("jobs","发现职位","\uE721"),
-        ("sources","公司招聘官网","\uE774"),("favorites","职位收藏","\uE734"),("applications","投递记录","\uE73E"),
-        ("schedule","求职日程","\uE787"),("about","使用说明","\uE946"),("settings","设置","\uE713")
-    ];
     private void BuildContentHost()
     {
         contentHost=new Grid();
@@ -41,6 +36,7 @@ public sealed partial class MainWindow
         headerFrame=new Border { Child=header,Margin=new Thickness(0,0,0,20) }; contentHost.Children.Add(headerFrame);
         headerFrame.LayoutUpdated+=(_,_)=>UpdateGlassDragRegions();
         shell.Loaded+=(_,_)=>shell.XamlRoot.Changed+=(_,_)=>UpdateGlassDragRegions();
+        shell.SizeChanged+=(_,e)=>UpdateClassicNavigationLayout(e.NewSize.Width);
         Grid.SetRow(notice,1); contentHost.Children.Add(notice); Grid.SetRow(body,2); contentHost.Children.Add(body);
         Grid.SetRow(feedback,3); contentHost.Children.Add(feedback);
     }
@@ -53,6 +49,8 @@ public sealed partial class MainWindow
         shell.RequestedTheme=darkStyle?ElementTheme.Dark:ElementTheme.Light;
         if(modernNavigation is not null) { modernNavigation.Content=null; modernNavigation=null; }
         shell.Children.Clear(); shell.ColumnDefinitions.Clear(); navigation.Clear();
+        modernNavigationItems.Clear(); classicChildMenus.Clear(); classicLabels.Clear(); classicChevrons.Clear();
+        classicSidebar=null; classicBrandName=null; classicBrandSubtitle=null; classicFooter=null;
         contentHost!.Resources.Clear();
         if(haruStyle)
         {
@@ -75,10 +73,10 @@ public sealed partial class MainWindow
             modernNavigation=new NavigationView { IsBackButtonVisible=NavigationViewBackButtonVisible.Collapsed,IsSettingsVisible=false,OpenPaneLength=210,CompactPaneLength=48,PaneDisplayMode=NavigationViewPaneDisplayMode.Auto,Content=contentHost };
             ConfigureGlassNavigation(modernNavigation);
             var brand=Row(10); brand.Margin=new Thickness(15,6,15,12); brand.Children.Add(BrandLogo(34)); var name=Text("拾简",22,true); name.VerticalAlignment=VerticalAlignment.Center; brand.Children.Add(name); modernNavigation.PaneHeader=brand;
-            foreach(var page in Pages)
+            foreach(var page in NavigationCatalog.Roots)
             {
-                var item=new NavigationViewItem { Content=page.Label,Tag=page.Key,Icon=new FontIcon { Glyph=page.Glyph,FontSize=16 } };
-                if(page.Key is "settings" or "about") modernNavigation.FooterMenuItems.Add(item); else modernNavigation.MenuItems.Add(item);
+                var item=CreateModernNavigationItem(page);
+                if(page.IsFooter) modernNavigation.FooterMenuItems.Add(item); else modernNavigation.MenuItems.Add(item);
             }
             modernNavigation.SelectionChanged+=async (_,e)=> { if(!changingNavigation&&e.SelectedItem is NavigationViewItem item) await Run(()=>Navigate((string)item.Tag)); };
             shell.Children.Add(modernNavigation);
@@ -87,17 +85,31 @@ public sealed partial class MainWindow
         {
             shell.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(222) }); shell.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(1,GridUnitType.Star) });
             BuildSidebar(); Grid.SetColumn(contentHost,1); shell.Children.Add(contentHost);
+            UpdateClassicNavigationLayout(shell.ActualWidth);
         }
         UpdateNavigation(currentPage);
         ConfigureGlassTitleBar();
     }
     private void UpdateNavigation(string page)
     {
-        string selected=page=="editor"?"resumes":page;
-        foreach(var button in navigation) button.Background=Brush((string)button.Tag==selected?"#294267":"#14233F");
+        string selected=NavigationCatalog.SelectedKey(page);
+        string? parent=NavigationCatalog.ParentKey(page);
+        while(parent is not null)
+        {
+            expandedNavigationGroups.Add(parent);
+            if(modernNavigationItems.TryGetValue(parent,out var group)) group.IsExpanded=true;
+            parent=NavigationCatalog.ParentKey(parent);
+        }
+        string? activeParent=NavigationCatalog.ParentKey(page);
+        foreach(var button in navigation)
+        {
+            string key=(string)button.Tag;
+            button.Background=Brush(key==selected?"#294267":key==activeParent?"#203653":"#14233F");
+        }
+        UpdateClassicNavigationGroups();
         if(modernNavigation is null) return;
         changingNavigation=true;
-        try { modernNavigation.SelectedItem=modernNavigation.MenuItems.Concat(modernNavigation.FooterMenuItems).OfType<NavigationViewItem>().FirstOrDefault(x=>(string)x.Tag==selected); }
+        try { modernNavigation.SelectedItem=modernNavigationItems.GetValueOrDefault(selected); }
         finally { changingNavigation=false; }
     }
     private async Task ApplyPreferences()
@@ -111,6 +123,7 @@ public sealed partial class MainWindow
         var panel=Stack(18);
         panel.Children.Add(UpdateSettingsCard());
         panel.Children.Add(AiSettingsCard());
+        AddSyncSettings(panel);
         var appearance=Stack(14); appearance.Children.Add(Text("界面与主题",20,true));
         appearance.Children.Add(Text("界面字体：MiSans，由小米提供，随软件分发。",12));
         var motion=new ToggleSwitch {Header="交互动效",IsOn=preferences.MotionEnabled};

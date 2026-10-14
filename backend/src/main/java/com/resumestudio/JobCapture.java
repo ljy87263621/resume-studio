@@ -47,7 +47,7 @@ public final class JobCapture {
         var queries=new ArrayList<String>();
         if(uri.getRawQuery()!=null) for(String q:uri.getRawQuery().split("&")) {
             String key=q.split("=",2)[0].toLowerCase(Locale.ROOT);
-            if(!key.startsWith("utm_")&&!Set.of("ka","sid","source","from","track","tracking","lid","securityid").contains(key)) queries.add(q);
+            if(!key.startsWith("utm_")&&!Set.of("ka","sid","source","from","track","tracking","lid","securityid","channel","pagesource","deliversource").contains(key)) queries.add(q);
         }
         return "https://"+host+path+(queries.isEmpty()?"":"?"+String.join("&",queries));
     }

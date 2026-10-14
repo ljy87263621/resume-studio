@@ -45,7 +45,7 @@ public sealed record AvailableUpdate(GitHubRelease Release,ReleaseIdentity Ident
 /// <summary>Only this public repository is accepted. Proxy transport never receives personal data or API credentials.</summary>
 public sealed class ReleaseUpdate : IDisposable
 {
-    public const string Repository="scj040921/resume-studio";
+    public const string Repository="ljy87263621/resume-studio";
     public const string ProxyPrefix="https://gh-proxy.org/";
     public static readonly JsonSerializerOptions Json=new() {PropertyNameCaseInsensitive=true,PropertyNamingPolicy=JsonNamingPolicy.CamelCase,WriteIndented=true};
     private readonly HttpClient http;
