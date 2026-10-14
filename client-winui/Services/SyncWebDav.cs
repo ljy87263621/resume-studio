@@ -147,7 +147,19 @@ public sealed class SyncWebDav : ISyncRemoteStore,IDisposable
             request.Headers.IfMatch.Add(EntityTagHeaderValue.TryParse(observed.ETag,out var currentTag)&&!currentTag.IsWeak?currentTag:EntityTagHeaderValue.Any);
         }
         else { if(!EntityTagHeaderValue.TryParse(expectedETag,out var tag)||tag.IsWeak) throw new IOException("云端 ETag 无效。"); request.Headers.IfMatch.Add(tag); }
-        using var response=await client.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,cancellationToken); Ensure(response,"上传");
+        using var response=await client.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,cancellationToken);
+        if(response.StatusCode==HttpStatusCode.PreconditionFailed&&expectedETag?.StartsWith("sha256:",StringComparison.Ordinal)==true&&request.Headers.IfMatch.Any(t=>t.Tag=="*"))
+        {
+            // Some DAV services reject wildcard If-Match even for an existing file.
+            // Revalidate bytes after that rejection. Strong validators are never downgraded.
+            var latest=await ReadCoreAsync(cancellationToken);
+            if(latest is null||ContentRevision(latest.Bytes)!=expectedETag)throw new IOException("云端资料已改变，内容校验已拒绝上传。请重新检查同步。");
+            using var retry=new HttpRequestMessage(HttpMethod.Put,file){Content=new ByteArrayContent(bytes)};
+            retry.Content.Headers.ContentType=new MediaTypeHeaderValue("application/json"){CharSet="utf-8"};
+            if(EntityTagHeaderValue.TryParse(latest.ETag,out var validator)&&!validator.IsWeak)retry.Headers.IfMatch.Add(validator);
+            using var retried=await client.SendAsync(retry,HttpCompletionOption.ResponseHeadersRead,cancellationToken);Ensure(retried,"上传");
+        }
+        else Ensure(response,"上传");
         // Some DAV servers omit the PUT response ETag. Read back to verify the exact committed bytes.
         var committed=await ReadCoreAsync(cancellationToken);
         if(committed is null||!committed.Bytes.AsSpan().SequenceEqual(bytes)) throw new IOException("云端写入后的内容不一致，请重新检查同步；本次不建立同步基线。");

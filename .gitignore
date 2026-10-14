@@ -54,3 +54,10 @@ __pycache__/
 .pytest_cache/
 .venv/
 node_modules/
+
+# Device-local synchronization settings and encrypted credentials
+**/sync-local.json
+**/sync-baseline*.json
+**/sync-recovery.json
+**/sync-backups/
+*.protected
