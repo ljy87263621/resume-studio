@@ -179,7 +179,9 @@ public sealed partial class MainWindow
             {
                 var normalized=await api.Post<CapturePreview>("capture-preview",new {text=job.Url,visibleFields=new {title=job.Title,company=job.Company,location=job.Location,salary=job.Salary,description=job.Description,experience=job.Experience,publishedAt=job.PublishedAt}});
                 if(existing.Contains(normalized.Job.Id)||existingUrls.Contains(job.CanonicalUrl)) continue;
-                normalized.Job.InfoStatus=job.InfoStatus; await api.Save("favorites",normalized.Job); existing.Add(normalized.Job.Id); existingUrls.Add(job.CanonicalUrl); saved++;
+                normalized.Job.InfoStatus=job.InfoStatus;
+                var result=await api.Post<CollectionResult<Job>>("favorites/collect",normalized.Job);
+                existing.Add(result.Record.Id); existingUrls.Add(job.CanonicalUrl); if(result.Created) saved++;
             }
         }
         catch(Exception e) {throw new IOException($"已保存 {saved} 条，后续保存失败。已保存职位保留，可重试未保存部分："+e.Message,e);}

@@ -16,6 +16,9 @@ public sealed class ReleaseIdentity
     public string PackageName {get;set;}="";
     public string Sha256 {get;set;}="";
     public long PackageSize {get;set;}
+    public string ChangeLogName {get;set;}="";
+    public string ChangeLogSha256 {get;set;}="";
+    public long ChangeLogSize {get;set;}
     public static ReleaseIdentity Current(string root)
     {
         string file=Path.Combine(root,"Assets","ReleaseIdentity.json");
@@ -41,17 +44,34 @@ public sealed class GitHubRelease
     public List<GitHubAsset> Assets {get;set;}=[];
 }
 public sealed record AvailableUpdate(GitHubRelease Release,ReleaseIdentity Identity,GitHubAsset Package);
+public sealed class ReleaseNote
+{
+    public string Version {get;set;}="";
+    public string Body {get;set;}="";
+}
+public sealed class ReleaseChangeLog
+{
+    public int Schema {get;set;}
+    public string Channel {get;set;}="";
+    public string Version {get;set;}="";
+    public string Commit {get;set;}="";
+    public string Tag {get;set;}="";
+    public List<ReleaseNote> Releases {get;set;}=[];
+}
 
 /// <summary>Only this public repository is accepted. Proxy transport never receives personal data or API credentials.</summary>
 public sealed class ReleaseUpdate : IDisposable
 {
-    public const string Repository="ljy87263621/resume-studio";
+    public const string Repository="scj040921/resume-studio";
     public const string ProxyPrefix="https://gh-proxy.org/";
     public static readonly JsonSerializerOptions Json=new() {PropertyNameCaseInsensitive=true,PropertyNamingPolicy=JsonNamingPolicy.CamelCase,WriteIndented=true};
     private readonly HttpClient http;
     private readonly string publicKey;
     public string LastRoute {get;private set;}="";
     public string LastSource {get;private set;}="";
+    public AvailableUpdate? LatestCheckedRelease {get;private set;}
+    public IReadOnlyList<ReleaseNote> ChangeLog {get;private set;}=[];
+    public string ChangeLogError {get;private set;}="";
     public ReleaseUpdate(string key,HttpMessageHandler? handler=null)
     {
         publicKey=key;
@@ -107,6 +127,8 @@ public sealed class ReleaseUpdate : IDisposable
         var info=JsonSerializer.Deserialize<ReleaseIdentity>(data,Json)??throw new IOException("更新说明无效。");
         if(info.Channel!=channel||info.Tag!=tag||!Regex.IsMatch(info.Version,@"^\d+\.\d+\.\d+$")||!Regex.IsMatch(info.Commit,@"^[0-9a-f]{40}$")||!Regex.IsMatch(info.Sha256,@"^[0-9a-f]{64}$")||!DateTimeOffset.TryParse(info.BuiltAt,out _)
             ||!Regex.IsMatch(info.PackageName,@"^ResumeStudio-v\d+\.\d+\.\d+(?:-nightly\.\d{8}\.[0-9a-f]{8})?-windows-x64\.zip$")) throw new IOException("更新说明的版本或通道不匹配。");
+        if((info.ChangeLogName!=""||info.ChangeLogSha256!=""||info.ChangeLogSize!=0)&&
+            (info.ChangeLogName!="release-changelog.json"||!Regex.IsMatch(info.ChangeLogSha256,@"^[0-9a-f]{64}$")||info.ChangeLogSize<=0||info.ChangeLogSize>256000))throw new IOException("更新日志的签名信息无效。");
         return info;
     }
     public static string ChannelAddress(string channel)
@@ -134,14 +156,14 @@ public sealed class ReleaseUpdate : IDisposable
     }
     public async Task<AvailableUpdate?> Check(string channel,string route,ReleaseIdentity current,CancellationToken token)
     {
-        LastSource="";
+        LastSource="";LatestCheckedRelease=null;ChangeLog=[];ChangeLogError="";
         string channelAddress=ChannelAddress(channel);
         byte[]? channelBytes=null;
         // One signed, public Release asset avoids the anonymous REST API quota. An invalid
         // signature is fatal; only transport failure may fall back to the legacy API.
         try {channelBytes=await Read(channelAddress+"?check="+DateTimeOffset.UtcNow.ToUnixTimeSeconds(),route,64000,token);}
         catch(IOException) when(!token.IsCancellationRequested) { }
-        if(channelBytes is not null){var indexed=VerifyChannel(channelBytes,publicKey,channel);LastSource="signed-channel";return IsNewer(current,indexed.Identity)?indexed:null;}
+        if(channelBytes is not null){var indexed=VerifyChannel(channelBytes,publicKey,channel);LastSource="signed-channel";await ReadChangeLog(indexed,current,route,token);return IsNewer(current,indexed.Identity)?indexed:null;}
         LastSource="release-api";
         GitHubRelease? release;
         if(channel=="stable") {
@@ -161,7 +183,36 @@ public sealed class ReleaseUpdate : IDisposable
         var info=VerifyInfo(data,sig,publicKey,channel,release.Tag);
         var package=release.Assets.SingleOrDefault(a=>a.Name==info.PackageName)??throw new IOException("发行版缺少 Windows 更新包。"); ValidateUrl(package.Url);
         if(package.Size<=0||package.Size>512_000_000||package.Digest!="sha256:"+info.Sha256) throw new IOException("更新包摘要与签名不一致。");
-        return IsNewer(current,info)?new(release,info,package):null;
+        var checkedRelease=new AvailableUpdate(release,info,package);await ReadChangeLog(checkedRelease,current,route,token);
+        return IsNewer(current,info)?checkedRelease:null;
+    }
+
+    public static IReadOnlyList<ReleaseNote> VerifyChangeLog(byte[] bytes,ReleaseIdentity expected,ReleaseIdentity current)
+    {
+        if(bytes.Length!=expected.ChangeLogSize||Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()!=expected.ChangeLogSha256)throw new IOException("更新日志校验失败。");
+        var log=JsonSerializer.Deserialize<ReleaseChangeLog>(bytes,Json)??throw new IOException("更新日志为空。");
+        if(log.Schema!=1||log.Channel!=expected.Channel||log.Version!=expected.Version||log.Commit!=expected.Commit||log.Tag!=expected.Tag||log.Releases is null||log.Releases.Count>200)throw new IOException("更新日志与发行版不匹配。");
+        var versions=new HashSet<string>(StringComparer.Ordinal);
+        foreach(var note in log.Releases)
+            if(note is null||string.IsNullOrWhiteSpace(note.Version)||!Regex.IsMatch(note.Version,@"^\d+\.\d+\.\d+$")||!versions.Add(note.Version)||string.IsNullOrWhiteSpace(note.Body)||note.Body.Length>16000||System.Version.Parse(note.Version)>System.Version.Parse(expected.Version))throw new IOException("更新日志条目无效。");
+        if(!versions.Contains(expected.Version))throw new IOException("更新日志缺少最新版本的说明。");
+        var latest=System.Version.Parse(expected.Version);var installed=System.Version.TryParse(current.Version,out var parsed)?parsed:new System.Version(0,0,0);
+        // Include the installed version as the labelled lower boundary, newest first.
+        return log.Releases.Where(note=>System.Version.Parse(note.Version)<=latest&&System.Version.Parse(note.Version)>=(installed>latest?latest:installed)).OrderByDescending(note=>System.Version.Parse(note.Version)).ToList();
+    }
+
+    private async Task ReadChangeLog(AvailableUpdate release,ReleaseIdentity current,string route,CancellationToken token)
+    {
+        LatestCheckedRelease=release;
+        if(release.Identity.ChangeLogName=="") {ChangeLogError="此旧版发行未附带完整更新日志，可查看发行记录。";return;}
+        try {
+            string address=$"https://github.com/{Repository}/releases/download/{release.Identity.Tag}/{release.Identity.ChangeLogName}";
+            var bytes=await Read(address,route,256000,token);ChangeLog=VerifyChangeLog(bytes,release.Identity,current);
+            if(ChangeLog.Count==0)ChangeLogError="此发行包没有当前版本区间的日志，可查看发行记录。";
+        } catch(Exception error) when(!token.IsCancellationRequested&&error is IOException or HttpRequestException or JsonException or FormatException) {
+            // Release notes are informational. Their failure never bypasses package signature checks.
+            ChangeLogError="更新日志读取未完成："+error.Message;
+        }
     }
     public async Task Download(AvailableUpdate update,string route,string path,IProgress<double>? progress,CancellationToken token)
     {

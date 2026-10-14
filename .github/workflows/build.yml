@@ -36,6 +36,8 @@ jobs:
           ./scripts/test-schedule.ps1
           node --version
           ./scripts/test-features.ps1 -ReuseBackendTestClasses
+          ./scripts/test-workbench.ps1
+          ./scripts/test-maintenance.ps1
       - name: Install verified installer build tools
         shell: pwsh
         run: ./scripts/setup-installer-tools.ps1

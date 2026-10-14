@@ -32,7 +32,7 @@ public sealed partial class MainWindow
         var email=FindTextField(body,"邮箱")!;email.Text="saved@example.com";contact.IsExpanded=false;await Task.Delay(100);contact.IsExpanded=true;await Task.Delay(200);
         Check(FindTextField(body,"邮箱")?.Text=="saved@example.com"&&current.Profile.Email=="saved@example.com","collapsing and reopening editor details preserves edited values");
         Check(editorProgress?.Value==5&&editorProgress.Maximum==5,"editor progress counts filled profile and visible content modules");
-        editorParts!.SelectedIndex=3;await Task.Delay(150);Check(editorContentCount?.Text.Contains("字符")==true,"module editor shows live character and line counts");
+        editorParts!.SelectedIndex=1;await Task.Delay(150);Check(editorContentCount?.Text.Contains("字符")==true,"module editor shows live character and line counts");
         await FocusPreviewSection();Check(await preview!.CoreWebView2.ExecuteScriptAsync("document.querySelector('section[data-resume-index=\"1\"]').textContent.includes('第二个模块')")=="true","preview anchoring identifies the selected module even with duplicate titles");
         var input=FindTextField(body,"内容")!;Check(input.KeyboardAccelerators.Any(a=>a.Key==Windows.System.VirtualKey.B),"content field exposes Ctrl+B formatting shortcut");
         await SaveNativePreview(Path.Combine(output,"interaction-editor-classic.png"));
@@ -50,9 +50,9 @@ public sealed partial class MainWindow
         Check((await api.Get<List<ScheduleItem>>("schedule")).Single(i=>i.Id==scheduled.Id).Notes=="完成后补充的地点必须保留","undo preserves edits made after schedule completion");
         await SaveNativePreview(Path.Combine(output,"interaction-schedule-classic.png"));
         var quick=EditSchedule(new ScheduleItem {Kind="笔试",StartAt=DateTimeOffset.Now.AddDays(2).ToString("O")});var dialog=await FeatureDialog("编辑日程");
-        Check(FindCombo(dialog,"日程类型")?.SelectedItem?.ToString()=="笔试","quick schedule creation keeps the preselected event type");await FeatureClick(dialog,"返回");await quick;
+        Check(FindCombo(dialog,"日程类型")?.SelectedItem?.ToString()=="笔试","quick schedule creation keeps the preselected event type");await FeatureClick(dialog,"取消");await quick;
         preferences.InterfaceStyle="haru";preferences.Theme="light";await ApplyPreferences();await Navigate("schedule");await SaveNativePreview(Path.Combine(output,"interaction-schedule-haru.png"));
-        await OpenEditor();editorParts!.SelectedIndex=3;await Task.Delay(180);await WaitForPreview();await SaveNativePreview(Path.Combine(output,"interaction-editor-haru.png"));
+        await OpenEditor();editorParts!.SelectedIndex=1;await Task.Delay(180);await WaitForPreview();await SaveNativePreview(Path.Combine(output,"interaction-editor-haru.png"));
         var folder=await Windows.Storage.StorageFolder.GetFolderFromPathAsync(output);var browserImage=await folder.CreateFileAsync("interaction-live-preview.png",Windows.Storage.CreationCollisionOption.ReplaceExisting);
         using(var stream=await browserImage.OpenAsync(Windows.Storage.FileAccessMode.ReadWrite))await preview!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png,stream);
         preferences.Theme="dark";await ApplyPreferences();await SaveNativePreview(Path.Combine(output,"interaction-editor-dark.png"));

@@ -148,6 +148,7 @@ public sealed partial class MainWindow
         storage.Children.Add(Text("简历、职位收藏和投递记录保存在本机。上一版备份与最近 20 个历史版本压缩保存；预览磁盘缓存可随时重建。",12));
         var actions=Row(8);
         actions.Children.Add(Button("清理预览磁盘缓存",async ()=> { await ClearPreviewDiskCache(); storageInfo.Text=StorageUsage(); Success("缓存已清理","只清除了预览磁盘缓存，简历、备份、职位收藏和投递记录均保留。"); }));
+        actions.Children.Add(Button("优化存储占用",async ()=> {await OptimizeStorage();storageInfo.Text=StorageUsage();Feedback("存储优化完成","已处理完成更新的临时载荷，保留最近一份完整程序备份及个人额外文件。");}));
         actions.Children.Add(Button("刷新占用",()=> { storageInfo.Text=StorageUsage(); return Task.CompletedTask; })); storage.Children.Add(actions);
         panel.Children.Add(Card(storage));
     }
@@ -155,18 +156,19 @@ public sealed partial class MainWindow
     {
         string root=api.DataDirectory;
         if(!Directory.Exists(root)) return "当前数据目录尚未创建。";
-        long records=0,backups=0,logs=0,cache=0,other=0;
+        long records=0,backups=0,logs=0,cache=0,other=0,updates=0;
         var pending=new Stack<string>(); pending.Push(root);
         while(pending.Count>0)
         {
             string directory=pending.Pop(); string[] files,subdirectories;
             try { files=Directory.GetFiles(directory); subdirectories=Directory.GetDirectories(directory); } catch(IOException) { continue; } catch(UnauthorizedAccessException) { continue; }
-            foreach(string child in subdirectories) pending.Push(child);
+            foreach(string child in subdirectories)if((File.GetAttributes(child)&FileAttributes.ReparsePoint)==0)pending.Push(child);
             foreach(string path in files)
             {
-                long size; try { size=new FileInfo(path).Length; } catch(IOException) { continue; } catch(UnauthorizedAccessException) { continue; }
+                long size; try {if((File.GetAttributes(path)&FileAttributes.ReparsePoint)!=0)continue;size=Services.StorageMaintenance.DiskBytes(path); } catch(IOException) { continue; } catch(UnauthorizedAccessException) { continue; }
                 string relative=Path.GetRelativePath(root,path);
-                if(relative.StartsWith("WebView2"+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)) cache+=size;
+                if(relative.StartsWith("updates"+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))updates+=size;
+                else if(relative.StartsWith("WebView2"+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)) cache+=size;
                 else if(relative.StartsWith("history"+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)||Path.GetFileName(path).EndsWith(".bak",StringComparison.OrdinalIgnoreCase)||Path.GetFileName(path).EndsWith(".bak.gz",StringComparison.OrdinalIgnoreCase)) backups+=size;
                 else if(Path.GetFileName(path).StartsWith("backend.log",StringComparison.OrdinalIgnoreCase)) logs+=size;
                 else if(Path.GetExtension(path).Equals(".json",StringComparison.OrdinalIgnoreCase)) records+=size;
@@ -174,7 +176,10 @@ public sealed partial class MainWindow
             }
         }
         static string Size(long bytes)=>bytes<1024?$"{bytes} B":bytes<1024*1024?$"{bytes/1024d:0.0} KB":$"{bytes/1024d/1024d:0.00} MB";
-        return $"数据目录：{root}\n简历与求职记录：{Size(records)}  ·  压缩备份：{Size(backups)}\n预览缓存：{Size(cache)}  ·  日志：{Size(logs)}  ·  设置与临时文件：{Size(other)}\n合计：{Size(records+backups+cache+logs+other)}";
+        var programSize=Services.StorageMaintenance.DirectoryBytes(AppContext.BaseDirectory);long program=programSize.Disk,logical=programSize.Logical,oldPrograms=0;
+        foreach(var directory in Directory.GetDirectories(Path.GetDirectoryName(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))!,".resumestudio-backup-*"))
+            oldPrograms+=Services.StorageMaintenance.DirectoryBytes(directory).Disk;
+        return $"程序磁盘占用：{Size(program)}（逻辑大小 {Size(logical)}）\n更新临时缓存：{Size(updates)}  ·  旧程序备份：{Size(oldPrograms)}\n简历与求职记录：{Size(records)}  ·  历史与文档备份：{Size(backups)}\n预览缓存：{Size(cache)}  ·  日志：{Size(logs)}  ·  设置与其他：{Size(other)}\n合计：{Size(program+oldPrograms+updates+records+backups+cache+logs+other)}\n个人数据目录：{root}";
     }
     private async Task ClearPreviewDiskCache()
     {

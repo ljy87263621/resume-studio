@@ -1,3 +1,5 @@
+> 历史贡献者开发计划：原始 Fork 的安排，仅作实现背景。当前官方集成与验证边界见 docs/TAKEOVER.md；更新源和签名沿用 scj040921/resume-studio。
+
 # Multi-level Navigation Implementation Plan
 
 **Goal:** Display 发现职位 as a parent with 主页面 and 公司来源管理 children in both classic and Haru shells.

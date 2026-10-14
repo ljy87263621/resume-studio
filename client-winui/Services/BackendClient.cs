@@ -17,7 +17,7 @@ public sealed class BackendClient : IDisposable
     {
         var specified=Environment.GetEnvironmentVariable("RESUMESTUDIO_TEST_DATA");
         if(!string.IsNullOrWhiteSpace(specified)) return specified;
-        bool test=Environment.GetCommandLineArgs().Any(arg=>arg is "--self-test" or "--benchmark" or "--iteration-test" or "--feature-test" or "--appearance-review" or "--template-assets" or "--navigation-test");
+        bool test=Environment.GetCommandLineArgs().Any(arg=>arg is "--self-test" or "--benchmark" or "--iteration-test" or "--feature-test" or "--workbench-test" or "--appearance-review" or "--template-assets" or "--navigation-test");
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),test?"ResumeStudioVerification":"ResumeStudio",test?Guid.NewGuid().ToString("N"):"");
     }
     public static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = false, WriteIndented = true };
@@ -87,7 +87,11 @@ public sealed class BackendClient : IDisposable
     public async Task Delete(string path) { await StartAsync(); using var res = await http.DeleteAsync(path); await Ensure(res); }
     private static async Task Ensure(HttpResponseMessage response)
     {
-        if(!response.IsSuccessStatusCode) throw new IOException($"后端请求失败 ({(int)response.StatusCode})：{await response.Content.ReadAsStringAsync()}");
+        if(response.IsSuccessStatusCode) return;
+        string message=await response.Content.ReadAsStringAsync();
+        try { using var error=JsonDocument.Parse(message);if(error.RootElement.TryGetProperty("error",out var detail)&&detail.ValueKind==JsonValueKind.String) message=detail.GetString()??message; }
+        catch(JsonException) { }
+        throw new IOException(message);
     }
     public void Dispose()
     {

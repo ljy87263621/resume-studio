@@ -3,6 +3,7 @@ namespace ResumeStudio.Services;
 public sealed record AgendaEntry(string Id,string Title,string Company,string Kind,DateTimeOffset At,bool AllDay,bool Completed,bool ReminderEnabled,int ReminderMinutes,ScheduleItem? Item,ApplicationRecord? Application)
 {
     public DateTime Date=>At.LocalDateTime.Date;
+    public string ApplicationId=>Item?.ApplicationId??Application?.Id??"";
     public DateTimeOffset End=>AllDay?new DateTimeOffset(Date.AddDays(1),TimeZoneInfo.Local.GetUtcOffset(Date.AddDays(1))):At;
     public bool Overdue(DateTimeOffset now)=>!Completed&&End<now;
     public string When=>AllDay?At.LocalDateTime.ToString("yyyy-MM-dd")+" · 全天":At.LocalDateTime.ToString("yyyy-MM-dd HH:mm");

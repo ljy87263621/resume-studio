@@ -2,7 +2,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using ResumeStudio.Services;
-using System.Text.Json;
 
 namespace ResumeStudio;
 
@@ -11,7 +10,7 @@ public sealed partial class MainWindow
     private DateTime scheduleDate=DateTime.Today;
     private int scheduleView;
     private CalendarView? scheduleCalendar;
-    private string scheduleQuery="",scheduleKind="全部类型";
+    private string scheduleQuery="",scheduleKind="全部类型",scheduleApplicationId="";
     private readonly HashSet<string> expandedSchedule=[];
     private async Task<List<AgendaEntry>> ReadAgenda()
     {
@@ -20,8 +19,9 @@ public sealed partial class MainWindow
     }
     private async Task ShowSchedule()
     {
+        int generation=navigationRevision;
         Heading("求职日程","把笔试、面试、投递截止和自己的待办安排放在一起。");
-        var entries=await ReadAgenda(); if(currentPage!="schedule") return;
+        var entries=await ReadAgenda(); if(!PageIsCurrent("schedule",generation)) return;
         var panel=Stack(16); var tools=Row();
         tools.Children.Add(Button("＋ 新增日程",()=>EditSchedule(new ScheduleItem {StartAt=new DateTimeOffset(scheduleDate.AddHours(9),TimeZoneInfo.Local.GetUtcOffset(scheduleDate)).ToString("O")}),true));
         tools.Children.Add(Button("今天",async ()=> {scheduleDate=DateTime.Today; scheduleView=0; await Navigate("schedule");})); tools.Children.Add(Button("刷新",()=>Navigate("schedule"))); panel.Children.Add(tools);
@@ -41,17 +41,19 @@ public sealed partial class MainWindow
         foreach(var type in new[] {"笔试","面试","投递截止","自定义"}) {var add=Button("＋ "+type,()=>EditSchedule(new ScheduleItem {Kind=type,StartAt=new DateTimeOffset(scheduleDate.AddHours(9),TimeZoneInfo.Local.GetUtcOffset(scheduleDate)).ToString("O")}));add.HorizontalAlignment=HorizontalAlignment.Stretch;ToolTipService.SetToolTip(add,$"在所选日期新建{type}");Grid.SetColumn(add,quickIndex%2);Grid.SetRow(add,quickIndex++/2);quick.Children.Add(add);}month.Children.Add(Text("在所选日期快速添加",12));month.Children.Add(quick);
         var monthCard=Card(month,new Thickness(16)); monthCard.MaxWidth=430; monthCard.VerticalAlignment=VerticalAlignment.Top; grid.Children.Add(monthCard);
         var list=Stack(12); var heading=Text("",18,true); list.Children.Add(heading);
-        var mode=new ComboBox {Header="查看范围",ItemsSource=new[] {"所选日期","近期 30 天","全部未完成"},SelectedIndex=scheduleView,HorizontalAlignment=HorizontalAlignment.Stretch}; list.Children.Add(mode);
+        var mode=new ComboBox {Header="查看范围",ItemsSource=new[] {"所选日期","近期 30 天","全部未完成","全部日程（含已完成）"},SelectedIndex=scheduleView,HorizontalAlignment=HorizontalAlignment.Stretch}; list.Children.Add(mode);
         var types=new ComboBox {Header="日程类型筛选",ItemsSource=new[] {"全部类型"}.Concat(ScheduleService.Kinds).ToArray(),SelectedItem=scheduleKind,HorizontalAlignment=HorizontalAlignment.Stretch};list.Children.Add(types);
         var query=new TextBox {PlaceholderText="搜索事项、公司或备注",MaxLength=200,Text=scheduleQuery}; list.Children.Add(query); var cards=Stack(12);Entrance(cards);list.Children.Add(cards);
+        var clear=Button("清空筛选",()=>{scheduleApplicationId="";query.Text="";types.SelectedIndex=0;return RefreshPage("schedule");});list.Children.Insert(list.Children.Count-1,clear);
+        if(scheduleApplicationId.Length>0)list.Children.Insert(1,Text("仅显示当前投递关联的安排；清空筛选可查看所有日程。",12,true));
         void Refresh()
         {
             cards.Children.Clear(); scheduleView=mode.SelectedIndex; var now=DateTimeOffset.Now;
-            heading.Text=scheduleView==0?$"{scheduleDate:yyyy年M月d日} · 日程":scheduleView==1?"近期日程":"全部待办";
+            heading.Text=scheduleView==0?$"{scheduleDate:yyyy年M月d日} · 日程":scheduleView==1?"近期日程":scheduleView==2?"全部待办":"全部日程";
             scheduleQuery=query.Text;scheduleKind=types.SelectedItem?.ToString()??"全部类型";
-            var found=(scheduleView==0?ScheduleService.ForDate(entries,scheduleDate):scheduleView==1?ScheduleService.Upcoming(entries,now):entries.Where(e=>!e.Completed)).Where(e=>(scheduleKind=="全部类型"||e.Kind==scheduleKind)&&(e.Title+" "+e.Company+" "+e.Item?.Notes+" "+e.Application?.Notes).Contains(query.Text,StringComparison.OrdinalIgnoreCase)).ToList();
+            var found=(scheduleView==0?ScheduleService.ForDate(entries,scheduleDate):scheduleView==1?ScheduleService.Upcoming(entries,now):scheduleView==2?entries.Where(e=>!e.Completed):entries).Where(e=>(scheduleApplicationId==""||e.ApplicationId==scheduleApplicationId)&&(scheduleKind=="全部类型"||e.Kind==scheduleKind)&&(e.Title+" "+e.Company+" "+e.Item?.Notes+" "+e.Application?.Notes).Contains(query.Text,StringComparison.OrdinalIgnoreCase)).ToList();
             heading.Text+=$" · {found.Count} 项";
-            if(found.Count==0){var empty=Stack(10);empty.Children.Add(Text(scheduleView==0?"这一天暂无符合条件的安排。":"暂无符合条件的日程。",14));empty.Children.Add(Button("清空筛选",()=> {query.Text="";types.SelectedIndex=0;return Task.CompletedTask;}));cards.Children.Add(Card(empty));}
+            if(found.Count==0){var empty=Stack(10);empty.Children.Add(Text(scheduleView==0?"这一天暂无符合条件的安排。":"暂无符合条件的日程。",14));cards.Children.Add(Card(empty));}
             foreach(var entry in found) {
                 var item=Stack(10);var summary=Stack(6);var title=Text(entry.Title,17,true);title.MaxLines=2;summary.Children.Add(title);
                 var state=Text(entry.Kind+" · "+entry.When+" · "+(entry.Completed?"✓ 已完成":entry.Overdue(now)?"已到期":"待办"),12,true);state.Foreground=Brush(entry.Completed?"#167D78":entry.Overdue(now)?"#CC7B20":Accent);summary.Children.Add(state);
@@ -64,7 +66,7 @@ public sealed partial class MainWindow
                 var complete=Button(entry.Completed?"恢复待办":"标记完成",()=>CompleteAgenda(entry,!entry.Completed));
                 complete.IsEnabled=entry.Item is not null||entry.Application?.Status is not "已录用" and not "已结束";actions.Children.Add(complete);
                 if(entry.Item is not null) actions.Children.Add(Button("删除",async ()=> {if(await Confirm("删除这条日程？",entry.Title)){await api.Delete("schedule/"+entry.Item.Id);await Navigate("schedule");}}));
-                if(entry.Item is not null&&entry.Item.ApplicationId.Length>0) actions.Children.Add(Button("查看投递",()=>Navigate("applications")));
+                if(entry.ApplicationId.Length>0) actions.Children.Add(Button("查看投递",()=>ViewApplication(entry.ApplicationId)));
                 item.Children.Add(actions); cards.Children.Add(Card(item,new Thickness(16)));
             }
         }
@@ -86,12 +88,16 @@ public sealed partial class MainWindow
     }
     private async Task SetAgendaCompleted(AgendaEntry entry,bool completed)
     {
-        if(entry.Item is not null){entry.Item.Completed=completed;await api.Save("schedule",entry.Item);}
-        else if(entry.Application is not null){entry.Application.ReminderDone=completed;await api.Save("applications",entry.Application);}
+        var latest=(await ReadAgenda()).FirstOrDefault(e=>e.Id==entry.Id)??throw new InvalidOperationException("日程已删除，请刷新列表。");
+        if(latest.At!=entry.At||latest.Application is not null&&JobWorkflow.Closed(latest.Application))throw new InvalidOperationException("日程安排或投递状态已变化，请刷新后重试。");
+        if(latest.Item is not null){var copy=CloneDocument(latest.Item);copy.Completed=completed;await api.Save("schedule",copy);}
+        else if(latest.Application is not null){var copy=CloneDocument(latest.Application);copy.ReminderDone=completed;await api.Save("applications",copy);}
     }
     private async Task EditSchedule(ScheduleItem original)
     {
-        var item=JsonSerializer.Deserialize<ScheduleItem>(JsonSerializer.Serialize(original,BackendClient.Json),BackendClient.Json)!;
+        string returnPage=currentPage;
+        if(original.UpdatedAt.Length>0)original=(await api.Get<List<ScheduleItem>>("schedule")).FirstOrDefault(i=>i.Id==original.Id)??throw new InvalidOperationException("日程已被删除，请刷新列表。");
+        var item=CloneDocument(original);
         var applications=await api.Get<List<ApplicationRecord>>("applications");
         var links=new[] {new ApplicationRecord {Id="",Title="不关联投递"}}.Concat(applications).ToList();
         var panel=Stack(12); var title=new TextBox {Header="事项名称",Text=item.Title,MaxLength=200};
@@ -103,11 +109,13 @@ public sealed partial class MainWindow
         var reminders=new CheckBox {Content="软件内提醒",IsChecked=item.ReminderEnabled};int[] minutes=[1440,60,15,0];var ahead=new ComboBox {Header="提醒时间",ItemsSource=new[] {"提前一天","提前一小时","提前 15 分钟","到点提醒"},SelectedIndex=Math.Max(0,Array.IndexOf(minutes,item.ReminderMinutes)),HorizontalAlignment=HorizontalAlignment.Stretch,IsEnabled=item.ReminderEnabled};reminders.Checked+=(_,_)=>ahead.IsEnabled=true;reminders.Unchecked+=(_,_)=>ahead.IsEnabled=false;
         var notes=new TextBox {Header="备注／地点／会议链接",Text=item.Notes,MaxLength=10000,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,MinHeight=90};var completed=new CheckBox {Content="已完成",IsChecked=item.Completed};
         foreach(var element in new UIElement[] {title,kind,date,allDay,time,link,reminders,ahead,notes,completed}) panel.Children.Add(element);
-        var dialog=new ContentDialog {XamlRoot=shell.XamlRoot,Title="编辑日程",Content=new ScrollViewer {Content=panel,MaxHeight=580},PrimaryButtonText="保存日程",CloseButtonText="返回"};
-        dialog.PrimaryButtonClick+=(_,args)=> {if(string.IsNullOrWhiteSpace(title.Text)||date.Date is null){args.Cancel=true;title.Description="请填写事项名称并选择日期。";}};
-        if(await dialog.ShowAsync()!=ContentDialogResult.Primary)return;
+        var dialog=SaveForm("编辑日程",panel,"保存日程",async ()=> {
+        if(string.IsNullOrWhiteSpace(title.Text)||date.Date is null)throw new InvalidOperationException("请填写事项名称并选择日期。");
         var local=date.Date!.Value.Date+(allDay.IsChecked==true?TimeSpan.Zero:time.Time);
         item.Title=title.Text.Trim();item.Kind=(string)kind.SelectedItem;item.StartAt=new DateTimeOffset(local,TimeZoneInfo.Local.GetUtcOffset(local)).ToString("O");item.AllDay=allDay.IsChecked==true;item.Completed=completed.IsChecked==true;item.ReminderEnabled=reminders.IsChecked==true;item.ReminderMinutes=minutes[ahead.SelectedIndex];item.Notes=notes.Text;item.ApplicationId=(link.SelectedItem as ApplicationRecord)?.Id??"";
-        await api.Save("schedule",item);scheduleDate=local.Date;await Navigate("schedule");Feedback("日程已保存",item.Title+" · "+(item.AllDay?local.ToString("M月d日 · 全天"):local.ToString("M月d日 HH:mm")));await CheckApplicationReminders();
+        await api.Save("schedule",item);
+        });
+        if(await dialog.ShowAsync()!=ContentDialogResult.Primary)return;
+        scheduleDate=DateTimeOffset.Parse(item.StartAt).LocalDateTime.Date;await RefreshPage(returnPage);Feedback("日程已保存",item.Title);await CheckApplicationReminders();
     }
 }

@@ -48,6 +48,8 @@ public sealed partial class MainWindow
             if(json=="null") return; using var doc=JsonDocument.Parse(json); int pages=doc.RootElement.GetProperty("pages").GetInt32(); double remaining=doc.RootElement.GetProperty("remaining").GetDouble();
             if(web!=preview||capacityText is null) return;
             capacityText.Text=pages>1?$"内容估算约 {pages} 页；超出单页约 {-remaining:0} mm，实际分页以 PDF 为准。":$"A4 单页内容余量约 {Math.Max(0,remaining):0} mm；实际分页以 PDF 为准。";
+            if(current is not null&&showPreviewExamples&&!renderingPdf&&ResumeExamples.HasExamples(current))
+                capacityText.Text="包含模板示例 · 填写后替换，导出仅含你的内容。\n"+capacityText.Text;
             capacityText.Foreground=Brush(pages>1||remaining<15?"#A56A05":"#167D78");
         }
         catch(Exception) { /* A navigation may replace the document while its size is being measured. */ }

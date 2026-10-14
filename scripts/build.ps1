@@ -36,7 +36,7 @@ Copy-Item -Path (Join-Path $output '*') -Destination $release -Recurse -Force
 New-Item -ItemType Directory -Force (Join-Path $release 'backend') | Out-Null
 Copy-Item -LiteralPath $jar -Destination (Join-Path $release 'backend\resume-backend.jar') -Force
 New-Item -ItemType Directory -Force (Join-Path $release 'updater') | Out-Null
-foreach($helper in @('Update-App.ps1','sync-distribution.ps1')){
+foreach($helper in @('Update-App.ps1','sync-distribution.ps1','Compress-App.ps1')){
     # The updater runs in Windows PowerShell 5.1, which needs a BOM for Chinese text.
     [IO.File]::WriteAllText((Join-Path $release ('updater\'+$helper)),[IO.File]::ReadAllText((Join-Path $PSScriptRoot $helper)),[Text.UTF8Encoding]::new($true))
 }

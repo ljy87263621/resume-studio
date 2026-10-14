@@ -135,11 +135,12 @@ final class SyncStore {
     }
     private static void apply(Path root,Map<String,Object> snapshot) throws IOException {
         for(String kind:KINDS) {
-            Path dir=root.resolve(kind); safe(root,dir); Files.createDirectories(dir); Set<String> names=new HashSet<>();
+            // Use the filesystem's Path equality, including Windows case-insensitive names.
+            Path dir=root.resolve(kind); safe(root,dir); Files.createDirectories(dir); Set<Path> names=new HashSet<>();
             for(Object value:Json.array(snapshot.get(kind))) {
-                var doc=Json.object(value); String name=id(doc.get("id"))+".json"; names.add(name); atomic(root,dir.resolve(name),Json.write(doc).getBytes(StandardCharsets.UTF_8));
+                var doc=Json.object(value); Path path=dir.resolve(id(doc.get("id"))+".json"); names.add(path); atomic(root,path,Json.write(doc).getBytes(StandardCharsets.UTF_8));
             }
-            try(var files=Files.list(dir)) { for(Path file:files.filter(p->p.getFileName().toString().endsWith(".json")).toList()) { safe(root,file); if(!names.contains(file.getFileName().toString())) Files.delete(file); } }
+            try(var files=Files.list(dir)) { for(Path file:files.filter(p->p.getFileName().toString().endsWith(".json")).toList()) { safe(root,file); if(!names.contains(file)) Files.delete(file); } }
         }
         var prefs=new LinkedHashMap<>(settings(root)); SETTINGS.forEach(prefs::remove); prefs.putAll(Json.object(snapshot.get("settings")));
         atomic(root,root.resolve("settings.json"),Json.write(prefs).getBytes(StandardCharsets.UTF_8));

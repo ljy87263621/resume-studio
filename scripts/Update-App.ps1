@@ -41,6 +41,11 @@ try {
     # Preserve unknown/modified files in a candidate copy; the original is kept until startup succeeds.
     Copy-Item -LiteralPath $install -Destination $candidate -Recurse
     & (Join-Path $PSScriptRoot 'sync-distribution.ps1') -SourceDirectory $source -DestinationDirectory $candidate
+    $compression=Join-Path $candidate 'updater\Compress-App.ps1'
+    if(Test-Path -LiteralPath $compression){
+        # Compress the verified candidate before it starts. Failure is non-fatal.
+        & (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $compression -AppDirectory $candidate 1>$null 2>$null
+    }
     Move-Item -LiteralPath $install -Destination $backup
     try {Move-Item -LiteralPath $candidate -Destination $install; $swapped=$true}
     catch {Move-Item -LiteralPath $backup -Destination $install; throw}

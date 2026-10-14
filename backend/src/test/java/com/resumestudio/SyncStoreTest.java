@@ -55,6 +55,18 @@ public final class SyncStoreTest {
         check(recovered.history("one").size()==1,"history restored");
         check(!Files.exists(root.resolve("sync-recovery.json")),"journal removed after recovery");
         try(var backups=Files.list(root.resolve("sync-backups"))) { check(backups.findAny().isPresent(),"durable backup"); }
+        // Windows can keep the old directory entry's case after replacing its contents.
+        Path caseRoot=Files.createTempDirectory("resume-sync-case-"); Store caseStore=new Store(caseRoot);
+        caseStore.save("resumes",resume("UPPER")); caseStore.checkpoint("UPPER","大小写测试");
+        var caseBefore=caseStore.syncSnapshot(); var caseData=new LinkedHashMap<>(Json.object(caseBefore.get("snapshot")));
+        caseData.put("resumes",List.of(resume("upper")));
+        var caseRevision=new LinkedHashMap<>(Json.object(Json.array(caseData.get("history")).getFirst()));
+        caseRevision.put("resumeId","upper"); caseRevision.put("resume",resume("upper"));
+        caseRevision.put("id",Json.str(caseRevision,"id").toUpperCase(Locale.ROOT)); caseData.put("history",List.of(caseRevision));
+        caseStore.syncImport(Json.str(caseBefore,"hash"),caseData);
+        check(caseStore.list("resumes").size()==1,"case-only replacement retains record");
+        check(Json.str(caseStore.list("resumes").getFirst(),"id").equals("upper"),"case-only replacement imports new content");
+        check(caseStore.history("upper").size()==1,"case-only replacement retains history");
         System.out.println("PASS SyncStore: validation, CAS, deletion, extension fields, local secrets, history, recovery, backup");
     }
     static void rejects(Store store,Map<String,Object> before,String kind,Map<String,Object> document,String label) throws Exception {

@@ -68,6 +68,8 @@ jobs:
           ./scripts/test-schedule.ps1
           node --version
           ./scripts/test-features.ps1 -ReuseBackendTestClasses
+          ./scripts/test-workbench.ps1
+          ./scripts/test-maintenance.ps1
           ./scripts/package.ps1 -PackageLabel '${{ steps.source.outputs.label }}'
       - name: Install verified installer build tools
         if: steps.source.outputs.changed == 'true'
@@ -102,7 +104,7 @@ jobs:
           $sha='${{ steps.source.outputs.sha }}'
           $notes="Nightly 每日测试版，可能包含尚未稳定的改动。`n`n源码提交：$sha`n`n<!-- source-commit: $sha -->"
           $notes | Set-Content release/nightly-notes.md -Encoding utf8
-          gh release create '${{ steps.source.outputs.tag }}' 'release/ResumeStudio-v${{ steps.source.outputs.label }}-windows-x64.zip' 'release/ResumeStudio-v${{ steps.source.outputs.label }}-Setup-x64.exe' release/release-info.json release/release-info.sig release/microsoft-openjdk-jdk21u-6f26c6b2.tar.gz release/SHA256SUMS.txt --repo "$env:GITHUB_REPOSITORY" --target $sha --title '拾简 Nightly ${{ steps.source.outputs.tag }} — Windows x64' --prerelease --latest=false --notes-file release/nightly-notes.md
+          gh release create '${{ steps.source.outputs.tag }}' 'release/ResumeStudio-v${{ steps.source.outputs.label }}-windows-x64.zip' 'release/ResumeStudio-v${{ steps.source.outputs.label }}-Setup-x64.exe' release/release-info.json release/release-info.sig release/release-changelog.json release/microsoft-openjdk-jdk21u-6f26c6b2.tar.gz release/SHA256SUMS.txt --repo "$env:GITHUB_REPOSITORY" --target $sha --title '拾简 Nightly ${{ steps.source.outputs.tag }} — Windows x64' --prerelease --latest=false --notes-file release/nightly-notes.md
           if($LASTEXITCODE -ne 0){throw 'Nightly publication failed'}
       - name: Publish signed Nightly channel index
         if: steps.source.outputs.changed == 'true'

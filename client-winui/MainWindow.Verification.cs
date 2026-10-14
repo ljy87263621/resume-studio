@@ -46,14 +46,14 @@ public sealed partial class MainWindow
         visibleJobList.ItemsSource=realJobs; iterationChecks.Add("1000-job virtualized list and scrolling");
 
         current=await api.Save("resumes",Demo(templates[0])); dirty=false; await OpenEditor();
-        var originalWeb=preview; editorParts!.SelectedIndex=2; await Task.Delay(150);
+        var originalWeb=preview; editorParts!.SelectedIndex=0; await Task.Delay(150);
         var field=FindTextField(body,"内容")??throw new Exception("Module editor field missing");
         field.Text="## 模块导航验证 | 2026\n- 最新内容必须保存并进入预览。";
         await Task.Delay(100); await SaveCurrent(); await WaitForPreview();
         var saved=(await api.Get<List<Resume>>("resumes")).First(r=>r.Id==current.Id);
         if(saved.Sections[0].Content!=NormalizeLines(field.Text)) throw new Exception("Module content was not saved");
         if(await preview!.CoreWebView2.ExecuteScriptAsync("document.querySelector('article').textContent.includes('最新内容必须保存')")!="true") throw new Exception("Preview does not contain latest module edit");
-        editorParts.SelectedIndex=0; await Task.Delay(50); editorParts.SelectedIndex=2; await Task.Delay(150);
+        SelectBasicInformation(); await Task.Delay(50); editorParts.SelectedIndex=0; await Task.Delay(150);
         if(NormalizeLines(FindTextField(body,"内容")?.Text??"")!=saved.Sections[0].Content||preview!=originalWeb) throw new Exception("Module selection lost state: "+JsonSerializer.Serialize(new {selectedEditorPart,selected=editorParts.SelectedIndex,ui=FindTextField(body,"内容")?.Text,saved=saved.Sections[0].Content,model=current.Sections[0].Content,webReused=preview==originalWeb}));
         iterationChecks.Add("module navigation, native edit, autosave and current preview");
 
@@ -73,7 +73,7 @@ public sealed partial class MainWindow
         await VerifyGlassCaptionRegions();
         AppWindow.Resize(originalSize); await Task.Delay(200); await VerifyGlassCaptionRegions();
         iterationChecks.Add("Haru drag regions follow compact navigation and restored window size");
-        await OpenEditor(); editorParts!.SelectedIndex=2; await SaveNativePreview(Path.Combine(output,"haru-editor-light.png"));
+        await OpenEditor(); editorParts!.SelectedIndex=0; await SaveNativePreview(Path.Combine(output,"haru-editor-light.png"));
         preferences.Theme="dark"; await ApplyPreferences(); await SaveNativePreview(Path.Combine(output,"haru-editor-dark.png"));
         if(shell.RequestedTheme!=ElementTheme.Dark||preview!=originalWeb) throw new Exception("Dark theme or WebView reuse failed");
         iterationChecks.Add("Haru light and dark themes without WebView recreation");
@@ -84,7 +84,7 @@ public sealed partial class MainWindow
         var image=await folder.CreateFileAsync("browser-preview-dark.png",Windows.Storage.CreationCollisionOption.ReplaceExisting);
         using(var stream=await image.OpenAsync(Windows.Storage.FileAccessMode.ReadWrite)) await preview!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png,stream);
 
-        preferences.LivePreview=false; await preferences.SaveAsync(api.DataDirectory); editorParts.SelectedIndex=2; await Task.Delay(150);
+        preferences.LivePreview=false; await preferences.SaveAsync(api.DataDirectory); editorParts.SelectedIndex=0; await Task.Delay(150);
         var content=FindTextField(body,"内容")!; content.Text+="\n- 关闭实时预览后，PDF 仍必须同步。"; await Task.Delay(100); await SaveCurrent();
         AppWindow.Hide();
         try { await PrintPdf(Path.Combine(output,"manual-preview-latest.pdf")); }
