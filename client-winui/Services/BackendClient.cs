@@ -68,6 +68,23 @@ public sealed class BackendClient : IDisposable
         catch(IOException) { }
         catch(UnauthorizedAccessException) { }
     }
+    public async Task StopAsync()
+    {
+        http.Dispose();
+        var backend=process;process=null;
+        if(backend is null)return;
+        try
+        {
+            if(!backend.HasExited)
+            {
+                backend.Kill(entireProcessTree:true);
+                await backend.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
+            }
+        }
+        catch(InvalidOperationException) { }
+        catch(TimeoutException ex) { throw new IOException("本地 Java 服务未能及时退出，更新已取消，请稍后重试。",ex); }
+        finally { backend.Dispose(); }
+    }
     public async Task<T> Get<T>(string path,CancellationToken cancellationToken=default)
     {
         await StartAsync().WaitAsync(cancellationToken);
@@ -96,7 +113,8 @@ public sealed class BackendClient : IDisposable
     public void Dispose()
     {
         http.Dispose();
-        try { if(process is { HasExited:false }) process.Kill(entireProcessTree:true); } catch(InvalidOperationException) { }
-        process?.Dispose();
+        var backend=process;process=null;
+        try { if(backend is { HasExited:false }) backend.Kill(entireProcessTree:true); } catch(InvalidOperationException) { }
+        backend?.Dispose();
     }
 }

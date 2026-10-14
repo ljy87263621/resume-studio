@@ -11,6 +11,14 @@ $ack=Join-Path $workspace 'startup-ready.json'
 $result=Join-Path $workspace 'result.json'
 $swapped=$false
 $newProcess=$null
+$stage='validate update request'
+function Write-UpdateLog([string]$message) {
+    try { Add-Content -LiteralPath (Join-Path $workspace 'updater.log') -Value ("{0} {1}" -f [DateTimeOffset]::Now.ToString('O'),$message) -Encoding UTF8 } catch { }
+}
+function Get-InstallProcesses {
+    $prefix=$install+'\'
+    return @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) })
+}
 function Check-OwnedSibling([string]$path) {
     $resolved=[IO.Path]::GetFullPath($path)
     if((Split-Path $resolved -Parent) -ne $parent -or !(Split-Path $resolved -Leaf).StartsWith('.resumestudio-')){throw 'Unsafe update work directory'}
@@ -35,30 +43,50 @@ try {
     $process=Get-Process -Id $request.processId -ErrorAction SilentlyContinue
     if($process){
         if($process.Path -ne (Join-Path $install 'ResumeStudio.exe')){throw 'Unexpected application process'}
+        $stage='wait for Resume Studio to close'
         Wait-Process -Id $request.processId -Timeout 45 -ErrorAction SilentlyContinue
         if(Get-Process -Id $request.processId -ErrorAction SilentlyContinue){throw 'Application did not finish saving and closing'}
     }
+    $stage='wait for processes using the installation directory'
+    $deadline=[DateTime]::UtcNow.AddSeconds(30)
+    $active=Get-InstallProcesses
+    # The old client kills Java without waiting. If its backend was orphaned as the
+    # window closed, stop only that app-owned backend for this exact data directory.
+    foreach($backend in @($active | Where-Object { $_.Name -ieq 'java.exe' -and $_.CommandLine -like '*resume-backend.jar*' -and $_.CommandLine.IndexOf($request.dataDirectory,[StringComparison]::OrdinalIgnoreCase) -ge 0 })) {
+        Stop-Process -Id $backend.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+    while($active.Count -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250; $active=Get-InstallProcesses }
+    if($active.Count) {
+        $owners=($active | Select-Object -First 4 | ForEach-Object { "$($_.Name) (PID $($_.ProcessId))" }) -join ', '
+        throw "Installation files are still in use by: $owners"
+    }
     # Preserve unknown/modified files in a candidate copy; the original is kept until startup succeeds.
+    $stage='copy installed files to the update candidate'
     Copy-Item -LiteralPath $install -Destination $candidate -Recurse
+    $stage='synchronize the verified update payload'
     & (Join-Path $PSScriptRoot 'sync-distribution.ps1') -SourceDirectory $source -DestinationDirectory $candidate
     $compression=Join-Path $candidate 'updater\Compress-App.ps1'
     if(Test-Path -LiteralPath $compression){
         # Compress the verified candidate before it starts. Failure is non-fatal.
         & (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $compression -AppDirectory $candidate 1>$null 2>$null
     }
+    $stage='move the old installation to its backup'
     Move-Item -LiteralPath $install -Destination $backup
-    try {Move-Item -LiteralPath $candidate -Destination $install; $swapped=$true}
+    try {$stage='put the new installation in place';Move-Item -LiteralPath $candidate -Destination $install; $swapped=$true}
     catch {Move-Item -LiteralPath $backup -Destination $install; throw}
     if($request.restart){
+        $stage='verify that the updated application starts'
         $newProcess=Start-App $true
         for($attempt=0;$attempt -lt 120 -and !(Test-Path -LiteralPath $ack);$attempt++){Start-Sleep -Milliseconds 500}
         if(!(Test-Path -LiteralPath $ack)){throw 'New application did not confirm successful startup'}
     }
+    Write-UpdateLog 'Update installed successfully.'
     @{status='installed';backup=$backup;installedAt=[DateTimeOffset]::Now.ToString('O')} | ConvertTo-Json | Set-Content -LiteralPath $result -Encoding UTF8
     # Keep the previous program directory for recovery. No personal document directory is changed.
 }
 catch {
-    $message=$_.Exception.Message
+    $message="$stage`: $($_.Exception.Message)"
+    Write-UpdateLog "Update failed during $message"
     if($swapped -and (Test-Path -LiteralPath $backup)){
         if($newProcess -and !$newProcess.HasExited){$null=$newProcess.CloseMainWindow(); $newProcess.WaitForExit(10000) | Out-Null; if(!$newProcess.HasExited){$newProcess.Kill()}}
         $failed=Join-Path $parent ('.resumestudio-failed-'+[guid]::NewGuid().ToString('N')); Check-OwnedSibling $failed

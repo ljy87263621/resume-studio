@@ -87,8 +87,9 @@ public sealed partial class MainWindow
             closeRequested=true; await FinishSyncBeforeClose();
             await maintenanceLock.WaitAsync(cancellation.Token);maintenanceLock.Release();
             editTimer.Stop(); previewTimer.Stop(); await SaveCurrent();
+            reminderTimer.Stop();CancelJobSearch();await DetachPreviewAsync(true);await api.StopAsync();
             await UpdateInstaller.Launch(source,workspace,AppContext.BaseDirectory,api.DataDirectory);
-            reminderTimer.Stop();CancelJobSearch();await DetachPreviewAsync(true);closing=true;updateCancellation.Cancel();api.Dispose();Close();
+            closing=true;updateCancellation.Cancel();api.Dispose();Close();
         }
         catch(OperationCanceledException) {Success("更新已取消","当前程序保持原样。");}
         finally {updateBusy=false;if(!closing) closeRequested=false;}

@@ -45,7 +45,9 @@ public static class UpdateInstaller
     }
     public static async Task Launch(string source,string workspace,string installRoot,string dataDirectory)
     {
-        foreach(string file in new[] {"Update-App.ps1","sync-distribution.ps1"}) File.Copy(Path.Combine(installRoot,"updater",file),Path.Combine(workspace,file),true);
+        // The verified incoming payload carries its own updater. Using the installed
+        // helper would make a failed upgrade impossible to repair from the new build.
+        foreach(string file in new[] {"Update-App.ps1","sync-distribution.ps1"}) File.Copy(Path.Combine(source,"updater",file),Path.Combine(workspace,file),true);
         string request=Path.Combine(workspace,"request.json");
         await File.WriteAllTextAsync(request,JsonSerializer.Serialize(new InstallRequest(Environment.ProcessId,Path.GetFullPath(installRoot),source,workspace,dataDirectory),ReleaseUpdate.Json));
         // A desktop shortcut starts the app inside its installation directory. The

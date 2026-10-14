@@ -64,7 +64,7 @@ public sealed partial class MainWindow : Window
             closeRequested=true;
             _=Run(async ()=>
             {
-                try { await FinishSyncBeforeClose(); editTimer.Stop(); previewTimer.Stop(); reminderTimer.Stop(); feedbackTimer.Stop(); CancelJobSearch(); await SaveCurrent();await DetachPreviewAsync(true);closing=true;updateCancellation.Cancel();api.Dispose();Close(); }
+                try { await FinishSyncBeforeClose(); editTimer.Stop(); previewTimer.Stop(); reminderTimer.Stop(); feedbackTimer.Stop(); CancelJobSearch(); await SaveCurrent();await DetachPreviewAsync(true);await api.StopAsync();closing=true;updateCancellation.Cancel();api.Dispose();Close(); }
                 finally { if(!closing) closeRequested=false; }
             });
         };
