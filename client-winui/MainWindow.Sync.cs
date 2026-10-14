@@ -40,7 +40,7 @@ public sealed partial class MainWindow
         var content=Stack(12); content.Children.Add(Text("跨端同步 · WebDAV",20,true));
         content.Children.Add(Text("手动同步简历、内嵌照片、历史版本、职位收藏、投递记录、日程、公司来源和非敏感设置。API Key、网站 Cookie、登录会话与同步凭据只留在本机。",13));
         var address=new TextBox {Header="WebDAV 地址",PlaceholderText="https://dav.jianguoyun.com/dav/",Text=settings.DirectoryUrl};
-        content.Children.Add(Text("填写服务提供的 WebDAV 入口或已有文件夹地址，首次同步自动创建并使用其下的 ResumeStudio 文件夹；已有配置继续使用原同步目录。坚果云可直接填 https://dav.jianguoyun.com/dav/，用户名用坚果云账号，密码用第三方应用密码。",12));
+        content.Children.Add(Text("填写服务提供的 WebDAV 入口或已有文件夹地址，首次同步自动创建并使用其下的 ResumeStudio 文件夹；已有实际同步目录继续使用。旧坚果云 /dav/ 入口会改为专用目录，目录变化时需重新填写密码。坚果云可直接填 https://dav.jianguoyun.com/dav/，用户名用坚果云账号，密码用第三方应用密码。",12));
         var username=new TextBox {Header="用户名",Text=settings.Username};
         var password=new PasswordBox {Header="密码 / 应用密码（留空保留该目标已保存密码）"};
         content.Children.Add(address);content.Children.Add(username);content.Children.Add(password);
