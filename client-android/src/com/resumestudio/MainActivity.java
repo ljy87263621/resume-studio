@@ -29,7 +29,8 @@ public final class MainActivity extends Activity {
     private AndroidUpdateClient.Release availableAndroidUpdate;
     private android.window.OnBackInvokedCallback backCallback;
     private int systemInsetLeft,systemInsetTop,systemInsetRight,systemInsetBottom;
-    private final ExecutorService worker=Executors.newSingleThreadExecutor();private final Handler timer=new Handler(Looper.getMainLooper());
+    private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    private final ExecutorService updateWorker=Executors.newSingleThreadExecutor();private final Handler timer=new Handler(Looper.getMainLooper());
     private boolean destroyed=false;private String shared="";private WebView printWeb;
     private final Runnable reminders=new Runnable(){public void run(){if(destroyed)return;worker.execute(()->checkReminders());timer.postDelayed(this,60000);}};
     @Override public void onCreate(Bundle state){
@@ -76,7 +77,8 @@ public final class MainActivity extends Activity {
     public final class Bridge {
         @JavascriptInterface public void post(String token,String method,String input){
             if(token.length()>100||input.length()>8_000_000)return;
-            worker.execute(()->{
+            ExecutorService executor=method.equals("checkAndroidUpdate")||method.equals("downloadAndroidUpdate")?updateWorker:worker;
+            executor.execute(()->{
                 Map<String,Object> response;
                 try{Object result=handle(method,Json.object(Json.parse(input)));response=MobileCompat.map("ok",true,"value",result);}
                 catch(Exception ex){android.util.Log.w("ResumeStudio",method,ex);response=MobileCompat.map("ok",false,"error",Objects.toString(ex.getMessage(),"操作未完成"));}
@@ -131,9 +133,10 @@ public final class MainActivity extends Activity {
     private void checkUpdatesOnStartup(){
         if(destroyed)return;
         var preferences=getSharedPreferences("resume-studio",0);long now=System.currentTimeMillis();if(now-preferences.getLong("lastUpdateCheck",0)<12L*60L*60L*1000L)return;preferences.edit().putLong("lastUpdateCheck",now).apply();
-        worker.execute(()->{try{Map<String,Object> settings=Json.object(api.call("settings",Collections.emptyMap()));if(Boolean.FALSE.equals(settings.get("checkUpdatesOnStartup")))return;Object result=checkAndroidUpdate();if(result instanceof Map<?,?> map&&Boolean.TRUE.equals(map.get("available")))event("updateAvailable",result);}catch(Exception ex){event("updateStatus","启动时更新检查未完成："+Objects.toString(ex.getMessage(),"网络不可用"));}});
+        updateWorker.execute(()->{try{Map<String,Object> settings=Json.object(api.call("settings",Collections.emptyMap()));if(Boolean.FALSE.equals(settings.get("checkUpdatesOnStartup")))return;Object result=checkAndroidUpdate();if(result instanceof Map<?,?> map&&Boolean.TRUE.equals(map.get("available")))event("updateAvailable",result);}catch(Exception ex){event("updateStatus","启动时更新检查未完成："+Objects.toString(ex.getMessage(),"网络不可用"));}});
     }
     private Map<String,Object> checkAndroidUpdate()throws Exception{
+        availableAndroidUpdate=null;
         Map<String,Object> prefs=Json.object(api.call("settings",Collections.emptyMap()));String channel=Json.str(prefs,"updateChannel");if(channel.isEmpty())channel="stable";String route=Json.str(prefs,"updateRoute");if(route.isEmpty())route="auto";
         int current=getPackageManager().getPackageInfo(getPackageName(),0).versionCode;availableAndroidUpdate=new AndroidUpdateClient(this).check(channel,current,route);
         return availableAndroidUpdate==null?MobileCompat.map("available",false,"message","当前安卓版本已是所选通道最新版本"):MobileCompat.map("available",true,"release",availableAndroidUpdate.display(),"message","发现安卓更新 "+availableAndroidUpdate.versionName);
@@ -236,5 +239,5 @@ public final class MainActivity extends Activity {
     private void sendBackProgress(float progress){if(web!=null)web.evaluateJavascript("window.setBackProgress&&window.setBackProgress("+Math.max(0,Math.min(1,progress))+")",null);}
     private void handleWebBack(){if(web!=null)web.evaluateJavascript("window.appBack()",null);else finish();}
     @Override public void onBackPressed(){if(Build.VERSION.SDK_INT<33)handleWebBack();else super.onBackPressed();}
-    @Override protected void onDestroy(){destroyed=true;if(Build.VERSION.SDK_INT>=33&&backCallback!=null)getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);if(foregroundActivity.get()==this)foregroundActivity=new java.lang.ref.WeakReference<>(null);timer.removeCallbacksAndMessages(null);worker.shutdownNow();if(web!=null){web.stopLoading();web.onPause();web.removeJavascriptInterface("ResumeNative");if(web.getParent() instanceof android.view.ViewGroup parent)parent.removeView(web);web.destroy();web=null;}if(printWeb!=null){printWeb.stopLoading();if(printWeb.getParent() instanceof android.view.ViewGroup parent)parent.removeView(printWeb);printWeb.destroy();printWeb=null;}super.onDestroy();}
+    @Override protected void onDestroy(){destroyed=true;if(Build.VERSION.SDK_INT>=33&&backCallback!=null)getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);if(foregroundActivity.get()==this)foregroundActivity=new java.lang.ref.WeakReference<>(null);timer.removeCallbacksAndMessages(null);worker.shutdownNow();updateWorker.shutdownNow();if(web!=null){web.stopLoading();web.onPause();web.removeJavascriptInterface("ResumeNative");if(web.getParent() instanceof android.view.ViewGroup parent)parent.removeView(web);web.destroy();web=null;}if(printWeb!=null){printWeb.stopLoading();if(printWeb.getParent() instanceof android.view.ViewGroup parent)parent.removeView(printWeb);printWeb.destroy();printWeb=null;}super.onDestroy();}
 }

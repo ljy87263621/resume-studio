@@ -8,7 +8,7 @@ import java.nio.file.*;
 import java.security.MessageDigest;
 import java.io.FileOutputStream;
 
-/** No redirects, cookies or permissive TLS. All response bodies are bounded. */
+/** WebDAV never redirects. Update GETs follow bounded HTTPS release redirects only. */
 public final class MobileHttp {
     public static final class Result {
         public final int status; public final byte[] bytes; public final String etag;
@@ -35,9 +35,39 @@ public final class MobileHttp {
         Result r=request(uri,payload==null?"GET":"POST",headers,payload==null?null:payload.getBytes(StandardCharsets.UTF_8),limit);
         if(r.status!=200)throw new IOException("官网请求失败（HTTP "+r.status+"），可打开官网浏览");return r.text();
     }
+    private static HttpURLConnection openUpdateConnection(URI uri)throws IOException {
+        for(int redirects=0;redirects<=5;redirects++) {
+            String host=uri.getHost()==null?"":uri.getHost().toLowerCase(Locale.ROOT);
+            if(!"https".equals(uri.getScheme())||uri.getUserInfo()!=null||(uri.getPort()!=-1&&uri.getPort()!=443)||
+                !(host.equals("github.com")||host.equals("gh-proxy.org")||host.endsWith(".githubusercontent.com")))
+                throw new IOException("更新跳转地址不受信任");
+            HttpURLConnection c=(HttpURLConnection)uri.toURL().openConnection();
+            c.setInstanceFollowRedirects(false);c.setConnectTimeout(15000);c.setReadTimeout(30000);c.setUseCaches(false);
+            c.setRequestProperty("User-Agent","ResumeStudio-Android");c.setRequestProperty("Cache-Control","no-cache");
+            try {
+                int status=c.getResponseCode();
+                if(status!=301&&status!=302&&status!=303&&status!=307&&status!=308)return c;
+                String location=c.getHeaderField("Location");
+                if(location==null)throw new IOException("更新跳转缺少目标地址");
+                uri=uri.resolve(location);
+            } catch(IOException|IllegalArgumentException ex){c.disconnect();throw new IOException("无法读取更新地址",ex);}
+            c.disconnect();
+        }
+        throw new IOException("更新跳转次数过多");
+    }
+    public static byte[] readUpdate(URI uri,int limit)throws IOException {
+        HttpURLConnection c=openUpdateConnection(uri);
+        try {
+            int status=c.getResponseCode();if(status!=200)throw new IOException("GitHub 更新通道返回 HTTP "+status);
+            if(c.getContentLengthLong()>limit)throw new IOException("更新索引过大");
+            try(InputStream input=c.getInputStream()) {
+                byte[] bytes=MobileCompat.readNBytes(input,limit+1);
+                if(bytes.length>limit)throw new IOException("更新索引过大");return bytes;
+            }
+        } finally {c.disconnect();}
+    }
     public static String download(URI uri,Path target,long expectedSize,long maximum)throws IOException{
-        if(!"https".equals(uri.getScheme()))throw new IOException("更新包地址必须使用 HTTPS");
-        HttpURLConnection c=(HttpURLConnection)uri.toURL().openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(15000);c.setReadTimeout(90000);c.setUseCaches(false);c.setRequestProperty("User-Agent","ResumeStudio-Android");
+        HttpURLConnection c=openUpdateConnection(uri);
         Path temp=target.resolveSibling(target.getFileName()+".tmp");
         try{
             int status=c.getResponseCode();if(status!=200)throw new IOException("APK 下载失败（HTTP "+status+")");long length=c.getContentLengthLong();if(length>maximum||length>=0&&length!=expectedSize)throw new IOException("APK 大小与签名信息不一致");

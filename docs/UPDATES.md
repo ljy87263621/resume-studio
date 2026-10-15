@@ -34,4 +34,6 @@
 
 ## 旧版恢复
 
+Android `0.9.5-nightly.20261015.ede43b32` 发行包缺少更新验证公钥，检查更新会提示 `UpdatePublicKey.pem`。请从 GitHub Releases 手动下载较新的 Nightly APK 覆盖安装一次，无需卸载。修复后的构建会检查 APK 中的公钥与电脑端受版本管理的公钥一致；签名与摘要校验继续保留。选择 Nightly 通道可接收后续测试版，Stable 通道只检查正式版。
+
 旧版第一次升级若遇到 API 403、缺少更新器或安装目录 “is in use”，直接使用最新 Setup 覆盖安装。个人数据目录不参与程序替换。v0.6.0／0.6.1 也可用新版 `updater/Update-App.ps1` 备份后替换旧脚本，再在软件内重试。

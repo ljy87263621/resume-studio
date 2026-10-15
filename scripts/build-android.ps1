@@ -1,4 +1,4 @@
-param([string]$Sdk = $env:ANDROID_HOME, [string]$Output = '', [string]$SigningStore = '', [string]$SigningAlias = 'resume-studio', [string]$VersionName = '', [int]$VersionCode = 0)
+﻿param([string]$Sdk = $env:ANDROID_HOME, [string]$Output = '', [string]$SigningStore = '', [string]$SigningAlias = 'resume-studio', [string]$VersionName = '', [int]$VersionCode = 0)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 if(!$Sdk){$Sdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'}
@@ -53,6 +53,13 @@ $validator=$validator.Replace('Set.of(', 'MobileCompat.set(').Replace('List.of('
 [IO.File]::WriteAllText("$build\generated\com\resumestudio\Server.java",$validator,[Text.UTF8Encoding]::new($false))
 # Carry the exact desktop rendering styles, template catalog and examples into the APK.
 Copy-Item -Path "$source\assets\*" -Destination "$build\assets" -Recurse -Force
+# Always use the tracked desktop verification key; *.pem intentionally excludes local secrets.
+$updateKey=Join-Path $root 'client-winui\Assets\UpdatePublicKey.pem'
+$keyText=[IO.File]::ReadAllText($updateKey)
+$rsa=[Security.Cryptography.RSA]::Create()
+try{$rsa.ImportFromPem($keyText);if($rsa.KeySize -lt 2048){throw 'Update public key is too short'}}finally{$rsa.Dispose()}
+Copy-Item -LiteralPath $updateKey -Destination "$build\assets\UpdatePublicKey.pem" -Force
+
 Copy-Item -Path "$dependency\pdfbox\assets\*" -Destination "$build\assets" -Recurse -Force
 $capture=[IO.File]::ReadAllText((Join-Path $root 'client-winui\MainWindow.PlatformCapture.cs'))
 $captureScript=[regex]::Match($capture,'(?s)PlatformJobsScript="""\s*(.*?)\s*""";').Groups[1].Value
@@ -89,6 +96,13 @@ try{
     }
     foreach($dex in Get-ChildItem "$build\dex" -Filter '*.dex'){[IO.Compression.ZipFileExtensions]::CreateEntryFromFile($apk,$dex.FullName,$dex.Name)|Out-Null}
 }finally{$apk.Dispose();$raw.Dispose();$stream.Dispose()}
+$verificationApk=[IO.Compression.ZipFile]::OpenRead("$build\normalized.apk")
+try{
+    $keyEntry=$verificationApk.GetEntry('assets/UpdatePublicKey.pem')
+    if(!$keyEntry){throw 'APK is missing the update verification key'}
+    $reader=[IO.StreamReader]::new($keyEntry.Open())
+    try{if($reader.ReadToEnd() -cne $keyText){throw 'APK update key differs from the canonical desktop key'}}finally{$reader.Dispose()}
+}finally{$verificationApk.Dispose()}
 & "$tools\zipalign.exe" -f 4 "$build\normalized.apk" "$build\aligned.apk";if($LASTEXITCODE){throw 'APK alignment failed'}
 $temporaryStore=$false
 if($env:RESUMESTUDIO_ANDROID_KEYSTORE_B64){$SigningStore=Join-Path $build 'release-signing.p12';[IO.File]::WriteAllBytes($SigningStore,[Convert]::FromBase64String($env:RESUMESTUDIO_ANDROID_KEYSTORE_B64));$temporaryStore=$true}

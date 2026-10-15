@@ -17,8 +17,8 @@ import java.util.concurrent.*;
 
 /** Runs against the signed production APK; no test bridge or debugging mode is shipped in the app. */
 public final class AcceptanceInstrumentation extends Instrumentation {
-    private WebView web;private String davPort;
-    @Override public void onCreate(Bundle args){super.onCreate(args);davPort=args.getString("davPort","");start();}
+    private WebView web;private String davPort;private boolean onlineUpdate;
+    @Override public void onCreate(Bundle args){super.onCreate(args);davPort=args.getString("davPort","");onlineUpdate=Boolean.parseBoolean(args.getString("onlineUpdate","false"));start();}
     private WebView find(View v){if(v instanceof WebView)return(WebView)v;if(v instanceof ViewGroup g)for(int i=0;i<g.getChildCount();i++){WebView w=find(g.getChildAt(i));if(w!=null)return w;}return null;}
     private String js(String script)throws Exception{CompletableFuture<String> result=new CompletableFuture<>();runOnMainSync(()->web.evaluateJavascript(script,result::complete));return result.get(120,TimeUnit.SECONDS);}
     @Override public void onStart(){Bundle results=new Bundle();try{
@@ -35,12 +35,19 @@ public final class AcceptanceInstrumentation extends Instrumentation {
             try(ParcelFileDescriptor fd=ParcelFileDescriptor.open(pdf,ParcelFileDescriptor.MODE_READ_ONLY);PdfRenderer renderer=new PdfRenderer(fd)){
                 if(renderer.getPageCount()<1||pdf.length()<1000)throw new IOException("Android PDF export empty");
                 try(PdfRenderer.Page page=renderer.openPage(0)){Bitmap image=Bitmap.createBitmap(page.getWidth()*2,page.getHeight()*2,Bitmap.Config.ARGB_8888);image.eraseColor(android.graphics.Color.WHITE);page.render(image,null,null,PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);try(FileOutputStream out=new FileOutputStream(new File(dir,"resume-pdf.png"))){image.compress(Bitmap.CompressFormat.PNG,100,out);}image.recycle();}
-                verifyImports(pdf);JSONObject json=new JSONObject(report);json.put("pdfPages",renderer.getPageCount());json.put("pdfBytes",pdf.length());json.put("nativeImportChecks",4);report=json.toString();
+                verifyImports(pdf);JSONObject json=new JSONObject(report);json.put("pdfPages",renderer.getPageCount());json.put("pdfBytes",pdf.length());json.put("nativeImportChecks",4);json.put("liveSignedUpdate",onlineUpdate);report=json.toString();
                 try(FileOutputStream out=new FileOutputStream(new File(dir,"result.json"))){out.write(report.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
             }
         }
+        js("navigate('settings');true");Thread.sleep(900);
+        js("setTheme({theme:'dark',interfaceStyle:'haru',motionEnabled:false});document.querySelector('#update-result').closest('.card').scrollIntoView({block:'center'});true");Thread.sleep(500);
+        capture(dir,"dark-settings.png");
+        js("setTheme({theme:'light',interfaceStyle:'haru',motionEnabled:false});true");Thread.sleep(400);capture(dir,"light-settings.png");
         results.putString("report",report);finish(report.contains("\\\"error\\\"")||report.contains("\"error\"")||report.equals("null")?1:0,results);
     }catch(Exception ex){Throwable cause=ex;while(cause.getCause()!=null)cause=cause.getCause();android.util.Log.e("ResumeStudioTest","Acceptance failed",ex);results.putString("error",cause.toString());finish(1,results);}}
+    private void capture(File dir,String name)throws IOException {
+        Bitmap image=getUiAutomation().takeScreenshot();try(FileOutputStream out=new FileOutputStream(new File(dir,name))){image.compress(Bitmap.CompressFormat.PNG,100,out);}image.recycle();
+    }
     private void verifyUpdaterSignature()throws Exception{
         JSONObject signed;try(InputStream in=getContext().getAssets().open("stable-channel.json")){signed=new JSONObject(new String(in.readAllBytes(),StandardCharsets.UTF_8));}
         byte[] data=Base64.getDecoder().decode(signed.getString("data")),signature=Base64.getDecoder().decode(signed.getString("signature"));
@@ -48,6 +55,26 @@ public final class AcceptanceInstrumentation extends Instrumentation {
         Class<?> verifier=Class.forName("com.resumestudio.AndroidUpdateClient",true,getTargetContext().getClassLoader());Method method=verifier.getDeclaredMethod("verifySignature",String.class,byte[].class,byte[].class);method.setAccessible(true);
         if(!Boolean.TRUE.equals(method.invoke(null,publicKey,data,signature)))throw new IOException("Production Android RSA-PSS verifier rejected signed release fixture");
         data[0]^=1;if(Boolean.TRUE.equals(method.invoke(null,publicKey,data,signature)))throw new IOException("Production Android RSA-PSS verifier accepted modified metadata");
+        Class<?> transport=Class.forName("com.resumestudio.MobileHttp",true,getTargetContext().getClassLoader());
+        Method readUpdate=transport.getDeclaredMethod("readUpdate",java.net.URI.class,int.class);
+        for(String rejected:new String[]{"http://github.com/file","https://evil.example/file","https://user@github.com/file","https://github.com:444/file"}){
+            try{readUpdate.invoke(null,java.net.URI.create(rejected),64000);throw new IOException("Unsafe update destination accepted: "+rejected);}
+            catch(java.lang.reflect.InvocationTargetException ex){if(!(ex.getCause() instanceof IOException))throw ex;}
+        }
+        if(onlineUpdate){
+            var constructor=verifier.getDeclaredConstructor(android.content.Context.class);constructor.setAccessible(true);Object client=constructor.newInstance(getTargetContext());
+            Method check=verifier.getDeclaredMethod("check",String.class,int.class,String.class);check.setAccessible(true);
+            Object release=check.invoke(client,"nightly",0,"auto");if(release==null)throw new IOException("Live signed nightly channel unavailable");
+            Method download=verifier.getDeclaredMethod("download",release.getClass(),String.class);download.setAccessible(true);
+            java.nio.file.Path downloaded=(java.nio.file.Path)download.invoke(client,release,"auto");
+            if(java.nio.file.Files.size(downloaded)<1000000)throw new IOException("Live APK download failed");
+            var pm=getTargetContext().getPackageManager();
+            var archive=pm.getPackageArchiveInfo(downloaded.toString(),android.content.pm.PackageManager.GET_SIGNATURES);
+            var installed=pm.getPackageInfo(getTargetContext().getPackageName(),android.content.pm.PackageManager.GET_SIGNATURES);
+            if(archive==null||!java.util.Arrays.equals(archive.signatures[0].toByteArray(),installed.signatures[0].toByteArray()))throw new IOException("Hotfix signing certificate differs from the published APK");
+            android.util.Log.i("ResumeStudioTest","Live signed GitHub channel, redirect, APK size and SHA-256 passed");
+        }
+
     }
     private File export(Activity activity,File dir,String html)throws Exception{
         String name="android-resume-acceptance-"+System.currentTimeMillis();js("api('print',{title:"+JSONObject.quote(name)+",html:window.exportFixtureHtml});true");

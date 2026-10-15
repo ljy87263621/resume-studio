@@ -20,7 +20,7 @@ final class AndroidUpdateClient {
         Map<String,Object> display(){return MobileCompat.map("versionName",versionName,"tag",tag,"packageName",packageName,"size",size);}
     }
     private final Context context; private final String publicKey;
-    AndroidUpdateClient(Context context)throws IOException{this.context=context.getApplicationContext();try(InputStream input=context.getAssets().open("UpdatePublicKey.pem")){publicKey=new String(MobileCompat.readNBytes(input,8192),StandardCharsets.US_ASCII);}}
+    AndroidUpdateClient(Context context)throws IOException{this.context=context.getApplicationContext();try(InputStream input=context.getAssets().open("UpdatePublicKey.pem")){publicKey=new String(MobileCompat.readNBytes(input,8192),StandardCharsets.US_ASCII);}catch(IOException ex){throw new IOException("安装包缺少更新验证公钥，请覆盖安装修复版",ex);}}
 
     Release check(String channel,int installedVersionCode,String route)throws Exception{
         if(!channel.equals("stable")&&!channel.equals("nightly"))throw new IOException("更新通道无效");
@@ -50,7 +50,7 @@ final class AndroidUpdateClient {
     }
 
     private byte[] read(URI uri,String route,int limit)throws IOException{
-        IOException failure=null;for(URI target:routes(uri,route))try{MobileHttp.Result response=MobileHttp.request(target,"GET",Map.of("Cache-Control","no-cache","User-Agent","ResumeStudio-Android"),null,limit);if(response.status!=200)throw new IOException("GitHub 更新通道返回 HTTP "+response.status);return response.bytes;}catch(IOException ex){failure=ex;}
+        IOException failure=null;for(URI target:routes(uri,route))try{return MobileHttp.readUpdate(target,limit);}catch(IOException ex){failure=ex;}
         throw new IOException("无法连接 GitHub 更新通道",failure);
     }
     private String downloadWithRoute(URI uri,String route,Path path,long size)throws IOException{
