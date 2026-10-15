@@ -29,15 +29,32 @@ document.addEventListener('pointermove',event=>{if(!navDrag||event.pointerId!==n
 document.addEventListener('pointerup',event=>{if(!navDrag||event.pointerId!==navDrag.pointerId)return;const drag=navDrag;navDrag=null;navElement.classList.remove('dragging');if(!drag.moved)return;suppressNavClickUntil=Date.now()+450;const center=event.clientX,button=[...navElement.querySelectorAll('button')].reduce((nearest,candidate)=>Math.abs(candidate.getBoundingClientRect().left+candidate.offsetWidth/2-center)<Math.abs(nearest.getBoundingClientRect().left+nearest.offsetWidth/2-center)?candidate:nearest);if(button.dataset.page&&button.dataset.page!==$('#nav button.active')?.dataset.page)navigate(button.dataset.page).catch(error=>toast(error.message,true));else moveNavIndicator();});
 document.addEventListener('pointercancel',event=>{if(!navDrag||event.pointerId!==navDrag.pointerId)return;navDrag=null;navElement.classList.remove('dragging');moveNavIndicator();});
 window.setSystemInsets=(left,top,right,bottom)=>{const scale=window.devicePixelRatio||1,style=document.documentElement.style;style.setProperty('--inset-left',(left/scale)+'px');style.setProperty('--inset-top',(top/scale)+'px');style.setProperty('--inset-right',(right/scale)+'px');style.setProperty('--inset-bottom',(bottom/scale)+'px');moveNavIndicator();};
-window.setBackProgress=value=>{const content=$('#content'),progress=Math.max(0,Math.min(1,value));content.classList.add('back-preview');content.style.setProperty('--back-offset',(progress*14)+'px');content.style.setProperty('--back-scale',String(1-progress*.018));};
-window.cancelBackProgress=()=>{const content=$('#content');content.style.setProperty('--back-offset','0px');content.style.setProperty('--back-scale','1');setTimeout(()=>content.classList.remove('back-preview'),240);};
+window.setBackProgress=value=>{const content=$('#content'),progress=Math.max(0,Math.min(1,value));content.classList.add('back-preview');content.style.setProperty('--back-offset',(progress*14)+'px');};
+window.cancelBackProgress=()=>{const content=$('#content');content.style.setProperty('--back-offset','0px');setTimeout(()=>content.classList.remove('back-preview'),240);};
 function sharedCard(element){return element?.closest('.card')||element;}
+function isolateCardText(card){
+ if(!card||card.querySelector(':scope > .card-transition-content'))return card?.querySelector(':scope > .card-transition-content')||null;
+ const content=document.createElement('div');content.className='card-transition-content';
+ while(card.firstChild)content.append(card.firstChild);
+ card.append(content);return content;
+}
+function releaseCardText(card){
+ const content=card?.querySelector(':scope > .card-transition-content');if(!content)return;
+ while(content.firstChild)card.insertBefore(content.firstChild,content);
+ content.remove();card.style.viewTransitionName='';
+}
 function sharedMotion(source,update,destination){
  const enabled=document.body.classList.contains('motion')&&!matchMedia('(prefers-reduced-motion: reduce)').matches;
  if(!enabled||typeof document.startViewTransition!=='function')return update();
- source=sharedCard(source);if(!source)return update();source.style.viewTransitionName='rs-shared-card';
- const transition=document.startViewTransition(async()=>{await update();const target=sharedCard(destination());if(target)target.style.viewTransitionName='rs-shared-card';});
- return transition.finished.catch(()=>{}).finally(()=>{source.style.viewTransitionName='';const target=sharedCard(destination());if(target)target.style.viewTransitionName='';});
+ source=sharedCard(source);if(!source)return update();
+ const sourceContent=isolateCardText(source);source.style.viewTransitionName='rs-shared-card';
+ if(sourceContent)sourceContent.style.viewTransitionName='rs-shared-content';
+ let target=null,targetContent=null;
+ const transition=document.startViewTransition(async()=>{
+  await update();target=sharedCard(destination?.());
+  if(target){targetContent=target===source?sourceContent:isolateCardText(target);target.style.viewTransitionName='rs-shared-card';if(targetContent)targetContent.style.viewTransitionName='rs-shared-content';}
+ });
+ return transition.finished.catch(()=>{}).finally(()=>{releaseCardText(source);if(target&&target!==source)releaseCardText(target);});
 }
 function originTarget(origin){return [...document.querySelectorAll(`[data-action="${origin.action}"][data-kind="${origin.kind}"][data-id]`)].find(el=>el.dataset.id===origin.id)||null;}
 async function openRecord(source,kind,id){
@@ -50,12 +67,12 @@ async function returnToOrigin(){
  await sharedMotion(source,async()=>{await navigate(origin.kind);window.scrollTo(0,origin.scrollY);target=originTarget(origin);},()=>originTarget(origin));
  window.scrollTo(0,origin.scrollY);state.returnOrigin=null;
 }
-async function navigate(page){await flush();const epoch=++navEpoch;state.page=page;state.current=null;state.kind='';state.pageIndex=0;state.query='';state.filter='all';$('#content').innerHTML='<p class="empty">正在读取…</p>';document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===page||b.dataset.page==='more'&&['more','schedule','interviews','jobs','sources','settings','templates'].includes(page)));moveNavIndicator();window.scrollTo(0,0);
+async function navigate(page){await flush();const epoch=++navEpoch;state.page=page;state.current=null;state.kind='';state.pageIndex=0;state.query='';state.filter='all';$('#content').innerHTML='<p class="empty">正在读取…</p>';document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===page||b.dataset.page==='more'&&!['home','interviews','templates','jobs'].includes(page)));moveNavIndicator();window.scrollTo(0,0);
  if(page==='home'){const lists=await Promise.all(['resumes','favorites','applications','schedule'].map(kind=>api('list',{kind})));if(epoch!==navEpoch)return;
  $('#content').innerHTML=`<section class="hero"><p class="eyebrow">把每一次准备，留给更好的机会</p><h1>你好，今天也向前一步。</h1><p>简历、职位、投递与面试准备，都在这里。</p><div class="actions">${button('新建简历','navigate','data-page="templates"',true)}${button('WebDAV 同步','navigate','data-page="settings"')}</div></section><div class="grid">${lists.map((list,i)=>`<div class="card clickable" data-action="navigate" data-page="${['resumes','favorites','applications','schedule'][i]}"><small>${['我的简历','职位收藏','投递记录','日程安排'][i]}</small><div class="stat">${list.length}</div><span class="meta">进入查看 →</span></div>`).join('')}</div><div class="card"><h2>接下来的安排</h2>${lists[3].filter(s=>!s.completed).sort((a,b)=>a.startAt.localeCompare(b.startAt)).slice(0,4).map(s=>`<p data-action="edit" data-kind="schedule" data-id="${E(s.id)}">${E(s.title)}<br><small>${E(s.kind)} · ${E(formatDate(s.startAt))}</small></p>`).join('')||'<p class="muted">还没有待办日程。可以为投递安排笔试、面试和跟进。</p>'}</div><div class="card"><h3>一份资料，随身携带</h3><p class="muted">在电脑和手机设置相同 WebDAV 目录，编辑完成后手动同步。首次同步或两端同时修改时，请核对保留方向。</p></div>`;
  }else if(['resumes','favorites','applications','schedule','interviews'].includes(page)){state.rows=await api('list',{kind:page});if(epoch!==navEpoch)return;renderList();}
  else if(page==='templates')renderTemplates();
- else if(page==='more')$('#content').innerHTML=title('更多工作台')+[['岗位查询','jobs','查询公开企业职位，浏览并收藏'],['日程安排','schedule','笔试、面试、截止和跟进'],['面试题背诵','interviews','导入资料，逐题阅读和标记'],['公司来源','sources','管理企业官网和 ATS 招聘源'],['模板中心','templates','14 套简历模板和双预览'],['设置与同步','settings','WebDAV、AI、主题与备份']].map(([name,p,sub])=>`<section class="card clickable" data-action="navigate" data-page="${p}"><h2>${name} →</h2><p class="meta">${sub}</p></section>`).join('');
+ else if(page==='more')$('#content').innerHTML=title('更多工作台')+[['职位收藏','favorites','查看保存的职位与个人备注'],['投递记录','applications','跟进状态、时间线和复盘'],['日程安排','schedule','笔试、面试、截止和跟进'],['公司来源','sources','管理企业官网和 ATS 招聘源'],['设置与同步','settings','WebDAV、AI、主题与备份']].map(([name,p,sub])=>`<section class="card clickable" data-action="navigate" data-page="${p}"><h2>${name} →</h2><p class="meta">${sub}</p></section>`).join('');
  else if(page==='settings'){state.boot=await api('boot');if(epoch===navEpoch)renderSettings();}
  else if(page==='jobs'){state.sources=await api('sources');if(epoch===navEpoch)renderJobs();}
  else if(page==='sources'){state.rows=await api('sources');if(epoch===navEpoch)renderSources();}
@@ -168,7 +185,7 @@ const actions={
  aiFit:async()=>{state.fitJob={...state.fitJob,description:$('#fit-description').value};if(!await confirm('将当前简历可见模块和这份职位描述发送到你配置的 AI 接口，生成修改建议？'))return;state.suggestions=await api('ai',{id:state.fitResumeId,job:state.fitJob});showSuggestions();},
  applySuggestions:async()=>{const chosen=[...document.querySelectorAll('[data-suggestion]:checked')].map(el=>state.suggestions[+el.dataset.suggestion]);if(!chosen.length)throw new Error('请至少选择一条建议');const r=await api('applySuggestions',{id:state.fitResumeId,suggestions:chosen});await edit('resumes',r.id);toast('已创建独立岗位简历');}
 };
-document.addEventListener('click',async event=>{if(Date.now()<suppressNavClickUntil&&event.target.closest('#nav button')){event.preventDefault();event.stopImmediatePropagation();return;}const el=event.target.closest('[data-action]');if(!el||el.disabled)return;const f=actions[el.dataset.action];if(!f)return;const navigationButton=el.matches('#nav button');if(!navigationButton)el.disabled=true;window.__activeActionElement=el;try{await f(el.dataset);}catch(e){toast(e.message,true);if($('#sync-result')&&el.dataset.action==='sync')$('#sync-result').textContent='同步未完成：'+e.message;}finally{window.__activeActionElement=null;if(!navigationButton)el.disabled=false;}});
+document.addEventListener('click',async event=>{if(Date.now()<suppressNavClickUntil&&event.target.closest('#nav button')){event.preventDefault();event.stopImmediatePropagation();return;}const el=event.target.closest('[data-action]');if(!el||el.disabled)return;const f=actions[el.dataset.action];if(!f)return;const navigationButton=el.matches('#nav button');if(!navigationButton)el.disabled=true;window.__activeActionElement=el;try{if(el.dataset.action==='navigate'&&!navigationButton&&el.closest('.card')){const targetPage=el.dataset.page;await sharedMotion(sharedCard(el),()=>navigate(targetPage),()=>$('#content .card')||$('#content .hero')||$('#content h1'));}else await f(el.dataset);}catch(e){toast(e.message,true);if($('#sync-result')&&el.dataset.action==='sync')$('#sync-result').textContent='同步未完成：'+e.message;}finally{window.__activeActionElement=null;if(!navigationButton)el.disabled=false;}});
 document.addEventListener('input',event=>{const el=event.target;if(el.dataset.field&&state.current){updateField(el.dataset.field,readField(el));markDirty();}else if(el.id==='search'){state.query=el.value;state.pageIndex=0;renderListItems();}});
 document.addEventListener('change',async event=>{const el=event.target;try{if(el.id==='list-filter'){state.filter=el.value;state.pageIndex=0;renderListItems();}else if(el.id==='deck-filter'){await flush();state.deckFilter=el.value;state.deckIndex=0;state.answer=false;renderStudy();}else if(el.id==='import-level'){state.importLevel=+el.value;renderImportPreview();}else if(el.id==='fit-job'){state.fitJob=state.fitFavorites.find(j=>j.id===el.value)||{title:'目标岗位',company:'',description:''};$('#fit-description').value=state.fitJob.description;}}catch(e){toast(e.message,true);}});
 let dragIndex=-1;document.addEventListener('dragstart',e=>{const s=e.target.closest('[data-section]');if(s)dragIndex=+s.dataset.section;});document.addEventListener('dragover',e=>{if(e.target.closest('[data-section]'))e.preventDefault();});document.addEventListener('drop',async e=>{const s=e.target.closest('[data-section]');if(!s||dragIndex<0)return;e.preventDefault();try{await flush();const [moved]=state.current.sections.splice(dragIndex,1);state.current.sections.splice(+s.dataset.section,0,moved);markDirty();renderEditor();}catch(err){toast(err.message,true);}dragIndex=-1;});

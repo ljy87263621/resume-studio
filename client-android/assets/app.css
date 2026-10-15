@@ -49,10 +49,15 @@ nav button.active{background:transparent;color:var(--accent)}
 #notice{bottom:calc(var(--inset-bottom) + 94px);max-height:min(35vh,280px);}
 body.motion #content.page-enter>:nth-child(-n+4){animation:page-arrive .24s cubic-bezier(.2,.75,.25,1) both}
 @keyframes page-arrive{from{opacity:.76;transform:translate3d(0,6px,0)}to{opacity:1;transform:translate3d(0,0,0)}}
-#content.back-preview{transform:translateX(var(--back-offset,0px)) scale(var(--back-scale,1));transform-origin:center;transition:transform .08s linear;border-radius:18px;box-shadow:0 10px 32px #17362b16}
-::view-transition-group(rs-shared-card){animation-duration:420ms;animation-timing-function:cubic-bezier(.2,.75,.25,1)}
-::view-transition-old(rs-shared-card),::view-transition-new(rs-shared-card){animation:none;mix-blend-mode:normal;height:100%;overflow:clip}
+#content.back-preview{transform:translateX(var(--back-offset,0px));transform-origin:center;transition:transform .08s linear;border-radius:18px;box-shadow:0 10px 32px #17362b16}
 ::view-transition-old(root),::view-transition-new(root){animation-duration:260ms}
+::view-transition-group(rs-shared-card){animation-duration:420ms;animation-timing-function:cubic-bezier(.2,.75,.25,1)}
+::view-transition-old(rs-shared-card),::view-transition-new(rs-shared-card){animation:none;mix-blend-mode:normal}
+::view-transition-group(rs-shared-content){animation:none}
+::view-transition-old(rs-shared-content){animation:rs-card-content-out .1s ease both}
+::view-transition-new(rs-shared-content){animation:rs-card-content-in .16s ease .1s both}
+@keyframes rs-card-content-out{to{opacity:0}}
+@keyframes rs-card-content-in{from{opacity:0}to{opacity:1}}
 body.motion .card.clickable{transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s ease,border-color .22s ease}
 body.motion .card.clickable:active{transform:scale(.985);box-shadow:0 2px 9px #193a3014}
 button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 35%,transparent);outline-offset:2px}

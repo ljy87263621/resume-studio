@@ -34,11 +34,12 @@ jobs:
           $now=[DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(8))
           $date=$now.ToString('yyyyMMdd')
           $dayOfYear=$now.DayOfYear
+          $sameDayReleases=@($releases|Where-Object {$_.prerelease -and !$_.draft -and $_.tag_name -match "^nightly-$date-[0-9a-f]{8}$"})
           [xml]$project=Get-Content client-winui/ResumeStudio.csproj
           $base=[string]$project.Project.PropertyGroup.Version
           $short=$sha.Substring(0,8)
           $parts=$base.Split('.')
-          $androidCode=[int]$parts[0]*100000000+[int]$parts[1]*1000000+[int]$parts[2]*100000+$dayOfYear
+          $androidCode=& ./scripts/get-android-nightly-version-code.ps1 -Version $base -DayOfYear $dayOfYear -Sequence $sameDayReleases.Count
           $androidVersion="$base-nightly.$date.$short"
           Add-Content $env:GITHUB_OUTPUT 'changed=true'
           Add-Content $env:GITHUB_OUTPUT "tag=nightly-$date-$short"
@@ -79,6 +80,7 @@ jobs:
           ./scripts/test-offline.ps1
           ./scripts/test-updater.ps1
           ./scripts/test-channel-publication.ps1
+          ./scripts/test-android-nightly-version-code.ps1
           ./scripts/test-schedule.ps1
           node --version
           ./scripts/test-features.ps1 -ReuseBackendTestClasses

@@ -42,6 +42,7 @@ public final class AcceptanceInstrumentation extends Instrumentation {
         js("navigate('settings');true");Thread.sleep(900);
         js("setTheme({theme:'dark',interfaceStyle:'haru',motionEnabled:false});document.querySelector('#update-result').closest('.card').scrollIntoView({block:'center'});true");Thread.sleep(500);
         capture(dir,"dark-settings.png");
+        js("navigate('home');true");Thread.sleep(500);capture(dir,"bottom-navigation.png");
         js("setTheme({theme:'light',interfaceStyle:'haru',motionEnabled:false});true");Thread.sleep(400);capture(dir,"light-settings.png");
         results.putString("report",report);finish(report.contains("\\\"error\\\"")||report.contains("\"error\"")||report.equals("null")?1:0,results);
     }catch(Exception ex){Throwable cause=ex;while(cause.getCause()!=null)cause=cause.getCause();android.util.Log.e("ResumeStudioTest","Acceptance failed",ex);results.putString("error",cause.toString());finish(1,results);}}

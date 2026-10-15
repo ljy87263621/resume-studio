@@ -24,7 +24,7 @@ try{
     if((Get-Content "$build\instrumentation.txt" -Raw) -match 'Process crashed|INSTRUMENTATION_CODE: 1' -or (Get-Content "$build\instrumentation.txt" -Raw) -notmatch 'INSTRUMENTATION_CODE: 0'){throw 'Android instrumentation did not complete successfully'}
 if((Get-Content "$build\instrumentation.txt" -Raw) -match 'INSTRUMENTATION_RESULT: error=|INSTRUMENTATION_CODE: 1|Process crashed'){throw 'Production Android instrumentation failed'}
 New-Item -ItemType Directory -Force "$build\results"|Out-Null
-foreach($artifact in @('result.json','screen.png','dark-settings.png','light-settings.png','resume.pdf','resume-pdf.png')){
+foreach($artifact in @('result.json','screen.png','dark-settings.png','light-settings.png','bottom-navigation.png','resume.pdf','resume-pdf.png')){
     $temporary=Join-Path $build ('pulled-'+$artifact)
     & adb -s $Device pull ("/sdcard/Android/data/com.resumestudio.mobile/files/acceptance/"+$artifact) $temporary
     if($LASTEXITCODE -ne 0){throw "Could not retrieve Android acceptance artifact: $artifact"}
