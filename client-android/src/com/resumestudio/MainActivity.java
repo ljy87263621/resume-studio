@@ -150,7 +150,7 @@ public final class MainActivity extends Activity {
     private void installPreparedUpdate(Path apk)throws Exception{
         if(!canRequestPackageInstalls()){Intent permission=new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+getPackageName()));permission.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);runOnUiThread(()->startActivity(permission));return;}
         android.content.pm.PackageInstaller installer=getPackageManager().getPackageInstaller();android.content.pm.PackageInstaller.SessionParams params=new android.content.pm.PackageInstaller.SessionParams(android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL);params.setAppPackageName(getPackageName());params.setSize(Files.size(apk));int id=installer.createSession(params);
-        Intent callback=new Intent(this,MobileInstallReceiver.class);android.app.PendingIntent pending=android.app.PendingIntent.getBroadcast(this,id,callback,android.app.PendingIntent.FLAG_UPDATE_CURRENT|android.app.PendingIntent.FLAG_IMMUTABLE);
+        android.app.PendingIntent pending=MobileInstallReceiver.statusPendingIntent(this,id);
         try(android.content.pm.PackageInstaller.Session session=installer.openSession(id);InputStream input=Files.newInputStream(apk);OutputStream output=session.openWrite("base.apk",0,Files.size(apk))){byte[] buffer=new byte[32768];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);session.fsync(output);session.commit(pending.getIntentSender());}
         Files.deleteIfExists(apk);getSharedPreferences("resume-studio",0).edit().remove("pendingUpdateApk").apply();
     }

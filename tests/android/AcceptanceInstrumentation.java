@@ -22,7 +22,7 @@ public final class AcceptanceInstrumentation extends Instrumentation {
     private WebView find(View v){if(v instanceof WebView)return(WebView)v;if(v instanceof ViewGroup g)for(int i=0;i<g.getChildCount();i++){WebView w=find(g.getChildAt(i));if(w!=null)return w;}return null;}
     private String js(String script)throws Exception{CompletableFuture<String> result=new CompletableFuture<>();runOnMainSync(()->web.evaluateJavascript(script,result::complete));return result.get(120,TimeUnit.SECONDS);}
     @Override public void onStart(){Bundle results=new Bundle();try{
-        verifyUpdaterSignature();
+        verifyUpdaterSignature();verifyInstallerStatusPendingIntent();
         Intent i=new Intent();i.setClassName("com.resumestudio.mobile","com.resumestudio.MainActivity");i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);Activity a=startActivitySync(i);runOnMainSync(()->web=find(a.getWindow().getDecorView()));
         for(int n=0;n<100;n++){if("true".equals(js("typeof actions==='object' && state.templates.length===14 && document.querySelector('#content h1')!==null")))break;Thread.sleep(200);}
         js("window.testDavPort="+JSONObject.quote(davPort));String script;try(InputStream in=getContext().getAssets().open("acceptance.js")){script=new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}js(script);
@@ -76,6 +76,13 @@ public final class AcceptanceInstrumentation extends Instrumentation {
             android.util.Log.i("ResumeStudioTest","Live signed GitHub channel, redirect, APK size and SHA-256 passed");
         }
 
+    }
+    private void verifyInstallerStatusPendingIntent()throws Exception{
+        Class<?> receiver=Class.forName("com.resumestudio.MobileInstallReceiver",true,getTargetContext().getClassLoader());
+        Method factory=receiver.getMethod("statusPendingIntent",Context.class,int.class);
+        PendingIntent status=(PendingIntent)factory.invoke(null,getTargetContext(),0x5253);
+        try{if(Build.VERSION.SDK_INT>=23&&status.isImmutable())throw new IOException("PackageInstaller status PendingIntent must be mutable so Android can return the commit result");}
+        finally{status.cancel();}
     }
     private File export(Activity activity,File dir,String html)throws Exception{
         String name="android-resume-acceptance-"+System.currentTimeMillis();js("api('print',{title:"+JSONObject.quote(name)+",html:window.exportFixtureHtml});true");
