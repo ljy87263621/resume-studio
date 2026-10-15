@@ -17,12 +17,13 @@ import java.util.concurrent.*;
 
 /** Runs against the signed production APK; no test bridge or debugging mode is shipped in the app. */
 public final class AcceptanceInstrumentation extends Instrumentation {
-    private WebView web;private String davPort;private boolean onlineUpdate;
-    @Override public void onCreate(Bundle args){super.onCreate(args);davPort=args.getString("davPort","");onlineUpdate=Boolean.parseBoolean(args.getString("onlineUpdate","false"));start();}
+    private WebView web;private String davPort;private boolean onlineUpdate,installerOnly;
+    @Override public void onCreate(Bundle args){super.onCreate(args);davPort=args.getString("davPort","");onlineUpdate=Boolean.parseBoolean(args.getString("onlineUpdate","false"));installerOnly=Boolean.parseBoolean(args.getString("installerOnly","false"));start();}
     private WebView find(View v){if(v instanceof WebView)return(WebView)v;if(v instanceof ViewGroup g)for(int i=0;i<g.getChildCount();i++){WebView w=find(g.getChildAt(i));if(w!=null)return w;}return null;}
     private String js(String script)throws Exception{CompletableFuture<String> result=new CompletableFuture<>();runOnMainSync(()->web.evaluateJavascript(script,result::complete));return result.get(120,TimeUnit.SECONDS);}
     @Override public void onStart(){Bundle results=new Bundle();try{
-        verifyUpdaterSignature();verifyInstallerStatusPendingIntent();
+        verifyUpdaterSignature();verifyInstallerStatusPendingIntent();verifyInstallerWriteClosure();
+        if(installerOnly){results.putString("report","PASS: production installer closes APK write stream before commit");finish(0,results);return;}
         Intent i=new Intent();i.setClassName("com.resumestudio.mobile","com.resumestudio.MainActivity");i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);Activity a=startActivitySync(i);runOnMainSync(()->web=find(a.getWindow().getDecorView()));
         for(int n=0;n<100;n++){if("true".equals(js("typeof actions==='object' && state.templates.length===14 && document.querySelector('#content h1')!==null")))break;Thread.sleep(200);}
         js("window.testDavPort="+JSONObject.quote(davPort));String script;try(InputStream in=getContext().getAssets().open("acceptance.js")){script=new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}js(script);
@@ -83,6 +84,21 @@ public final class AcceptanceInstrumentation extends Instrumentation {
         PendingIntent status=(PendingIntent)factory.invoke(null,getTargetContext(),0x5253);
         try{if(Build.VERSION.SDK_INT>=23&&status.isImmutable())throw new IOException("PackageInstaller status PendingIntent must be mutable so Android can return the commit result");}
         finally{status.cancel();}
+    }
+    private void verifyInstallerWriteClosure()throws Exception{
+        Context context=getTargetContext();android.content.pm.PackageInstaller installer=context.getPackageManager().getPackageInstaller();
+        var params=new android.content.pm.PackageInstaller.SessionParams(android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+        int id=installer.createSession(params);File apk=File.createTempFile("installer-regression-",".apk",context.getCacheDir());
+        // Deliberately invalid APK: commit must return normally, then Android rejects it asynchronously.
+        // An open write descriptor instead throws "Files still open" synchronously on the affected Android versions.
+        java.nio.file.Files.write(apk.toPath(),new byte[]{0x50,0x4b,0x03,0x04});
+        Intent callback=new Intent(context,Class.forName("com.resumestudio.MobileInstallReceiver",true,context.getClassLoader()));
+        PendingIntent pending=PendingIntent.getBroadcast(context,id,callback,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_MUTABLE);
+        try(android.content.pm.PackageInstaller.Session session=installer.openSession(id)){
+            Class<?> activity=Class.forName("com.resumestudio.MainActivity",true,context.getClassLoader());
+            Method write=activity.getDeclaredMethod("writeAndCommitInstallSession",android.content.pm.PackageInstaller.Session.class,java.nio.file.Path.class,IntentSender.class);write.setAccessible(true);
+            write.invoke(null,session,apk.toPath(),pending.getIntentSender());
+        }finally{apk.delete();try{installer.abandonSession(id);}catch(SecurityException ignored){}pending.cancel();}
     }
     private File export(Activity activity,File dir,String html)throws Exception{
         String name="android-resume-acceptance-"+System.currentTimeMillis();js("api('print',{title:"+JSONObject.quote(name)+",html:window.exportFixtureHtml});true");

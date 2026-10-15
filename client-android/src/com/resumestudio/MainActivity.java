@@ -151,8 +151,17 @@ public final class MainActivity extends Activity {
         if(!canRequestPackageInstalls()){Intent permission=new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+getPackageName()));permission.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);runOnUiThread(()->startActivity(permission));return;}
         android.content.pm.PackageInstaller installer=getPackageManager().getPackageInstaller();android.content.pm.PackageInstaller.SessionParams params=new android.content.pm.PackageInstaller.SessionParams(android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL);params.setAppPackageName(getPackageName());params.setSize(Files.size(apk));int id=installer.createSession(params);
         android.app.PendingIntent pending=MobileInstallReceiver.statusPendingIntent(this,id);
-        try(android.content.pm.PackageInstaller.Session session=installer.openSession(id);InputStream input=Files.newInputStream(apk);OutputStream output=session.openWrite("base.apk",0,Files.size(apk))){byte[] buffer=new byte[32768];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);session.fsync(output);session.commit(pending.getIntentSender());}
+        try(android.content.pm.PackageInstaller.Session session=installer.openSession(id)){
+            writeAndCommitInstallSession(session,apk,pending.getIntentSender());
+        }catch(Exception ex){installer.abandonSession(id);throw ex;}
         Files.deleteIfExists(apk);getSharedPreferences("resume-studio",0).edit().remove("pendingUpdateApk").apply();
+    }
+    static void writeAndCommitInstallSession(android.content.pm.PackageInstaller.Session session,Path apk,android.content.IntentSender receiver)throws IOException{
+        try(InputStream input=Files.newInputStream(apk);OutputStream output=session.openWrite("base.apk",0,Files.size(apk))){
+            byte[] buffer=new byte[32768];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);session.fsync(output);
+        }
+        // Android seals the session on commit; every APK write descriptor must already be closed.
+        session.commit(receiver);
     }
     @Override protected void onResume(){super.onResume();if(!destroyed){String pending=getSharedPreferences("resume-studio",0).getString("pendingUpdateApk","");if(!pending.isEmpty()&&canRequestPackageInstalls())try{installPreparedUpdate(Paths.get(pending));}catch(Exception ex){event("updateStatus","安装未完成："+Objects.toString(ex.getMessage(),"请重新检查更新"));}}}
     private void pick(int code,String mime){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType(mime);startActivityForResult(i,code);}
