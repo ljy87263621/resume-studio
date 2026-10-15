@@ -90,7 +90,4 @@ Check(InterviewProgress.Count(deck.Questions)==new InterviewCounts(2,1,1,0),"rem
 questions[0].Status="learning";questions[0].Status="learning";
 Check(InterviewProgress.Count(deck.Questions)==new InterviewCounts(2,0,2,0),"changing or repeating a verdict never double counts");
 Check(InterviewProgress.Filter(deck,"remembered").Count()==0&&InterviewProgress.Filter(deck,"learning").Count()==2,"practice filters follow current states");
-var wheel=new InterviewWheelNavigator();var now=DateTimeOffset.UtcNow;
-Check(wheel.Step(-60,now)==0&&wheel.Step(-60,now)==1&&wheel.Step(-120,now.AddMilliseconds(100))==0&&wheel.Step(120,now.AddSeconds(1))==-1,"wheel accumulates small deltas and suppresses momentum double-switching");
-Check(InterviewWheelNavigator.ReadingAnswer(-120,20,100)&&!InterviewWheelNavigator.ReadingAnswer(-120,100,100)&&InterviewWheelNavigator.ReadingAnswer(120,20,100)&&!InterviewWheelNavigator.ReadingAnswer(120,0,100),"long answers scroll before switching at their edges");
 Console.WriteLine($"PASS: {checks} interview import and progress checks. Fixtures: {output}");

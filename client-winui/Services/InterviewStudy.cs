@@ -29,16 +29,3 @@ public static class InterviewProgress
     public static IEnumerable<InterviewQuestion> Filter(InterviewDeck deck,string status)=>deck.Questions.Where(q=>status=="all"||q.Status==status);
     public static string Label(string status)=>status switch {"remembered"=>"已记住","learning"=>"未掌握",_=>"未标记"};
 }
-public sealed class InterviewWheelNavigator
-{
-    private int accumulated;
-    private DateTimeOffset last=DateTimeOffset.MinValue;
-    public static bool ReadingAnswer(int delta,double offset,double extent)=>delta>0?offset>1:offset<extent-1;
-    public int Step(int delta,DateTimeOffset now)
-    {
-        if(delta==0||(now-last).TotalMilliseconds<350)return 0;
-        accumulated=Math.Sign(accumulated)==Math.Sign(delta)?accumulated+delta:delta;
-        if(Math.Abs(accumulated)<120)return 0;
-        last=now;accumulated=0;return delta<0?1:-1;
-    }
-}
