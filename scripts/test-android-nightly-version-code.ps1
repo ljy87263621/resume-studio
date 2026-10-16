@@ -1,7 +1,7 @@
-$ErrorActionPreference='Stop'
+﻿$ErrorActionPreference='Stop'
 $script=Join-Path $PSScriptRoot 'get-android-nightly-version-code.ps1'
-$project=[xml](Get-Content (Join-Path $PSScriptRoot '..\client-winui\ResumeStudio.csproj'))
-$version=[version]$project.Project.PropertyGroup.Version
+$project=[xml](Get-Content (Join-Path $PSScriptRoot '..\client-android\AndroidManifest.xml'))
+$version=[version]$project.manifest.versionName
 $prior=[int](& $script -Version $version.ToString() -DayOfYear 288 -Sequence 2)
 $sameDay=[int](& $script -Version $version.ToString() -DayOfYear 288 -Sequence 3)
 $nextDay=[int](& $script -Version $version.ToString() -DayOfYear 289 -Sequence 0)

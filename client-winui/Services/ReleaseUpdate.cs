@@ -8,6 +8,7 @@ namespace ResumeStudio.Services;
 
 public sealed class ReleaseIdentity
 {
+    public string Platform {get;set;}="";
     public string Channel {get;set;}="stable";
     public string Version {get;set;}="0.0.0";
     public string Commit {get;set;}="";
@@ -125,7 +126,7 @@ public sealed class ReleaseUpdate : IDisposable
         using var rsa=RSA.Create(); rsa.ImportFromPem(publicKey);
         if(!rsa.VerifyData(data,Convert.FromBase64String(System.Text.Encoding.UTF8.GetString(signature).Trim()),HashAlgorithmName.SHA256,RSASignaturePadding.Pss)) throw new IOException("更新签名校验失败，停止更新。");
         var info=JsonSerializer.Deserialize<ReleaseIdentity>(data,Json)??throw new IOException("更新说明无效。");
-        if(info.Channel!=channel||info.Tag!=tag||!Regex.IsMatch(info.Version,@"^\d+\.\d+\.\d+$")||!Regex.IsMatch(info.Commit,@"^[0-9a-f]{40}$")||!Regex.IsMatch(info.Sha256,@"^[0-9a-f]{64}$")||!DateTimeOffset.TryParse(info.BuiltAt,out _)
+        if((info.Platform!=""&&info.Platform!="desktop")||info.Channel!=channel||info.Tag!=tag||!Regex.IsMatch(info.Version,@"^\d+\.\d+\.\d+$")||!Regex.IsMatch(info.Commit,@"^[0-9a-f]{40}$")||!Regex.IsMatch(info.Sha256,@"^[0-9a-f]{64}$")||!DateTimeOffset.TryParse(info.BuiltAt,out _)
             ||!Regex.IsMatch(info.PackageName,@"^ResumeStudio-v\d+\.\d+\.\d+(?:-nightly\.\d{8}\.[0-9a-f]{8})?-windows-x64\.zip$")) throw new IOException("更新说明的版本或通道不匹配。");
         if((info.ChangeLogName!=""||info.ChangeLogSha256!=""||info.ChangeLogSize!=0)&&
             (info.ChangeLogName!="release-changelog.json"||!Regex.IsMatch(info.ChangeLogSha256,@"^[0-9a-f]{64}$")||info.ChangeLogSize<=0||info.ChangeLogSize>256000))throw new IOException("更新日志的签名信息无效。");
@@ -134,7 +135,7 @@ public sealed class ReleaseUpdate : IDisposable
     public static string ChannelAddress(string channel)
     {
         if(channel is not "stable" and not "nightly")throw new IOException("更新通道无效。");
-        return $"https://github.com/{Repository}/releases/download/update-channels/{channel}.json";
+        return $"https://github.com/{Repository}/releases/download/update-channels/desktop-{channel}.json";
     }
     public static AvailableUpdate VerifyChannel(byte[] envelope,string publicKey,string channel)
     {

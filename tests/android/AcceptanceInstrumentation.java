@@ -22,7 +22,7 @@ public final class AcceptanceInstrumentation extends Instrumentation {
     private WebView find(View v){if(v instanceof WebView)return(WebView)v;if(v instanceof ViewGroup g)for(int i=0;i<g.getChildCount();i++){WebView w=find(g.getChildAt(i));if(w!=null)return w;}return null;}
     private String js(String script)throws Exception{CompletableFuture<String> result=new CompletableFuture<>();runOnMainSync(()->web.evaluateJavascript(script,result::complete));return result.get(120,TimeUnit.SECONDS);}
     @Override public void onStart(){Bundle results=new Bundle();try{
-        verifyUpdaterSignature();verifyInstallerStatusPendingIntent();verifyInstallerWriteClosure();
+        verifyUpdaterSignature();verifyAndroidPlatformChannel();verifyInstallerStatusPendingIntent();verifyInstallerWriteClosure();
         if(installerOnly){results.putString("report","PASS: production installer closes APK write stream before commit");finish(0,results);return;}
         Intent i=new Intent();i.setClassName("com.resumestudio.mobile","com.resumestudio.MainActivity");i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);Activity a=startActivitySync(i);runOnMainSync(()->web=find(a.getWindow().getDecorView()));
         for(int n=0;n<100;n++){if("true".equals(js("typeof actions==='object' && state.templates.length===14 && document.querySelector('#content h1')!==null")))break;Thread.sleep(200);}
@@ -84,6 +84,23 @@ public final class AcceptanceInstrumentation extends Instrumentation {
         PendingIntent status=(PendingIntent)factory.invoke(null,getTargetContext(),0x5253);
         try{if(Build.VERSION.SDK_INT>=23&&status.isImmutable())throw new IOException("PackageInstaller status PendingIntent must be mutable so Android can return the commit result");}
         finally{status.cancel();}
+    }
+    private void verifyAndroidPlatformChannel()throws Exception{
+        java.security.KeyPairGenerator generator=java.security.KeyPairGenerator.getInstance("RSA");generator.initialize(2048);var keys=generator.generateKeyPair();
+        String publicKey="-----BEGIN PUBLIC KEY-----\n"+Base64.getEncoder().encodeToString(keys.getPublic().getEncoded())+"\n-----END PUBLIC KEY-----";
+        JSONObject metadata=new JSONObject().put("platform","android").put("channel","nightly").put("version","3.2.1").put("commit","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").put("tag","android-nightly-20261016-aaaaaaaa").put("androidVersionName","3.2.1-nightly.20261016.aaaaaaaa").put("androidPackageName","ResumeStudio-Android-v3.2.1-nightly.20261016.aaaaaaaa.apk").put("androidVersionCode",321000001).put("androidPackageSize",1234).put("androidSha256","0000000000000000000000000000000000000000000000000000000000000000");
+        Class<?> client=Class.forName("com.resumestudio.AndroidUpdateClient",true,getTargetContext().getClassLoader());
+        Method verify=client.getDeclaredMethod("verifyRelease",byte[].class,String.class,String.class,int.class);verify.setAccessible(true);
+        for(String scenario:new String[]{"valid","same-version","desktop","wrong-channel","legacy-tag","tampered"}){
+            JSONObject value=new JSONObject(metadata.toString());if(scenario.equals("desktop"))value.put("platform","desktop");if(scenario.equals("legacy-tag"))value.put("tag","nightly-20261016-aaaaaaaa");
+            byte[] data=value.toString().getBytes(StandardCharsets.UTF_8);java.security.Signature signer=java.security.Signature.getInstance("SHA256withRSA/PSS");signer.setParameter(new java.security.spec.PSSParameterSpec("SHA-256","MGF1",java.security.spec.MGF1ParameterSpec.SHA256,32,1));signer.initSign(keys.getPrivate());signer.update(data);byte[] signature=signer.sign();if(scenario.equals("tampered"))data[5]^=1;
+            byte[] envelope=new JSONObject().put("data",Base64.getEncoder().encodeToString(data)).put("signature",Base64.getEncoder().encodeToString(signature)).toString().getBytes(StandardCharsets.UTF_8);
+            boolean rejected=false;Object result=null;
+            try{result=verify.invoke(null,envelope,publicKey,scenario.equals("wrong-channel")?"stable":"nightly",scenario.equals("same-version")?321000001:0);}catch(java.lang.reflect.InvocationTargetException ex){if(!(ex.getCause() instanceof IOException))throw ex;rejected=true;}
+            if(scenario.equals("valid")){if(rejected||result==null)throw new IOException("Independent Android channel rejected");}
+            else if(scenario.equals("same-version")){if(rejected||result!=null)throw new IOException("Same Android version advertised again");}
+            else if(!rejected)throw new IOException("Android channel accepted "+scenario);
+        }
     }
     private void verifyInstallerWriteClosure()throws Exception{
         Context context=getTargetContext();android.content.pm.PackageInstaller installer=context.getPackageManager().getPackageInstaller();

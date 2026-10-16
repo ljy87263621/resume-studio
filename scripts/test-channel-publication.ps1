@@ -1,4 +1,4 @@
-$ErrorActionPreference='Stop'
+﻿$ErrorActionPreference='Stop'
 $repositoryRoot=Split-Path $PSScriptRoot -Parent
 $fixtureRoot=Join-Path ([IO.Path]::GetTempPath()) ('ResumeChannel-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path (Join-Path $fixtureRoot 'client-winui/Assets'),(Join-Path $fixtureRoot 'release'),(Join-Path $fixtureRoot 'source/Assets') -Force|Out-Null
@@ -35,7 +35,7 @@ try {
     [IO.File]::WriteAllBytes($installer,[Text.Encoding]::UTF8.GetBytes('isolated installer fixture'))
     & (Join-Path $repositoryRoot 'scripts/sign-release.ps1') -PackagePath $package -SourceDirectory (Join-Path $fixtureRoot 'source')
     & (Join-Path $repositoryRoot 'scripts/publish-channel.ps1') -Channel stable
-    $envelope=Get-Content release/stable.json -Raw|ConvertFrom-Json;$data=[Convert]::FromBase64String($envelope.data)
+    $envelope=Get-Content release/desktop-stable.json -Raw|ConvertFrom-Json;$data=[Convert]::FromBase64String($envelope.data)
     if($global:resumeChannelUploads -ne 1 -or !$rsa.VerifyData($data,[Convert]::FromBase64String($envelope.signature),[Security.Cryptography.HashAlgorithmName]::SHA256,[Security.Cryptography.RSASignaturePadding]::Pss) -or [Text.Encoding]::UTF8.GetString($data) -ne [IO.File]::ReadAllText((Join-Path $fixtureRoot 'release/release-info.json'))){throw 'Single-file channel changed signed bytes'}
     Write-Output 'PASS: actual signing and publication scripts preserve the signed payload in one envelope'
     $signedInfo=[Text.Encoding]::UTF8.GetString($data)|ConvertFrom-Json

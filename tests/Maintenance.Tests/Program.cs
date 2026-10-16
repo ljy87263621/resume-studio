@@ -80,7 +80,7 @@ sealed class NotesHandler(byte[] envelope,byte[] notes):HttpMessageHandler
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken token)
     {
         if(request.RequestUri!.Host=="api.github.com"){ApiRequests++;return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.Forbidden));}
-        byte[]? content=request.RequestUri.AbsolutePath.EndsWith("/stable.json")?envelope:request.RequestUri.AbsolutePath.EndsWith("/release-changelog.json")?(BadNotes?Encoding.UTF8.GetBytes("tampered"):notes):null;
+        byte[]? content=request.RequestUri.AbsolutePath.EndsWith("/desktop-stable.json")?envelope:request.RequestUri.AbsolutePath.EndsWith("/release-changelog.json")?(BadNotes?Encoding.UTF8.GetBytes("tampered"):notes):null;
         return Task.FromResult(content is null?new HttpResponseMessage(System.Net.HttpStatusCode.NotFound):new HttpResponseMessage(System.Net.HttpStatusCode.OK){Content=new ByteArrayContent(content)});
     }
 }

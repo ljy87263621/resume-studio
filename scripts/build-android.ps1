@@ -112,7 +112,7 @@ if(!$SigningStore){
     if(!$env:RESUMESTUDIO_ANDROID_STORE_PASS){$env:RESUMESTUDIO_ANDROID_STORE_PASS='android'}
 }
 if(!$env:RESUMESTUDIO_ANDROID_STORE_PASS){throw 'Set RESUMESTUDIO_ANDROID_STORE_PASS for the signing store'}
-if(!$Output){$Output=Join-Path $root 'release\ResumeStudio-Android-v0.9.4.apk'}
+if(!$Output){[xml]$androidIdentity=$manifestText;$Output=Join-Path $root ('release/ResumeStudio-Android-v'+$androidIdentity.manifest.versionName+'.apk')}
 New-Item -ItemType Directory -Force (Split-Path $Output)|Out-Null
 try{
     & $java -jar "$tools\lib\apksigner.jar" sign --ks $SigningStore --ks-key-alias $SigningAlias --ks-pass env:RESUMESTUDIO_ANDROID_STORE_PASS --out $Output "$build\aligned.apk";if($LASTEXITCODE){throw 'APK signing failed'}

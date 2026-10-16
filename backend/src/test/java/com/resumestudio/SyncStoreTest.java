@@ -12,10 +12,11 @@ public final class SyncStoreTest {
     }
     public static void main(String[] args) throws Exception {
         Path root=Files.createTempDirectory("resume-sync-test-"); Store store=new Store(root);
-        Files.writeString(root.resolve("settings.json"),"{\"theme\":\"dark\",\"apiKey\":\"LOCAL-ONLY\"}");
+        Files.writeString(root.resolve("settings.json"),"{\"theme\":\"dark\",\"apiKey\":\"LOCAL-ONLY\",\"updateChannel\":\"nightly\",\"updateRoute\":\"proxy\",\"checkUpdatesOnStartup\":false}");
         store.save("resumes",resume("one")); store.checkpoint("one","第一版");
         var before=store.syncSnapshot(); var data=Json.object(before.get("snapshot"));
         check(!Json.object(data.get("settings")).containsKey("apiKey"),"secret excluded");
+        check(!Json.object(data.get("settings")).containsKey("updateChannel"),"update preferences stay local");
         check(Json.array(data.get("history")).size()==1,"history included");
         var badTitle=resume("one"); badTitle.put("title",123); rejects(store,before,"resumes",badTitle,"numeric resume title");
         var badFont=resume("one"); badFont.put("fontSize","x"); rejects(store,before,"resumes",badFont,"text font size");
@@ -44,10 +45,13 @@ public final class SyncStoreTest {
         try { store.syncImport(Json.str(before,"hash"),invalid); throw new AssertionError("invalid import accepted"); } catch(IllegalArgumentException expected) {}
         check(store.list("resumes").size()==1,"validation before writes");
         var replacement=new LinkedHashMap<>(data); replacement.put("resumes",List.of(resume("two"))); replacement.put("history",List.of());
+        replacement.put("settings",Map.of("theme","light","updateChannel","stable","updateRoute","direct","checkUpdatesOnStartup",true));
         store.syncImport(Json.str(before,"hash"),replacement);
         check(Json.str(store.list("resumes").getFirst(),"id").equals("two"),"deletion propagated");
         check(store.list("resumes").getFirst().containsKey("futureField"),"unknown record fields retained");
         check(Files.readString(root.resolve("settings.json")).contains("LOCAL-ONLY"),"local secret retained");
+        var localSettings=Json.object(Json.parse(Files.readString(root.resolve("settings.json"))));
+        check("nightly".equals(localSettings.get("updateChannel"))&&"proxy".equals(localSettings.get("updateRoute"))&&Boolean.FALSE.equals(localSettings.get("checkUpdatesOnStartup")),"legacy remote update preferences cannot overwrite local choices");
         try { store.syncImport(Json.str(before,"hash"),data); throw new AssertionError("stale import accepted"); } catch(ConcurrentModificationException expected) {}
         // An interrupted multi-file import restores the durable pre-import snapshot on next startup.
         Files.writeString(root.resolve("sync-recovery.json"),Json.write(data));

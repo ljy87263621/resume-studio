@@ -35,7 +35,7 @@ MiSans 原字体随包提供。Windows 专有字体在手机没有对应字体�
 
 Android 可启用每 30 分钟后台自动同步。系统只在网络可用时运行任务；应用在前台时任务会延后。两端只有一侧变化时自动上传或下载，下载前保留整机备份；双方都变化时自动同步暂停，用户打开应用选择保留方向。自动同步开关在“设置与同步”中，可随时关闭。
 
-安卓更新使用桌面端相同的 GitHub `stable.json` / `nightly.json` 签名通道、RSA-PSS 公钥校验和 SHA-256 安装包摘要。下载完成后由 Android PackageInstaller 安装，首次需允许拾简安装未知应用。Release 的签名元数据覆盖对应 Android APK 的文件名、大小、摘要和版本码。
+安卓更新使用独立的 GitHub `android-stable.json` / `android-nightly.json` 签名通道、RSA-PSS 公钥校验和 SHA-256 安装包摘要。下载完成后由 Android PackageInstaller 安装，首次需允许拾简安装未知应用。Android 版本号在 AndroidManifest.xml 中独立维护，发行标签使用 android-v／android-nightly 前缀。Release 的签名元数据覆盖对应 Android APK 的文件名、大小、摘要和版本码。
 
 正式版和 Nightly 均在 GitHub Release 附带 APK。测试版应先安装 Nightly 并验收，再从同一源码升级 Stable。
 

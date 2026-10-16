@@ -1,0 +1,91 @@
+name: Publish Android
+on:
+  schedule:
+    - cron: '40 0 * * *'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Android release channel
+        type: choice
+        options: [nightly, stable]
+        default: nightly
+permissions:
+  contents: write
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Resolve independent Android version
+        id: identity
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_CHANNEL: ${{ inputs.channel }}
+        run: |
+          $channel=if($env:REQUESTED_CHANNEL){$env:REQUESTED_CHANNEL}else{'nightly'}
+          $sha=(git rev-parse HEAD).Trim()
+          [xml]$manifest=Get-Content client-android/AndroidManifest.xml
+          $version=[string]$manifest.manifest.versionName
+          if($version -notmatch '^\d+\.\d+\.\d+$'){throw 'Invalid Android manifest version'}
+          $releases=gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"|ConvertFrom-Json
+          if($LASTEXITCODE){throw 'Cannot query Android releases'}
+          $now=[DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(8));$date=$now.ToString('yyyyMMdd')
+          $tag="android-v$version";$name=$version;$code=[int]$manifest.manifest.versionCode
+          if($channel -eq 'nightly'){
+            $previous=@($releases|Where-Object {$_.prerelease -and !$_.draft -and $_.tag_name -match '^android-nightly-'}|Sort-Object published_at -Descending|Select-Object -First 1)
+            if($previous.Count -and $previous[0].body -match 'source-commit: ([0-9a-f]{40})'){
+              $prior=$Matches[1]
+              $changes=@(git diff --name-only $prior $sha -- client-android backend/src/main/java client-winui/Assets client-winui/MainWindow.PlatformCapture.cs client-winui/Services/ResumeRenderer.cs scripts/build-android.ps1 scripts/setup-android-sdk.ps1 scripts/get-android-nightly-version-code.ps1 scripts/publish-android-release.ps1 scripts/publish-android-channel.ps1 scripts/verify-android-nightly.ps1 .github/workflows/android-release.yml)
+              if($LASTEXITCODE){throw 'Cannot compare Android source'}
+              if(!$changes.Count){Add-Content $env:GITHUB_OUTPUT 'changed=false';Add-Content $env:GITHUB_OUTPUT "existing_tag=$($previous[0].tag_name)";exit 0}
+            }
+            $sameDay=@($releases|Where-Object {$_.tag_name -match "^android-nightly-$date-"})
+            $tag="android-nightly-$date-$($sha.Substring(0,8))";$name="$version-nightly.$date.$($sha.Substring(0,8))"
+            $code=& ./scripts/get-android-nightly-version-code.ps1 -Version $version -DayOfYear $now.DayOfYear -Sequence $sameDay.Count
+          }else{
+            & ./scripts/verify-android-nightly.ps1 -Commit $sha -Version $version
+          }
+          foreach($pair in @(@('changed','true'),@('channel',$channel),@('sha',$sha),@('version',$version),@('tag',$tag),@('name',$name),@('code',$code))){Add-Content $env:GITHUB_OUTPUT "$($pair[0])=$($pair[1])"}
+      - name: Restore unchanged Android channel
+        if: steps.identity.outputs.changed == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force release|Out-Null
+          gh release download '${{ steps.identity.outputs.existing_tag }}' --repo "$env:GITHUB_REPOSITORY" -p android-release-info.json -p android-release-info.sig -D release
+          if($LASTEXITCODE){throw 'Cannot restore Android metadata'}
+          ./scripts/publish-android-channel.ps1 -Channel nightly
+      - name: Install verified JDK
+        if: steps.identity.outputs.changed == 'true'
+        shell: pwsh
+        run: ./scripts/setup-release-jdk.ps1
+      - name: Install Android SDK
+        if: steps.identity.outputs.changed == 'true'
+        shell: pwsh
+        run: ./scripts/setup-android-sdk.ps1
+      - name: Build and verify Android package
+        if: steps.identity.outputs.changed == 'true'
+        shell: pwsh
+        env:
+          RESUMESTUDIO_ANDROID_KEYSTORE_B64: ${{ secrets.RESUMESTUDIO_ANDROID_KEYSTORE_B64 }}
+          RESUMESTUDIO_ANDROID_STORE_PASS: ${{ secrets.RESUMESTUDIO_ANDROID_STORE_PASS }}
+        run: |
+          ./scripts/test-android-nightly-version-code.ps1
+          ./scripts/test-android-release.ps1
+          ./scripts/test-platform-migration.ps1
+          ./scripts/build-android.ps1 -Output 'release/ResumeStudio-Android-v${{ steps.identity.outputs.name }}.apk' -VersionName '${{ steps.identity.outputs.name }}' -VersionCode ${{ steps.identity.outputs.code }}
+      - name: Publish signed Android release and channel
+        if: steps.identity.outputs.changed == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESUMESTUDIO_UPDATE_SIGNING_KEY: ${{ secrets.RESUMESTUDIO_UPDATE_SIGNING_KEY }}
+        run: ./scripts/publish-android-release.ps1 -Channel '${{ steps.identity.outputs.channel }}' -Version '${{ steps.identity.outputs.version }}' -Commit '${{ steps.identity.outputs.sha }}' -Tag '${{ steps.identity.outputs.tag }}' -VersionName '${{ steps.identity.outputs.name }}' -VersionCode ${{ steps.identity.outputs.code }} -PackagePath 'release/ResumeStudio-Android-v${{ steps.identity.outputs.name }}.apk'

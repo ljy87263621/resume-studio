@@ -8,7 +8,7 @@
 - **Nightly**：每日北京时间 08:30 检查 main；源码与上次成功发行相同则跳过，否则发布测试版。计划任务可能延迟。
 - 每次推送 main 自动构建并测试；未提交或未推送的本机文件不会进入发行包。
 
-两条通道优先读取仓库 Release `update-channels` 下的 `stable.json`／`nightly.json`，避免匿名 REST API 配额。只有网络读取失败才回退 API；签名或内容无效直接停止。同一 Nightly 提交不会重复提示，切换 Stable 可回到正式版。
+两端分别读取仓库 Release `update-channels` 下的 `desktop-stable.json`／`desktop-nightly.json` 与 `android-stable.json`／`android-nightly.json`，避免匿名 REST API 配额。只有网络读取失败才回退 API；签名或内容无效直接停止。同一 Nightly 提交不会重复提示，切换 Stable 可回到正式版。
 
 ## 校验与恢复
 
@@ -37,3 +37,18 @@
 Android `0.9.5-nightly.20261015.ede43b32` 发行包缺少更新验证公钥，检查更新会提示 `UpdatePublicKey.pem`。请从 GitHub Releases 手动下载较新的 Nightly APK 覆盖安装一次，无需卸载。修复后的构建会检查 APK 中的公钥与电脑端受版本管理的公钥一致；签名与摘要校验继续保留。选择 Nightly 通道可接收后续测试版，Stable 通道只检查正式版。
 
 旧版第一次升级若遇到 API 403、缺少更新器或安装目录 “is in use”，直接使用最新 Setup 覆盖安装。个人数据目录不参与程序替换。v0.6.0／0.6.1 也可用新版 `updater/Update-App.ps1` 备份后替换旧脚本，再在软件内重试。
+
+## 安卓和桌面独立发行（0.9.9 起）
+
+- 桌面版本由 `client-winui/ResumeStudio.csproj` 管理；桌面工作流 `nightly.yml`／`stable.yml` 只构建、签名和发布 Windows ZIP／Setup。保留 `vX.Y.Z`、`nightly-日期-提交` 标签。
+- 安卓版本由 `client-android/AndroidManifest.xml` 管理；`android-release.yml` 的 channel 选择 Nightly 或 Stable，只构建和发布 APK。标签为 `android-vX.Y.Z`、`android-nightly-日期-提交`，元数据为 `android-release-info.json`／`.sig`。
+- 两端独立更新四个带平台前缀的索引，不互相覆盖。安卓 Stable 的版本码以清单为准，Nightly 根据安卓版本、日期和当日序号生成；不再读取桌面版本号。
+- 更新通道、下载线路和启动检查选项只保存在各自本机，不通过 WebDAV 相互覆盖。旧同步文件中的这些字段仍能校验和读取，但导入时忽略。
+- Android Stable 必须先通过同版本、同提交的 Android Nightly 验证；桌面 Stable 仍只验证桌面 Nightly。安卓发行不改变 GitHub Latest 桌面正式版。
+- 定时发布只在各自依赖的源码变化后创建新 Nightly；共享后端、模板或字体变化可同时触发两个平台。
+
+### 旧客户端迁移
+
+0.9.8 及以前读取无平台前缀的 `stable.json`／`nightly.json`。首次发布拆分版本后，同提交、同基础版本、同日的双端发行可手动运行 `platform-migration.yml`：验签并合成一次旧协议桥接发行，让旧客户端正常收到迁移更新。该操作仅改旧索引，不改四个独立索引。桥接包包含同签名 APK，升级后各端自动进入独立通道；以后单端发布不再碰旧索引。两个平台版本已经分叉时不能运行此桥接，脚本会拒绝。
+
+尚未运行迁移时，旧客户端仍停留在旧索引；请勿将独立分发误报为旧客户端已经收到更新。首次安卓独立发行前，应确保 `update-channels` Release 已存在（现有仓库已具备）。

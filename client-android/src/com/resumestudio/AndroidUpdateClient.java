@@ -9,7 +9,7 @@ import java.security.*;
 import java.security.spec.*;
 import java.util.*;
 
-/** Verifies the same RSA-PSS signed GitHub channel data as the desktop updater. */
+/** Android has its own signed channels and release tags, independent of desktop releases. */
 final class AndroidUpdateClient {
     static final String REPOSITORY="scj040921/resume-studio";
     static final long MAX_APK=150L*1024L*1024L;
@@ -24,19 +24,26 @@ final class AndroidUpdateClient {
 
     Release check(String channel,int installedVersionCode,String route)throws Exception{
         if(!channel.equals("stable")&&!channel.equals("nightly"))throw new IOException("更新通道无效");
-        URI index=URI.create("https://github.com/"+REPOSITORY+"/releases/download/update-channels/"+channel+".json");
-        byte[] envelope=read(index,route,64000);Map<String,Object> signed=Json.object(Json.parse(new String(envelope,StandardCharsets.UTF_8)));
+        URI index=URI.create("https://github.com/"+REPOSITORY+"/releases/download/update-channels/android-"+channel+".json?check="+System.currentTimeMillis());
+        return verifyRelease(read(index,route,64000),publicKey,channel,installedVersionCode);
+    }
+    static Release verifyRelease(byte[] envelope,String publicKey,String channel,int installedVersionCode)throws Exception{
+        if(!channel.equals("stable")&&!channel.equals("nightly"))throw new IOException("更新通道无效");
+        if(envelope.length>64000)throw new IOException("更新索引过大");
+        Map<String,Object> signed=Json.object(Json.parse(new String(envelope,StandardCharsets.UTF_8)));
         byte[] data=Base64.getDecoder().decode(Json.str(signed,"data"));String signature=Json.str(signed,"signature");
         if(data.length>16000)throw new IOException("签名索引过大");
         if(!verifySignature(publicKey,data,Base64.getDecoder().decode(signature)))throw new IOException("更新签名校验失败，已停止检查");
         Map<String,Object> metadata=Json.object(Json.parse(new String(data,StandardCharsets.UTF_8)));
+        if(!"android".equals(Json.str(metadata,"platform")))throw new IOException("更新发行平台不匹配，已停止检查");
         if(!channel.equals(Json.str(metadata,"channel")))throw new IOException("签名更新通道不匹配");
         String version=Json.str(metadata,"version"),tag=Json.str(metadata,"tag"),commit=Json.str(metadata,"commit"),name=Json.str(metadata,"androidPackageName"),sha=Json.str(metadata,"androidSha256"),versionName=Json.str(metadata,"androidVersionName");
         int code=((Number)metadata.get("androidVersionCode")).intValue();long size=((Number)metadata.get("androidPackageSize")).longValue();
         if(!version.matches("\\d+\\.\\d+\\.\\d+")||!commit.matches("[0-9a-f]{40}")||!sha.matches("[0-9a-f]{64}")||code<1||size<1||size>MAX_APK)throw new IOException("签名 Android 发行信息无效");
-        if(channel.equals("stable")?!tag.equals("v"+version):!tag.matches("nightly-\\d{8}-[0-9a-f]{8}")||!tag.endsWith(commit.substring(0,8)))throw new IOException("更新标签与签名提交不匹配");
-        String expected=channel.equals("stable")?"ResumeStudio-Android-v"+version+".apk":"ResumeStudio-Android-v"+version+"-nightly."+tag.substring(8).replace('-','.')+".apk";
-        String expectedVersionName=channel.equals("stable")?version:version+"-nightly."+tag.substring(8).replace('-','.');
+        if(channel.equals("stable")?!tag.equals("android-v"+version):!tag.matches("android-nightly-\\d{8}-[0-9a-f]{8}")||!tag.endsWith(commit.substring(0,8)))throw new IOException("更新标签与签名提交不匹配");
+        String suffix=channel.equals("stable")?"":"-nightly."+tag.substring("android-nightly-".length()).replace('-','.');
+        String expected="ResumeStudio-Android-v"+version+suffix+".apk";
+        String expectedVersionName=version+suffix;
         if(!name.equals(expected)||!versionName.equals(expectedVersionName))throw new IOException("APK 名称或版本格式无效");
         if(code<=installedVersionCode)return null;
         return new Release(metadata);
