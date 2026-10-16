@@ -9,6 +9,10 @@ on:
         type: choice
         options: [nightly, stable]
         default: nightly
+      source_ref:
+        description: Source branch/tag; use the verified Android Nightly tag to promote Stable independently of desktop changes
+        type: string
+        default: main
 permissions:
   contents: write
 concurrency:
@@ -20,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: main
+          ref: ${{ inputs.source_ref || 'main' }}
           fetch-depth: 0
       - name: Resolve independent Android version
         id: identity

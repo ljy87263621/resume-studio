@@ -45,6 +45,7 @@ Android `0.9.5-nightly.20261015.ede43b32` 发行包缺少更新验证公钥，�
 - 两端独立更新四个带平台前缀的索引，不互相覆盖。安卓 Stable 的版本码以清单为准，Nightly 根据安卓版本、日期和当日序号生成；不再读取桌面版本号。
 - 更新通道、下载线路和启动检查选项只保存在各自本机，不通过 WebDAV 相互覆盖。旧同步文件中的这些字段仍能校验和读取，但导入时忽略。
 - Android Stable 必须先通过同版本、同提交的 Android Nightly 验证；桌面 Stable 仍只验证桌面 Nightly。安卓发行不改变 GitHub Latest 桌面正式版。
+- 安卓正式版通过 `android-release.yml` 选择 `stable`，`source_ref` 填已验收的 Android Nightly 标签，即使 main 后来只有桌面改动，也能提升原安卓提交。桌面正式版则在已验收的桌面提交打 `vX.Y.Z` 标签。
 - 定时发布只在各自依赖的源码变化后创建新 Nightly；共享后端、模板或字体变化可同时触发两个平台。
 
 ### 旧客户端迁移
