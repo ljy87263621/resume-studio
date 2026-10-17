@@ -31,6 +31,7 @@ public final class AcceptanceInstrumentation extends Instrumentation {
         verifyBrowserSafeArea(a);
         js("window.testDavPort="+JSONObject.quote(davPort));String script;try(InputStream in=getContext().getAssets().open("acceptance.js")){script=new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}js(script);
         String report="null";for(int n=0;n<600;n++){report=js("window.acceptanceResult||null");if(!report.equals("null"))break;Thread.sleep(200);}
+        report=verifyTouchMotion(report);
         File dir=new File(getTargetContext().getExternalFilesDir(null),"acceptance");dir.mkdirs();
         try(FileOutputStream out=new FileOutputStream(new File(dir,"result.json"))){out.write(report.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
         js("document.querySelector('#notice').hidden=true;document.querySelector('#content').classList.remove('page-enter');true");Thread.sleep(450);Bitmap bitmap=getUiAutomation().takeScreenshot();try(FileOutputStream out=new FileOutputStream(new File(dir,"screen.png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,out);}bitmap.recycle();
@@ -56,15 +57,46 @@ public final class AcceptanceInstrumentation extends Instrumentation {
     }
     private String verifyMotionFrames()throws Exception {
         File dir=new File(getTargetContext().getExternalFilesDir(null),"acceptance");dir.mkdirs();
-        js("window.motionResult=null;verifyPageMotion().then(passed=>window.motionResult={passed,count:passed.length,frames:window.motionFrameSamples},error=>window.motionResult={error:error.stack||error.message});true");
+        js("window.motionResult=null;verifyPageMotion().then(passed=>window.motionResult={passed,count:passed.length,frames:window.motionFrameSamples,timing:window.motionTiming},error=>window.motionResult={error:error.stack||error.message,timing:window.motionTiming});true");
         String report="null";
         for(int n=0;n<600;n++){
             report=js("window.motionResult||null");if(!report.equals("null"))break;Thread.sleep(30);
         }
         if(report.equals("null"))throw new IOException("Motion frame acceptance timed out");
+        report=verifyTouchMotion(report);
         capture(dir,"motion-final.png");
         try(FileOutputStream output=new FileOutputStream(new File(dir,"motion-result.json"))){output.write(report.getBytes(StandardCharsets.UTF_8));}
         return report;
+    }
+    private void tapElement(String selector)throws Exception {
+        JSONObject position=new JSONObject(js("(()=>{const el=document.querySelector("+JSONObject.quote(selector)+");if(!el)throw new Error('Missing touch target');el.scrollIntoView({block:'center'});const r=el.getBoundingClientRect();return {x:(r.left+r.width/2)*devicePixelRatio,y:(r.top+r.height/2)*devicePixelRatio};})()"));
+        int[] origin=new int[2];runOnMainSync(()->web.getLocationOnScreen(origin));
+        float x=(float)position.getDouble("x")+origin[0],y=(float)position.getDouble("y")+origin[1];long down=SystemClock.uptimeMillis();
+        for(int action:new int[]{MotionEvent.ACTION_DOWN,MotionEvent.ACTION_UP}){
+            MotionEvent event=MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,x,y,0);event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            try{if(!getUiAutomation().injectInputEvent(event,true))throw new IOException("Native touch injection failed");}finally{event.recycle();}
+            if(action==MotionEvent.ACTION_DOWN)Thread.sleep(30);
+        }
+    }
+    private void awaitUi(String condition)throws Exception {
+        for(int attempt=0;attempt<100;attempt++){if("true".equals(js(condition)))return;Thread.sleep(40);}
+        throw new IOException("Touch interaction did not settle: "+condition);
+    }
+    private String verifyTouchMotion(String report)throws Exception {
+        if(report.equals("null")||report.contains("\"error\""))return report;
+        js("setTheme({theme:'light',interfaceStyle:'haru',motionEnabled:true});navigate('home');true");
+        awaitUi("state.page==='home'&&!pageTransitionActive");
+        for(String page:new String[]{"interviews","templates","jobs","more"}){tapElement("#nav [data-page='"+page+"']");Thread.sleep(70);}
+        awaitUi("state.page==='more'&&!pageTransitionActive&&document.querySelector('#nav button.active').dataset.page==='more'");
+        tapElement("#content .card[data-page='favorites']");
+        awaitUi("state.page==='favorites'&&!pageTransitionActive&&!document.querySelector('[style*=view-transition-name]')");
+        tapElement("#nav [data-page='interviews']");awaitUi("state.page==='interviews'&&!state.current&&!pageTransitionActive");
+        tapElement("#content [data-action='study'][data-id]");awaitUi("!!document.querySelector('#study-answer-slot')&&!pageTransitionActive");
+        tapElement("[data-action='answer']");Thread.sleep(70);tapElement("[data-action='answer']");Thread.sleep(350);
+        if(!"true".equals(js("!state.answer&&!document.querySelector('#study-answer-slot').style.height&&!document.querySelector('#study-answer-slot').style.overflow")))throw new IOException("Touch answer reversal left a frozen card");
+        JSONObject result=new JSONObject(report);JSONArray passed=result.getJSONArray("passed");
+        passed.put("native rapid bottom-tab taps settle on the last requested page");passed.put("native card tap completes expansion and releases snapshot names");passed.put("native answer taps reverse expansion without a frozen height");
+        result.put("count",passed.length());result.put("nativeTouchMotionChecks",3);return result.toString();
     }
     private void verifyBrowserSafeArea(Activity activity)throws Exception{
         Dialog[] dialog=new Dialog[1];WebView[] page=new WebView[1];android.widget.Button[] captureButton=new android.widget.Button[1];
