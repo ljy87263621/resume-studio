@@ -83,6 +83,7 @@ jobs:
           RESUMESTUDIO_ANDROID_STORE_PASS: ${{ secrets.RESUMESTUDIO_ANDROID_STORE_PASS }}
         run: |
           ./scripts/test-android-nightly-version-code.ps1
+          ./scripts/test-android-download-retry.ps1
           ./scripts/test-android-release.ps1
           ./scripts/test-platform-migration.ps1
           ./scripts/build-android.ps1 -Output 'release/ResumeStudio-Android-v${{ steps.identity.outputs.name }}.apk' -VersionName '${{ steps.identity.outputs.name }}' -VersionCode ${{ steps.identity.outputs.code }}
