@@ -174,8 +174,8 @@ public final class MainActivity extends Activity {
         }catch(Exception ex){event("error",Objects.toString(ex.getMessage(),"文件读取失败"));}});
     }
     private static void checkUrl(String text){URI uri=URI.create(text);if(!"https".equals(uri.getScheme())||uri.getHost()==null||uri.getUserInfo()!=null)throw new IllegalArgumentException("仅支持 HTTPS 链接");}
-    private void browser(String url){
-        try{checkUrl(url);}catch(Exception ex){event("error",ex.getMessage());return;}
+    private Dialog browser(String url){
+        try{checkUrl(url);}catch(Exception ex){event("error",ex.getMessage());return null;}
         Dialog dialog=new Dialog(this,android.R.style.Theme_Material_Light_NoActionBar);LinearLayout layout=new LinearLayout(this);layout.setOrientation(LinearLayout.VERTICAL);LinearLayout bar=new LinearLayout(this);Button back=new Button(this),capture=new Button(this);back.setText("返回拾简");capture.setText("收藏当前职位");bar.addView(back);bar.addView(capture);layout.addView(bar);TextView status=new TextView(this);status.setText("打开具体职位详情，再点击收藏。登录和验证需本人完成。");layout.addView(status);
         WebView external=new WebView(this);configure(external,true);external.setWebViewClient(new WebViewClient(){@Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest r){return !"https".equals(r.getUrl().getScheme());}});layout.addView(external,new LinearLayout.LayoutParams(-1,0,1));dialog.setContentView(layout);back.setOnClickListener(v->dialog.dismiss());dialog.setOnDismissListener(d->external.destroy());external.loadUrl(url);
         capture.setOnClickListener(v->{String observed=external.getUrl();if(observed==null)return;capture.setEnabled(false);
@@ -191,6 +191,27 @@ public final class MainActivity extends Activity {
                 }catch(Exception ex){runOnUiThread(()->{status.setText(ex.getMessage());capture.setEnabled(true);});}});});
             }catch(Exception ex){status.setText(ex.getMessage());capture.setEnabled(true);}
         });dialog.show();
+        Window browserWindow=dialog.getWindow();
+        if(browserWindow!=null){
+            browserWindow.setLayout(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT);
+            browserWindow.setStatusBarColor(Color.TRANSPARENT);browserWindow.setNavigationBarColor(Color.TRANSPARENT);
+            if(Build.VERSION.SDK_INT>=30){
+                browserWindow.setDecorFitsSystemWindows(false);
+                WindowInsetsController controller=browserWindow.getInsetsController();
+                if(controller!=null)controller.setSystemBarsAppearance(WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+            }else browserWindow.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+            layout.setOnApplyWindowInsetsListener((view,insets)->{
+                if(Build.VERSION.SDK_INT>=30){
+                    android.graphics.Insets safe=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
+                    view.setPadding(safe.left,safe.top,safe.right,safe.bottom);
+                }else view.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());
+                return insets;
+            });
+            int touchHeight=(int)Math.ceil(48*getResources().getDisplayMetrics().density);
+            back.setMinHeight(touchHeight);capture.setMinHeight(touchHeight);
+            layout.requestApplyInsets();
+        }
+        return dialog;
     }
     private void print(String html,String title){
         android.util.Log.i("ResumeStudio","Preparing PDF "+html.length());

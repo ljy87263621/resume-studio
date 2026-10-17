@@ -26,6 +26,7 @@ public final class AcceptanceInstrumentation extends Instrumentation {
         if(installerOnly){results.putString("report","PASS: production installer closes APK write stream before commit");finish(0,results);return;}
         Intent i=new Intent();i.setClassName("com.resumestudio.mobile","com.resumestudio.MainActivity");i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);Activity a=startActivitySync(i);runOnMainSync(()->web=find(a.getWindow().getDecorView()));
         for(int n=0;n<100;n++){if("true".equals(js("typeof actions==='object' && state.templates.length===14 && document.querySelector('#content h1')!==null")))break;Thread.sleep(200);}
+        verifyBrowserSafeArea(a);
         js("window.testDavPort="+JSONObject.quote(davPort));String script;try(InputStream in=getContext().getAssets().open("acceptance.js")){script=new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}js(script);
         String report="null";for(int n=0;n<600;n++){report=js("window.acceptanceResult||null");if(!report.equals("null"))break;Thread.sleep(200);}
         File dir=new File(getTargetContext().getExternalFilesDir(null),"acceptance");dir.mkdirs();
@@ -49,6 +50,39 @@ public final class AcceptanceInstrumentation extends Instrumentation {
     }catch(Exception ex){Throwable cause=ex;while(cause.getCause()!=null)cause=cause.getCause();android.util.Log.e("ResumeStudioTest","Acceptance failed",ex);results.putString("error",cause.toString());finish(1,results);}}
     private void capture(File dir,String name)throws IOException {
         Bitmap image=getUiAutomation().takeScreenshot();try(FileOutputStream out=new FileOutputStream(new File(dir,name))){image.compress(Bitmap.CompressFormat.PNG,100,out);}image.recycle();
+    }
+    private void verifyBrowserSafeArea(Activity activity)throws Exception{
+        Dialog[] dialog=new Dialog[1];WebView[] page=new WebView[1];android.widget.Button[] captureButton=new android.widget.Button[1];
+        Method browser=activity.getClass().getDeclaredMethod("browser",String.class);browser.setAccessible(true);
+        CompletableFuture<Void> loaded=new CompletableFuture<>();
+        runOnMainSync(()->{try{
+            dialog[0]=(Dialog)browser.invoke(activity,"https://www.zhipin.com/job_detail/inset-regression.html");
+            ViewGroup root=(ViewGroup)dialog[0].findViewById(android.R.id.content);page[0]=find(root);page[0].stopLoading();
+            ViewGroup layout=(ViewGroup)page[0].getParent();ViewGroup bar=(ViewGroup)layout.getChildAt(0);captureButton[0]=(android.widget.Button)bar.getChildAt(1);
+            page[0].setWebViewClient(new WebViewClient(){@Override public void onPageFinished(WebView v,String url){loaded.complete(null);}});
+            page[0].loadDataWithBaseURL("https://www.zhipin.com/","<html><body>职位收藏按钮安全区域验收</body></html>","text/html","UTF-8",null);
+        }catch(Exception ex){throw new RuntimeException(ex);}});
+        try{
+            loaded.get(30,TimeUnit.SECONDS);Thread.sleep(400);
+            runOnMainSync(()->{
+                ViewGroup layout=(ViewGroup)page[0].getParent();int[] position=new int[2];captureButton[0].getLocationOnScreen(position);
+                WindowInsets insets=layout.getRootWindowInsets();int top=Build.VERSION.SDK_INT>=30?insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout()).top:insets.getSystemWindowInsetTop();
+                if(position[1]<top||captureButton[0].getHeight()<48*activity.getResources().getDisplayMetrics().density)throw new AssertionError("Browser capture button overlaps status bar or is too small");
+                if(Build.VERSION.SDK_INT>=30){
+                    WindowInsets cutout=new WindowInsets.Builder().setInsets(WindowInsets.Type.systemBars(),android.graphics.Insets.of(8,96,12,72)).setInsets(WindowInsets.Type.displayCutout(),android.graphics.Insets.of(40,120,20,0)).build();
+                    layout.dispatchApplyWindowInsets(cutout);
+                    if(layout.getPaddingLeft()!=40||layout.getPaddingTop()!=120||layout.getPaddingRight()!=20||layout.getPaddingBottom()!=72)throw new AssertionError("Browser does not respect system bars and display cutouts on every edge");
+                    layout.requestApplyInsets();
+                }
+            });
+            Thread.sleep(300);File dir=new File(getTargetContext().getExternalFilesDir(null),"acceptance");dir.mkdirs();capture(dir,"browser-safe-area.png");
+            runOnMainSync(()->{if(!captureButton[0].performClick())throw new AssertionError("Browser capture button cannot be clicked");});
+            for(int attempt=0;attempt<50;attempt++){
+                boolean[] complete=new boolean[1];runOnMainSync(()->{ViewGroup layout=(ViewGroup)page[0].getParent();complete[0]=captureButton[0].isEnabled()&&((android.widget.TextView)layout.getChildAt(1)).getText().toString().contains("未读取到完整职位正文");});
+                if(complete[0])return;Thread.sleep(100);
+            }
+            throw new IOException("Browser capture click did not reach the collection handler");
+        }finally{runOnMainSync(()->dialog[0].dismiss());}
     }
     private void verifyUpdaterSignature()throws Exception{
         JSONObject signed;try(InputStream in=getContext().getAssets().open("stable-channel.json")){signed=new JSONObject(new String(in.readAllBytes(),StandardCharsets.UTF_8));}
