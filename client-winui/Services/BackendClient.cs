@@ -17,7 +17,7 @@ public sealed class BackendClient : IDisposable
     {
         var specified=Environment.GetEnvironmentVariable("RESUMESTUDIO_TEST_DATA");
         if(!string.IsNullOrWhiteSpace(specified)) return specified;
-        bool test=Environment.GetCommandLineArgs().Any(arg=>arg is "--self-test" or "--benchmark" or "--iteration-test" or "--feature-test" or "--workbench-test" or "--appearance-review" or "--template-assets" or "--navigation-test" or "--capture-layout-test" or "--favorites-editor-test" or "--lightweight-test" or "--interview-test");
+        bool test=Environment.GetCommandLineArgs().Any(arg=>arg is "--self-test" or "--benchmark" or "--iteration-test" or "--feature-test" or "--workbench-test" or "--appearance-review" or "--template-assets" or "--navigation-test" or "--capture-layout-test" or "--favorites-editor-test" or "--lightweight-test" or "--interview-test" or "--notification-test");
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),test?"ResumeStudioVerification":"ResumeStudio",test?Guid.NewGuid().ToString("N"):"");
     }
     public static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = false, WriteIndented = true };

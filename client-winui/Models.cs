@@ -64,6 +64,9 @@ public sealed class Job
 {
     [JsonExtensionData] public Dictionary<string,JsonElement>? ExtensionData { get; set; }
     public string Id { get; set; } = "";
+    public string Tags {get;set;}="";
+    public string DeadlineAt {get;set;}="";
+    public string LastFollowedAt {get;set;}="";
     public string Title { get; set; } = "";
     public string Company { get; set; } = "";
     public string Location { get; set; } = "";
@@ -100,6 +103,9 @@ public sealed class ApplicationRecord
     [JsonExtensionData] public Dictionary<string,JsonElement>? ExtensionData { get; set; }
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string JobId { get; set; } = "";
+    public string Tags {get;set;}="";
+    public string DeadlineAt {get;set;}="";
+    public string LastFollowedAt {get;set;}="";
     public string Title { get; set; } = "";
     public string Company { get; set; } = "";
     public string Url { get; set; } = "";

@@ -11,13 +11,15 @@ public final class MobileApi {
     private record UndoEntry(String id,Map<String,Object> document) {}
     private final Deque<UndoEntry> undo=new ArrayDeque<>();
     void clearUndo(){undo.clear();}
-    public MobileApi(Path root)throws Exception{this.root=root;store=new Store(root);jobs=new CompanyJobs(store);}
+    public MobileApi(Path root)throws Exception{this.root=root;store=MobileData.open(root);if(!Files.exists(root.resolve("device-name.txt")))MobileCompat.writeString(root.resolve("device-name.txt"),"安卓设备");jobs=new CompanyJobs(store);}
     private Map<String,Object> find(String kind,String id)throws Exception {
         return store.list(kind).stream().filter(d->id.equals(Json.str(d,"id"))).findFirst().orElseThrow(()->new IllegalArgumentException("资料不存在，请刷新"));
     }
     public Object call(String method,Map<String,Object> request)throws Exception {
         String kind=Json.str(request,"kind"),id=Json.str(request,"id");
         switch(method){
+            case "workspace":return WorkspaceTools.call(store,request);
+            case "backupCatalog":return BackupCatalog.call(root,store,request);
             case "templates":return Templates.all();
             case "list":return store.list(kind);
             case "get":return find(kind,id);
@@ -87,16 +89,16 @@ public final class MobileApi {
                     }doc.put("sections",sections);
                 }break;
             }
-            case "favorites":copyFields(doc,patch,"title,company,location,salary,description,url,notes,source,canonicalUrl,infoStatus");break;
+            case "favorites":copyFields(doc,patch,"title,company,location,salary,description,url,notes,source,canonicalUrl,infoStatus,tags,deadlineAt,lastFollowedAt");break;
             case "applications":{
-                copyFields(doc,patch,"title,company,url,status,notes,dueAt,eventKind,reminderDone,review");
+                copyFields(doc,patch,"title,company,url,status,notes,dueAt,eventKind,reminderDone,review,tags,deadlineAt,lastFollowedAt");
                 String resumeId=Json.str(patch,"_resumeId");if(!resumeId.isEmpty()&&previous.get("resumeSnapshot")==null){var resume=find("resumes",resumeId);doc.put("resumeSnapshot",resume);doc.put("resumeTitle",Json.str(resume,"title"));}break;
             }
             case "schedule":copyFields(doc,patch,"title,kind,startAt,notes,applicationId,allDay,completed,reminderEnabled,reminderMinutes");break;
             case "sources":copyFields(doc,patch,"name,adapter,slug,url,enabled,region");break;
             case "interviews":{
-                copyFields(doc,patch,"title,sourceName");var old=Json.array(previous.getOrDefault("questions",Collections.emptyList()));var questions=new ArrayList<>();
-                for(Object v:Json.array(patch.get("questions"))){var q=Json.object(v);var saved=old.stream().map(Json::object).filter(s->Json.str(s,"id").equals(Json.str(q,"id"))).findFirst().orElse(new LinkedHashMap<>());var copy=new LinkedHashMap<>(saved);copyFields(copy,q,"id,title,answer,status,reviewedAt");questions.add(copy);}doc.put("questions",questions);break;
+                copyFields(doc,patch,"title,sourceName,lastQuestionId");var old=Json.array(previous.getOrDefault("questions",Collections.emptyList()));var questions=new ArrayList<>();
+                for(Object v:Json.array(patch.get("questions"))){var q=Json.object(v);var saved=old.stream().map(Json::object).filter(s->Json.str(s,"id").equals(Json.str(q,"id"))).findFirst().orElse(new LinkedHashMap<>());var copy=new LinkedHashMap<>(saved);copyFields(copy,q,"id,title,answer,status,reviewedAt,reviewCount,intervalDays,nextReviewAt");questions.add(copy);}doc.put("questions",questions);break;
             }
             default:throw new IllegalArgumentException("集合无效");
         }

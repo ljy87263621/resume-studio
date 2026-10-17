@@ -90,4 +90,8 @@ Check(InterviewProgress.Count(deck.Questions)==new InterviewCounts(2,1,1,0),"rem
 questions[0].Status="learning";questions[0].Status="learning";
 Check(InterviewProgress.Count(deck.Questions)==new InterviewCounts(2,0,2,0),"changing or repeating a verdict never double counts");
 Check(InterviewProgress.Filter(deck,"remembered").Count()==0&&InterviewProgress.Filter(deck,"learning").Count()==2,"practice filters follow current states");
+var reviewed=new InterviewQuestion {Title="间隔复习",Status="unseen"};var reviewAt=DateTimeOffset.Parse("2026-10-17T09:00:00+08:00");
+InterviewProgress.Review(reviewed,"remembered",reviewAt);Check(reviewed.IntervalDays==1&&DateTimeOffset.Parse(reviewed.NextReviewAt)==reviewAt.AddDays(1),"first remembered review schedules one day");
+InterviewProgress.Review(reviewed,"remembered",reviewAt.AddDays(1));Check(reviewed.IntervalDays==3&&reviewed.ReviewCount==2,"remembered interval increases with repetitions");
+InterviewProgress.Review(reviewed,"learning",reviewAt);Check(reviewed.IntervalDays==0&&DateTimeOffset.Parse(reviewed.NextReviewAt)==reviewAt.AddMinutes(10),"unmastered question returns after ten minutes");
 Console.WriteLine($"PASS: {checks} interview import and progress checks. Fixtures: {output}");

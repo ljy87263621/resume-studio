@@ -8,12 +8,12 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public final class Server {
-    private final Store store; private volatile CompanyJobs jobs; private final String token;
+    private final Path dataDirectory;private final Store store; private volatile CompanyJobs jobs; private final String token;
     private final HttpServer server;
     private final ExecutorService executor=Executors.newFixedThreadPool(6);
     public Server(int port,Path data,String token) throws Exception {
         if(token.length()<16) throw new IllegalArgumentException("Provide a session token of at least 16 characters");
-        this.token=token; store=new Store(data); jobs=new CompanyJobs(store);
+        this.token=token;dataDirectory=data; store=new Store(data);if(!Files.exists(data.resolve("device-name.txt")))Files.writeString(data.resolve("device-name.txt"),System.getenv().getOrDefault("COMPUTERNAME","Windows 设备")); jobs=new CompanyJobs(store);
         server=HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"),port),16);
         server.setExecutor(executor); server.createContext("/api/",this::handle);
     }
@@ -27,8 +27,16 @@ public final class Server {
             if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.9.3","java",System.getProperty("java.version"))); return; }
             if(path.equals("templates")&&method.equals("GET")) { send(e,200,Templates.all()); return; }
             if(path.equals("job-sources")&&method.equals("GET")) { send(e,200,jobs.sources()); return; }
+            if(path.equals("export/docx")&&method.equals("POST")){var request=Json.object(Json.parse(new String(e.getRequestBody().readNBytes(200001),StandardCharsets.UTF_8)));String id=Json.str(request,"id");var resume=store.list("resumes").stream().filter(r->id.equals(Json.str(r,"id"))).findFirst().orElseThrow(()->new IllegalArgumentException("简历不存在"));send(e,200,Map.of("base64",Base64.getEncoder().encodeToString(ResumeDocx.create(resume))));return;}
+            if(path.equals("workspace")&&method.equals("POST")){var request=Json.object(Json.parse(new String(e.getRequestBody().readNBytes(200001),StandardCharsets.UTF_8)));send(e,200,WorkspaceTools.call(store,request));return;}
+            if(path.equals("backups")&&method.equals("POST")){var request=Json.object(Json.parse(new String(e.getRequestBody().readNBytes(SyncStore.MAX_BYTES*2+1),StandardCharsets.UTF_8)));send(e,200,BackupCatalog.call(dataDirectory,store,request));jobs=new CompanyJobs(store);return;}
             if(path.equals("sync/snapshot")&&method.equals("GET")) { send(e,200,store.syncSnapshot()); return; }
             if(path.equals("sync/extended-snapshot")&&method.equals("GET")) { send(e,200,store.syncExtendedSnapshot()); return; }
+            if(Set.of("sync/review","sync/merge").contains(path)&&method.equals("POST")) {
+                byte[] bytes=e.getRequestBody().readNBytes(SyncStore.MAX_BYTES*2+1);if(bytes.length>SyncStore.MAX_BYTES*2)throw new IllegalArgumentException("合并资料过大");
+                var request=Json.object(Json.parse(new String(bytes,StandardCharsets.UTF_8)));var local=Json.object(request.get("local"));var remote=Json.object(request.get("remote"));
+                send(e,200,path.equals("sync/review")?SyncReview.differences(local,remote):SyncReview.merge(local,remote,Json.object(request.get("choices"))));return;
+            }
             if(path.equals("sync/validate")&&method.equals("POST")||path.equals("sync/import")&&method.equals("POST")) {
                 byte[] bytes=e.getRequestBody().readNBytes(SyncStore.MAX_BYTES+1);
                 if(bytes.length>SyncStore.MAX_BYTES) { send(e,413,Map.of("error","同步资料超过 64 MiB")); return; }
@@ -79,6 +87,8 @@ public final class Server {
         finally { e.close(); }
     }
     static void validate(String kind,Map<String,Object> doc) {
+        if(doc.containsKey("tags")&&(!(doc.get("tags") instanceof String)||Json.str(doc,"tags").length()>700))throw new IllegalArgumentException("标签内容无效");
+        for(String dateField:List.of("deadlineAt","lastFollowedAt"))if(doc.containsKey(dateField)&&!Json.str(doc,dateField).isEmpty())try{java.time.OffsetDateTime.parse(Json.str(doc,dateField));}catch(Exception ex){throw new IllegalArgumentException("日期字段无效："+dateField);}
         if(kind.equals("interviews")) { InterviewStudy.validate(doc); return; }
         if(kind.equals("sources")) { CompanySources.validate(doc); return; }
         if(kind.equals("schedule")) {

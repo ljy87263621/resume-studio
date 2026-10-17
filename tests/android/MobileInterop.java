@@ -15,12 +15,14 @@ public final class MobileInterop {
             switch(method){
                 case "inspect":plan=sync.inspect();result=plan.display();break;
                 case "inspectAuto":plan=sync.inspectAuto();result=plan.display();break;
+                case "reviewSync":result=sync.review(Objects.requireNonNull(plan));break;
+                case "mergeSync":result=sync.merge(Objects.requireNonNull(plan),Json.object(r.get("choices")));break;
                 case "execute":result=sync.execute(Objects.requireNonNull(plan),Json.str(r,"direction"));break;
                 case "seed":{var doc=Json.object(r.get("doc"));Server.validate(Json.str(r,"kind"),doc);result=api.store.save(Json.str(r,"kind"),doc);break;}
                 case "import":result=api.store.syncImport(Json.str(api.store.syncExtendedSnapshot(),"hash"),Json.object(r.get("snapshot")));break;
                 case "envelope":result=MobileSync.envelope(Json.str(r,"text").getBytes(StandardCharsets.UTF_8));break;
                 case "address":result=MobileSync.address(Json.str(r,"url")).toString();break;
-                case "backupCount":{Path p=root.resolve("sync-backups");if(!Files.exists(p))result=0;else try(var paths=Files.list(p)){result=paths.count();}break;}
+                case "backupCount":{Path p=root.resolve("sync-backups");if(!Files.exists(p))result=0;else try(var paths=Files.list(p)){result=paths.filter(file->file.getFileName().toString().endsWith(".json")).count();}break;}
                 default:result=api.call(method,r);
             }
             System.out.println(Json.write(MobileCompat.map("ok",true,"result",result)));

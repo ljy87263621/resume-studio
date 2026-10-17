@@ -181,6 +181,7 @@ final class SyncStore {
         if(!hash(previous).equals(expectedHash)) throw new ConcurrentModificationException("本机资料已改变，请重新检查同步");
         String backupName=Instant.now().toString().replace(':','-')+"-"+UUID.randomUUID()+".json";
         atomic(root,root.resolve("sync-backups").resolve(backupName),Json.write(previous).getBytes(StandardCharsets.UTF_8));
+        BackupCatalog.info(root,backupName,BackupCatalog.device(root),"本机替换前");
         Path journal=root.resolve("sync-recovery.json"); atomic(root,journal,Json.write(previous).getBytes(StandardCharsets.UTF_8));
         try { apply(root,incoming); Files.delete(journal); }
         catch(IOException|RuntimeException ex) { try { recover(root); } catch(Exception rollback) { ex.addSuppressed(rollback); } throw ex; }

@@ -50,9 +50,12 @@ final class AndroidUpdateClient {
     }
 
     Path download(Release release,String route)throws IOException{
+        return download(release,route,new MobileHttp.Transfer(){public void progress(long bytes,long total){}public boolean cancelled(){return false;}});
+    }
+    Path download(Release release,String route,MobileHttp.Transfer transfer)throws IOException{
         Path path=context.getCacheDir().toPath().resolve("android-update.apk");Files.createDirectories(path.getParent());
         URI uri=URI.create("https://github.com/"+REPOSITORY+"/releases/download/"+release.tag+"/"+release.packageName);
-        String hash=downloadWithRoute(uri,route,path,release.size);
+        String hash=downloadWithRoute(uri,route,path,release.size,transfer);
         if(!release.sha256.equals(hash)){Files.deleteIfExists(path);throw new IOException("APK 摘要校验失败，未安装更新");}return path;
     }
 
@@ -60,8 +63,8 @@ final class AndroidUpdateClient {
         IOException failure=null;for(URI target:routes(uri,route))try{return MobileHttp.readUpdate(target,limit);}catch(IOException ex){failure=ex;}
         throw new IOException("无法连接 GitHub 更新通道",failure);
     }
-    private String downloadWithRoute(URI uri,String route,Path path,long size)throws IOException{
-        IOException failure=null;for(URI target:routes(uri,route))try{return MobileHttp.download(target,path,size,MAX_APK);}catch(IOException ex){failure=ex;}
+    private String downloadWithRoute(URI uri,String route,Path path,long size,MobileHttp.Transfer transfer)throws IOException{
+        IOException failure=null;for(URI target:routes(uri,route))try{return MobileHttp.download(target,path,size,MAX_APK,transfer);}catch(IOException ex){if(transfer.cancelled())throw new java.io.InterruptedIOException("下载已取消");failure=ex;}
         throw new IOException("APK 下载或摘要校验未完成",failure);
     }
     private static List<URI> routes(URI uri,String route){if(!route.equals("auto")&&!route.equals("direct")&&!route.equals("proxy"))throw new IllegalArgumentException("更新线路无效");List<URI> urls=new ArrayList<>();if(!route.equals("proxy"))urls.add(uri);if(!route.equals("direct"))urls.add(URI.create("https://gh-proxy.org/"+uri));return urls;}

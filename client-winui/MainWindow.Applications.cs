@@ -27,6 +27,7 @@ public sealed partial class MainWindow
             var due=ScheduleService.Reminders(all,now).ToList();
             var unseen=due.Where(r=>seenReminders.Add(r.Id+"|"+r.At.ToString("O")+"|"+r.ReminderMinutes+"|"+(r.Overdue(now)?"due":"upcoming"))).ToList();
             if(unseen.Count==0) return;
+            if(!VerificationSession)SystemNotices.Show("求职安排提醒",string.Join("\n",unseen.Take(3).Select(r=>r.Title+" · "+r.When)));
             notice.Title=$"求职安排提醒 · {due.Count} 项待处理"; notice.Message=string.Join("\n",unseen.Take(3).Select(r=>r.Company+" · "+r.Title+" · "+r.Kind+" · "+r.When))+"\n可在求职日程查看并标记已完成。"; notice.Severity=InfoBarSeverity.Warning; notice.IsOpen=true;
         }
         finally {checkingReminders=false;}
@@ -36,7 +37,7 @@ public sealed partial class MainWindow
         int generation=navigationRevision;
         Heading("投递记录","跟踪进度、笔试与面试安排、投递快照及复盘。");
         var records=await api.Get<List<ApplicationRecord>>("applications"); if(!PageIsCurrent("applications",generation)) return;
-        var panel=Stack(16); var tools=Row(); tools.Children.Add(Button("＋ 手动添加投递",()=>EditApplication(new ApplicationRecord {Status="已投递"}),true)); tools.Children.Add(Button("刷新安排",()=>Navigate("applications"))); panel.Children.Add(tools);
+        var panel=Stack(16); var tools=Row(); tools.Children.Add(Button("＋ 手动添加投递",()=>EditApplication(new ApplicationRecord {Status="已投递"}),true)); tools.Children.Add(Button("刷新安排",()=>Navigate("applications"))); tools.Children.Add(Button("标签／批量进度／跟进提示",()=>ShowWorkspaceTools("applications")));panel.Children.Add(tools);
         panel.Children.Add(Text("安排提前 24 小时及到期时在应用内提醒；关闭应用期间不弹通知，重新打开会检查未处理事项。",12));
         var query=new TextBox {PlaceholderText="搜索公司、职位或备注",Width=280,Text=applicationQuery}; var stage=new ComboBox {ItemsSource=new[] {"全部进度"}.Concat(ApplicationStages).ToList(),SelectedItem=applicationStage,Width=140}; var pending=new CheckBox {Content="仅看未处理安排",IsChecked=applicationPendingOnly}; var filters=Row(); filters.Children.Add(query); filters.Children.Add(stage); filters.Children.Add(pending);filters.Children.Add(Button("清空筛选",()=>{query.Text="";stage.SelectedIndex=0;pending.IsChecked=false;return Task.CompletedTask;})); panel.Children.Add(filters);
         var count=Text("",12); panel.Children.Add(count); var cards=Stack(14); panel.Children.Add(cards);
@@ -46,7 +47,7 @@ public sealed partial class MainWindow
             var found=records.Where(r=>(r.Title+" "+r.Company+" "+r.Notes).Contains(query.Text,StringComparison.OrdinalIgnoreCase)&&(applicationStage=="全部进度"||r.Status==applicationStage)&&(!applicationPendingOnly||Pending(r))).OrderBy(r=>r.Id==focusedApplicationId?0:1).ThenBy(r=>Pending(r)?DateTimeOffset.Parse(r.DueAt):DateTimeOffset.MaxValue).ThenByDescending(r=>r.UpdatedAt).ToList();
             count.Text=$"{found.Count} 条记录 · 待处理安排 {records.Count(Pending)} 项";
             foreach(var r in found) {
-                var card=Stack(9); card.Children.Add(Text(r.Company+" · "+r.Title,19,true)); card.Children.Add(Text(r.Status+" · "+ScheduleLabel(r),13,true));
+                var card=Stack(9); card.Children.Add(Text(r.Company+" · "+r.Title,19,true));if(r.Tags!="")card.Children.Add(Text("标签："+r.Tags,12));var alert=WorkspaceAlerts.For(r.DeadlineAt,r.LastFollowedAt==""?r.CreatedAt:r.LastFollowedAt,r.Status);if(alert!="")card.Children.Add(Text(alert,13,true)); card.Children.Add(Text(r.Status+" · "+ScheduleLabel(r),13,true));
                 card.Children.Add(Text(r.ResumeSnapshot is null?"简历名称记录："+r.ResumeTitle+"（尚无投递快照）":"投递简历快照："+r.ResumeTitle,12));
                 if(!string.IsNullOrWhiteSpace(r.Notes)) card.Children.Add(Text("备注："+r.Notes,12));
                 var timeline=Stack(5); foreach(var item in r.Timeline) timeline.Children.Add(Text(LocalDate(item.At)+" · "+item.Status+(item.Note==""?"":" · "+item.Note),12));

@@ -10,6 +10,7 @@ import java.io.FileOutputStream;
 
 /** WebDAV never redirects. Update GETs follow bounded HTTPS release redirects only. */
 public final class MobileHttp {
+    public interface Transfer {void progress(long bytes,long total);boolean cancelled();default void connected(HttpURLConnection connection) {}}
     public static final class Result {
         public final int status; public final byte[] bytes; public final String etag;
         Result(int status,byte[] bytes,String etag) {this.status=status;this.bytes=bytes;this.etag=etag;}
@@ -67,13 +68,17 @@ public final class MobileHttp {
         } finally {c.disconnect();}
     }
     public static String download(URI uri,Path target,long expectedSize,long maximum)throws IOException{
-        HttpURLConnection c=openUpdateConnection(uri);
+        return download(uri,target,expectedSize,maximum,new Transfer(){public void progress(long bytes,long total){}public boolean cancelled(){return false;}});
+    }
+    public static String download(URI uri,Path target,long expectedSize,long maximum,Transfer transfer)throws IOException{
+        if(transfer.cancelled())throw new InterruptedIOException("下载已取消");
+        HttpURLConnection c=openUpdateConnection(uri);transfer.connected(c);
         Path temp=target.resolveSibling(target.getFileName()+".tmp");
         try{
             int status=c.getResponseCode();if(status!=200)throw new IOException("APK 下载失败（HTTP "+status+")");long length=c.getContentLengthLong();if(length>maximum||length>=0&&length!=expectedSize)throw new IOException("APK 大小与签名信息不一致");
             MessageDigest digest;try{digest=MessageDigest.getInstance("SHA-256");}catch(Exception ex){throw new IOException("无法校验 APK",ex);}
-            long total=0;try(InputStream input=c.getInputStream();OutputStream output=new FileOutputStream(temp.toFile())){byte[] buffer=new byte[32768];int count;while((count=input.read(buffer))!=-1){total+=count;if(total>maximum||total>expectedSize)throw new IOException("APK 超过签名大小限制");digest.update(buffer,0,count);output.write(buffer,0,count);}output.flush();}
-            if(total!=expectedSize)throw new IOException("APK 下载不完整");
+            long total=0;try(InputStream input=c.getInputStream();OutputStream output=new FileOutputStream(temp.toFile())){byte[] buffer=new byte[32768];int count;while((count=input.read(buffer))!=-1){if(transfer.cancelled())throw new InterruptedIOException("下载已取消");total+=count;transfer.progress(total,expectedSize);if(total>maximum||total>expectedSize)throw new IOException("APK 超过签名大小限制");digest.update(buffer,0,count);output.write(buffer,0,count);}output.flush();}
+            if(transfer.cancelled())throw new InterruptedIOException("下载已取消");if(total!=expectedSize)throw new IOException("APK 下载不完整");
             StringBuilder actual=new StringBuilder();for(byte b:digest.digest())actual.append(String.format(Locale.ROOT,"%02x",b&255));
             Files.move(temp,target,StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);return actual.toString();
         }catch(IOException ex){Files.deleteIfExists(temp);throw ex;}finally{c.disconnect();}

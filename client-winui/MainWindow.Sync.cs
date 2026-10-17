@@ -69,11 +69,17 @@ public sealed partial class MainWindow
                 shell.IsHitTestVisible=false; status.Text="正在检查本机与云端资料…";
                 using var dav=new SyncWebDav(new Uri(connection.DirectoryUrl),connection.Username,await connection.PasswordAsync());
                 var coordinator=new SyncCoordinator(new SyncBackendStore(api),dav,api.DataDirectory,connection.Target,connection.DeviceId);
-                var plan=await coordinator.InspectAsync(); SyncAction? direction=null;
+                var plan=await coordinator.InspectAsync(); SyncAction? direction=null;SyncAction? completedAction=null;
                 if(dav.UsesContentHash) status.Text="云端缺少强 ETag，正在使用内容校验；请避免多台设备同时同步。";
                 if(closeRequested) return;
                 if(plan.Action==SyncAction.Conflict)
                 {
+                    if(plan.RemoteEnvelope is not null){
+                        var mode=await new ContentDialog {XamlRoot=shell.XamlRoot,Title="两端资料均有变化",Content=Text("可逐条比较并保留两端不同记录；也可明确选择整套覆盖。",14),PrimaryButtonText="逐条比较",SecondaryButtonText="整套选择",CloseButtonText="取消"}.ShowAsync();
+                        if(mode==ContentDialogResult.None)return;
+                        if(mode==ContentDialogResult.Primary){var merged=await ReviewSyncRecords(plan);if(merged is null)return;current=null;dirty=false;shownCompanyJobs=null;companySearch=null;await DetachPreviewAsync(true);completedAction=await coordinator.MergeAsync(plan,merged);}
+                    }
+                    if(completedAction is null){
                     var localCount=SyncCount(plan.Local.Snapshot); var remoteCount=plan.RemoteEnvelope is null?"云端同步包不存在":SyncCount(SyncProtocol.Snapshot(plan.RemoteEnvelope,plan.Local.Snapshot));
                     var dialog=new ContentDialog
                     {
@@ -85,9 +91,10 @@ public sealed partial class MainWindow
                     var choice=await dialog.ShowAsync(); syncConflictDialog=null;
                     if(choice==ContentDialogResult.None||closeRequested) {status.Text="同步已取消，资料未改变。";return;}
                     direction=choice==ContentDialogResult.Primary?SyncAction.Push:SyncAction.Pull;
+                    }
                 }
-                var action=await coordinator.ExecuteAsync(plan,direction);
-                if(action==SyncAction.Pull)
+                var action=completedAction??await coordinator.ExecuteAsync(plan,direction);
+                if(action==SyncAction.Pull||completedAction is not null)
                 {
                     current=null;dirty=false;shownCompanyJobs=null;companySearch=null;preferences=AppPreferences.Load(api.DataDirectory);
                     await DetachPreviewAsync(true);BuildShell();await Navigate("settings");
@@ -100,7 +107,7 @@ public sealed partial class MainWindow
             finally {foreach(var (control,enabled) in blockedInputs) control.IsEnabled=enabled;shell.IsHitTestVisible=true;syncBusy=false;syncConflictDialog=null;if(remindersWereRunning&&!closeRequested) reminderTimer.Start();activeSync?.TrySetResult();activeSync=null;}
         },true));
         actions.Children.Add(Button("清除本机同步密码",async ()=> {settings.ProtectedPassword="";await settings.SaveAsync(api.DataDirectory,"");password.Password="";status.Text="已清除本机保存密码。";}));
-        content.Children.Add(actions); content.Children.Add(Text("双方仅一端变化时按基线自动选择方向；双方变化时由你选择。支持强 ETag 时使用条件写入；缺少强 ETag 时使用内容校验，请同一时间只在一台设备同步。同步包以明文保存于你选择的 WebDAV，包含个人简历信息；请使用个人目录。每次下载替换前保留本机整包备份，备份需自行管理。",12));
+        content.Children.Add(actions);content.Children.Add(Button("备份预览／单条恢复／导出",ShowBackupCatalog));content.Children.Add(Button("导入备份 JSON",ImportBackupFile)); content.Children.Add(Text("双方仅一端变化时按基线自动选择方向；双方变化时由你选择。支持强 ETag 时使用条件写入；缺少强 ETag 时使用内容校验，请同一时间只在一台设备同步。同步包以明文保存于你选择的 WebDAV，包含个人简历信息；请使用个人目录。每次下载替换前保留本机整包备份，备份需自行管理。",12));
         panel.Children.Add(Card(content));
     }
     private static string SyncCount(System.Text.Json.Nodes.JsonObject snapshot)=>$"{snapshot["resumes"]!.AsArray().Count} 份简历 / {snapshot["favorites"]!.AsArray().Count} 个收藏 / {snapshot["applications"]!.AsArray().Count} 条投递 / {snapshot["schedule"]!.AsArray().Count} 条日程 / {snapshot["interviews"]?.AsArray().Count??0} 个题库";

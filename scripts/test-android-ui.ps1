@@ -1,4 +1,4 @@
-﻿param([string]$Device='emulator-5554',[ValidateSet('strong','none','reject-wildcard')][string]$ETagMode='strong',[string]$ApplicationPath='release\ResumeStudio-Android-v0.9.5-local.apk',[switch]$OnlineUpdate)
+param([string]$Device='emulator-5554',[ValidateSet('strong','none','reject-wildcard')][string]$ETagMode='strong',[string]$ApplicationPath='release\ResumeStudio-Android-v0.9.5-local.apk',[switch]$OnlineUpdate,[switch]$NotificationChecks,[switch]$AllowTestDowngrade)
 $ErrorActionPreference='Stop';$root=Split-Path $PSScriptRoot -Parent
 $sdk=$env:ANDROID_HOME;$tools=Join-Path $sdk 'build-tools\36.0.0';$platform=Join-Path $sdk 'platforms\android-35\android.jar';$jdk=if($env:JAVA_HOME){$env:JAVA_HOME}else{'C:\Program Files\Java\jdk-21'}
 $build=Join-Path $root 'artifacts\android-ui-tests';New-Item -ItemType Directory -Force "$build\classes","$build\dex","$build\assets"|Out-Null
@@ -13,14 +13,15 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem;$apk=[IO.Compression.Zip
 & "$tools\zipalign.exe" -f 4 "$build\unsigned.apk" "$build\aligned.apk"
 & "$jdk\bin\java.exe" -jar "$tools\lib\apksigner.jar" sign --ks "$env:USERPROFILE\.android\resume-studio-local.p12" --ks-key-alias resume-studio --ks-pass pass:android --out "$build\tests.apk" "$build\aligned.apk";if($LASTEXITCODE){throw 'Instrumentation signing failed'}
 $productionApk=Join-Path $root $ApplicationPath
-& adb -s $Device install -r $productionApk;if($LASTEXITCODE){throw 'Production Android APK install failed'}
+if($AllowTestDowngrade){& adb -s $Device install -r -d $productionApk}else{& adb -s $Device install -r $productionApk};if($LASTEXITCODE){throw 'Production Android APK install failed'}
 & adb -s $Device install -r "$build\tests.apk";if($LASTEXITCODE){throw 'Instrumentation install failed'}
+if($NotificationChecks -and [int](& adb -s $Device shell getprop ro.build.version.sdk) -ge 33){& adb -s $Device shell pm grant com.resumestudio.mobile android.permission.POST_NOTIFICATIONS;if($LASTEXITCODE){throw 'Could not grant the requested notification test permission'}}
 $probe=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0);$probe.Start();$davPort=$probe.LocalEndpoint.Port;$probe.Stop()
 $davRoot=Join-Path $build ('dav-'+[guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $davRoot|Out-Null
 $davProcess=Start-Process -FilePath (Get-Command python).Source -ArgumentList @(('"'+"$root\tests\android\dav_fixture.py"+'"'),'--port',"$davPort",'--root',('"'+$davRoot+'"'),'--etag-mode',$ETagMode) -PassThru -WindowStyle Hidden -RedirectStandardOutput "$davRoot\server.txt" -RedirectStandardError "$davRoot\error.txt"
 try{
     & adb -s $Device reverse "tcp:$davPort" "tcp:$davPort"
-    & adb -s $Device shell am instrument -w -e davPort "$davPort" -e onlineUpdate "$($OnlineUpdate.IsPresent.ToString().ToLowerInvariant())" com.resumestudio.mobile.tests/com.resumestudio.AcceptanceInstrumentation | Tee-Object -FilePath "$build\instrumentation.txt"
+    & adb -s $Device shell am instrument -w -e davPort "$davPort" -e onlineUpdate "$($OnlineUpdate.IsPresent.ToString().ToLowerInvariant())" -e notificationChecks "$($NotificationChecks.IsPresent.ToString().ToLowerInvariant())" com.resumestudio.mobile.tests/com.resumestudio.AcceptanceInstrumentation | Tee-Object -FilePath "$build\instrumentation.txt"
     if((Get-Content "$build\instrumentation.txt" -Raw) -match 'Process crashed|INSTRUMENTATION_CODE: 1' -or (Get-Content "$build\instrumentation.txt" -Raw) -notmatch 'INSTRUMENTATION_CODE: 0'){throw 'Android instrumentation did not complete successfully'}
 if((Get-Content "$build\instrumentation.txt" -Raw) -match 'INSTRUMENTATION_RESULT: error=|INSTRUMENTATION_CODE: 1|Process crashed'){throw 'Production Android instrumentation failed'}
 New-Item -ItemType Directory -Force "$build\results"|Out-Null

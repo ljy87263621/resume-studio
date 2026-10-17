@@ -21,6 +21,7 @@ public sealed partial class MainWindow
         var filters=Row(); var query=new TextBox { PlaceholderText="职位 / 公司 / 备注",Width=280,Text=favoriteQuery };
         var sources=new[] {"全部平台"}.Concat(jobs.Select(j=>j.Source).Where(s=>s.Length>0).Distinct()).ToList();
         var source=new ComboBox { ItemsSource=sources,SelectedItem=sources.Contains(favoriteSource)?favoriteSource:sources[0],Width=180 }; filters.Children.Add(query); filters.Children.Add(source);filters.Children.Add(Button("清空筛选",()=>{query.Text="";source.SelectedIndex=0;return Task.CompletedTask;})); controls.Children.Add(filters);
+        controls.Children.Add(Button("标签／批量管理／截止提示",()=>ShowWorkspaceTools("favorites")));
         var count=Text("",12); controls.Children.Add(count); body.Children.Add(controls);
         var list=CreateJobList(true); Grid.SetRow(list,1); body.Children.Add(list);
         // Keep page controls outside the scrolling list, so old favorites remain reachable.
@@ -38,7 +39,7 @@ public sealed partial class MainWindow
             if(!PageIsCurrent("favorites",generation))return;
             string selected=source.SelectedItem as string??"全部平台";
             favoriteQuery=query.Text;favoriteSource=selected;
-            var found=jobs.Where(j=>(j.Title+" "+j.Company+" "+j.Notes).Contains(query.Text,StringComparison.OrdinalIgnoreCase)&&(selected=="全部平台"||j.Source==selected)).ToList();
+            var found=jobs.Where(j=>(j.Title+" "+j.Company+" "+j.Notes+" "+j.Tags).Contains(query.Text,StringComparison.OrdinalIgnoreCase)&&(selected=="全部平台"||j.Source==selected)).ToList();
             int pageCount=(found.Count+favoritePageSize-1)/favoritePageSize;
             favoritePage=resetPage?1:Math.Clamp(favoritePage,1,Math.Max(1,pageCount));
             int offset=(favoritePage-1)*favoritePageSize;var pageJobs=found.Skip(offset).Take(favoritePageSize).ToList();

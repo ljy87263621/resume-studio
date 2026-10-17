@@ -50,6 +50,9 @@ public sealed partial class MainWindow : Window
         var catalogue=Path.Combine(AppContext.BaseDirectory,"Assets","TemplateCatalog.json");
         if(File.Exists(catalogue)) templates=JsonSerializer.Deserialize<List<Template>>(File.ReadAllText(catalogue),BackendClient.Json)??[];
         if(templates.Count>0) ShowTemplates();
+        var searchShortcut=new Microsoft.UI.Xaml.Input.KeyboardAccelerator {Key=Windows.System.VirtualKey.K,Modifiers=Windows.System.VirtualKeyModifiers.Control};
+        searchShortcut.Invoked+=async (_,e)=>{e.Handled=true;await Run(()=>ShowWorkspaceTools());};shell.KeyboardAccelerators.Add(searchShortcut);
+        SystemNotices.Activated+=()=>DispatcherQueue.TryEnqueue(()=>{Activate();_=Run(()=>Navigate("schedule"));});
         Content=shell;
         Activated+=(_,_)=> { if(haruStyle) NativeWindowGlass.Enable(WinRT.Interop.WindowNative.GetWindowHandle(this),darkStyle); };
         shell.Loaded+=async (_,_)=>await Run(Initialize);
@@ -106,6 +109,7 @@ public sealed partial class MainWindow : Window
         await AcknowledgeUpdateStartup();
         if(!VerificationSession)_=Run(MaintainStorageAfterStartup);
         if(!VerificationSession&&preferences.CheckUpdatesOnStartup) _=Run(()=>CheckForUpdates(true));
+        if(Environment.GetCommandLineArgs().Contains("--notification-test")){string output=Environment.GetEnvironmentVariable("RESUMESTUDIO_TEST_OUTPUT")??api.DataDirectory;Directory.CreateDirectory(output);try{bool passed=await SystemNotices.VerifyAsync();await File.WriteAllTextAsync(Path.Combine(output,"notification-result.json"),JsonSerializer.Serialize(new {passed,error=SystemNotices.LastError},BackendClient.Json));}catch(Exception ex){await File.WriteAllTextAsync(Path.Combine(output,"notification-result.json"),JsonSerializer.Serialize(new {passed=false,error=ex.ToString()},BackendClient.Json));}return;}
         if(Environment.GetCommandLineArgs().Contains("--benchmark")) { await Benchmark(); return; }
         if(Environment.GetCommandLineArgs().Contains("--iteration-test")) { await IterationOnlyTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--feature-test")) { await FeatureTest(); return; }
@@ -277,6 +281,7 @@ public sealed partial class MainWindow : Window
     {
         var c=Stack(12);
         if(!favorite){c.Children.Add(Text(j.Title,20,true)); c.Children.Add(Text($"{j.Company}  ·  {j.Location}  ·  {j.Experience}",13)); c.Children.Add(Text($"{j.Source}  ·  {(string.IsNullOrEmpty(j.PublishedAt)?j.InfoStatus:"更新："+j.PublishedAt)}  ·  {j.Salary}",11));}
+        if(!string.IsNullOrWhiteSpace(j.Tags))c.Children.Add(Text("标签："+j.Tags,12));var attention=WorkspaceAlerts.For(j.DeadlineAt,"");if(attention!="")c.Children.Add(Text(attention,13,true));
         if(!string.IsNullOrWhiteSpace(j.Notes)) c.Children.Add(Text("备注："+j.Notes,12));
         var description=Text(j.Description,13);
         if(favorite)c.Children.Add(new ScrollViewer {Content=description,MaxHeight=320,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollMode=ScrollMode.Disabled});

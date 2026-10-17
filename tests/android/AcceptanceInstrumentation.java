@@ -17,12 +17,12 @@ import java.util.concurrent.*;
 
 /** Runs against the signed production APK; no test bridge or debugging mode is shipped in the app. */
 public final class AcceptanceInstrumentation extends Instrumentation {
-    private WebView web;private String davPort;private boolean onlineUpdate,installerOnly;
-    @Override public void onCreate(Bundle args){super.onCreate(args);davPort=args.getString("davPort","");onlineUpdate=Boolean.parseBoolean(args.getString("onlineUpdate","false"));installerOnly=Boolean.parseBoolean(args.getString("installerOnly","false"));start();}
+    private WebView web;private String davPort;private boolean onlineUpdate,installerOnly,notificationChecks;
+    @Override public void onCreate(Bundle args){super.onCreate(args);davPort=args.getString("davPort","");onlineUpdate=Boolean.parseBoolean(args.getString("onlineUpdate","false"));installerOnly=Boolean.parseBoolean(args.getString("installerOnly","false"));notificationChecks=Boolean.parseBoolean(args.getString("notificationChecks","false"));start();}
     private WebView find(View v){if(v instanceof WebView)return(WebView)v;if(v instanceof ViewGroup g)for(int i=0;i<g.getChildCount();i++){WebView w=find(g.getChildAt(i));if(w!=null)return w;}return null;}
     private String js(String script)throws Exception{CompletableFuture<String> result=new CompletableFuture<>();runOnMainSync(()->web.evaluateJavascript(script,result::complete));return result.get(120,TimeUnit.SECONDS);}
     @Override public void onStart(){Bundle results=new Bundle();try{
-        verifyUpdaterSignature();verifyAndroidPlatformChannel();verifyInstallerStatusPendingIntent();verifyInstallerWriteClosure();
+        verifyUpdaterSignature();verifyAndroidPlatformChannel();verifyInstallerStatusPendingIntent();verifyInstallerWriteClosure();verifyAutoSyncConflict();
         if(installerOnly){results.putString("report","PASS: production installer closes APK write stream before commit");finish(0,results);return;}
         Intent i=new Intent();i.setClassName("com.resumestudio.mobile","com.resumestudio.MainActivity");i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);Activity a=startActivitySync(i);runOnMainSync(()->web=find(a.getWindow().getDecorView()));
         for(int n=0;n<100;n++){if("true".equals(js("typeof actions==='object' && state.templates.length===14 && document.querySelector('#content h1')!==null")))break;Thread.sleep(200);}
@@ -41,6 +41,7 @@ public final class AcceptanceInstrumentation extends Instrumentation {
                 try(FileOutputStream out=new FileOutputStream(new File(dir,"result.json"))){out.write(report.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
             }
         }
+        if(notificationChecks){verifyNotificationDelivery();JSONObject checkedReport=new JSONObject(report);checkedReport.put("nativeNotifications",true);report=checkedReport.toString();try(FileOutputStream out=new FileOutputStream(new File(dir,"result.json"))){out.write(report.getBytes(StandardCharsets.UTF_8));}}
         js("navigate('settings');true");Thread.sleep(900);
         js("setTheme({theme:'dark',interfaceStyle:'haru',motionEnabled:false});document.querySelector('#update-result').closest('.card').scrollIntoView({block:'center'});true");Thread.sleep(500);
         capture(dir,"dark-settings.png");
@@ -93,6 +94,12 @@ public final class AcceptanceInstrumentation extends Instrumentation {
         data[0]^=1;if(Boolean.TRUE.equals(method.invoke(null,publicKey,data,signature)))throw new IOException("Production Android RSA-PSS verifier accepted modified metadata");
         Class<?> transport=Class.forName("com.resumestudio.MobileHttp",true,getTargetContext().getClassLoader());
         Method readUpdate=transport.getDeclaredMethod("readUpdate",java.net.URI.class,int.class);
+        Class<?> transfer=Class.forName("com.resumestudio.MobileHttp$Transfer",true,getTargetContext().getClassLoader());
+        Object cancelled=java.lang.reflect.Proxy.newProxyInstance(transfer.getClassLoader(),new Class[]{transfer},(proxy,m,args)->m.getName().equals("cancelled")?true:null);
+        Method rawDownload=transport.getDeclaredMethod("download",java.net.URI.class,java.nio.file.Path.class,long.class,long.class,transfer);
+        java.nio.file.Path cancelledPath=getTargetContext().getCacheDir().toPath().resolve("cancelled-download.apk");
+        try{rawDownload.invoke(null,java.net.URI.create("https://github.com/cancelled"),cancelledPath,100L,100L,cancelled);throw new IOException("Cancelled download was allowed to start");}catch(java.lang.reflect.InvocationTargetException ex){if(!(ex.getCause() instanceof InterruptedIOException))throw ex;}
+        if(java.nio.file.Files.exists(cancelledPath)||java.nio.file.Files.exists(cancelledPath.resolveSibling("cancelled-download.apk.tmp")))throw new IOException("Cancelled download left output files");
         for(String rejected:new String[]{"http://github.com/file","https://evil.example/file","https://user@github.com/file","https://github.com:444/file"}){
             try{readUpdate.invoke(null,java.net.URI.create(rejected),64000);throw new IOException("Unsafe update destination accepted: "+rejected);}
             catch(java.lang.reflect.InvocationTargetException ex){if(!(ex.getCause() instanceof IOException))throw ex;}
@@ -101,9 +108,15 @@ public final class AcceptanceInstrumentation extends Instrumentation {
             var constructor=verifier.getDeclaredConstructor(android.content.Context.class);constructor.setAccessible(true);Object client=constructor.newInstance(getTargetContext());
             Method check=verifier.getDeclaredMethod("check",String.class,int.class,String.class);check.setAccessible(true);
             Object release=check.invoke(client,"nightly",0,"auto");if(release==null)throw new IOException("Live signed nightly channel unavailable");
-            Method download=verifier.getDeclaredMethod("download",release.getClass(),String.class);download.setAccessible(true);
-            java.nio.file.Path downloaded=(java.nio.file.Path)download.invoke(client,release,"auto");
+            Method download=verifier.getDeclaredMethod("download",release.getClass(),String.class,transfer);download.setAccessible(true);
+            var stop=new java.util.concurrent.atomic.AtomicBoolean(false);var bytes=new java.util.concurrent.atomic.AtomicLong();
+            Object midway=java.lang.reflect.Proxy.newProxyInstance(transfer.getClassLoader(),new Class[]{transfer},(proxy,m,args)->{if(m.getName().equals("cancelled"))return stop.get();if(m.getName().equals("progress")){bytes.set(((Number)args[0]).longValue());stop.set(true);}return null;});
+            try{download.invoke(client,release,"auto",midway);throw new IOException("Mid-transfer cancellation did not stop download");}catch(java.lang.reflect.InvocationTargetException ex){if(!(ex.getCause() instanceof InterruptedIOException))throw ex;}
+            if(bytes.get()==0||java.nio.file.Files.exists(getTargetContext().getCacheDir().toPath().resolve("android-update.apk.tmp")))throw new IOException("Cancelled transfer missed progress or retained a partial APK");
+            bytes.set(0);Object progress=java.lang.reflect.Proxy.newProxyInstance(transfer.getClassLoader(),new Class[]{transfer},(proxy,m,args)->{if(m.getName().equals("cancelled"))return false;if(m.getName().equals("progress")){long current=((Number)args[0]).longValue(),total=((Number)args[1]).longValue();if(current<bytes.get()||current>total)throw new IOException("Invalid download progress");bytes.set(current);}return null;});
+            java.nio.file.Path downloaded=(java.nio.file.Path)download.invoke(client,release,"auto",progress);
             if(java.nio.file.Files.size(downloaded)<1000000)throw new IOException("Live APK download failed");
+            if(bytes.get()!=java.nio.file.Files.size(downloaded))throw new IOException("Final download progress did not match the validated APK size");
             var pm=getTargetContext().getPackageManager();
             var archive=pm.getPackageArchiveInfo(downloaded.toString(),android.content.pm.PackageManager.GET_SIGNATURES);
             var installed=pm.getPackageInfo(getTargetContext().getPackageName(),android.content.pm.PackageManager.GET_SIGNATURES);
@@ -118,6 +131,29 @@ public final class AcceptanceInstrumentation extends Instrumentation {
         PendingIntent status=(PendingIntent)factory.invoke(null,getTargetContext(),0x5253);
         try{if(Build.VERSION.SDK_INT>=23&&status.isImmutable())throw new IOException("PackageInstaller status PendingIntent must be mutable so Android can return the commit result");}
         finally{status.cancel();}
+    }
+    private void verifyAutoSyncConflict()throws Exception{
+        ClassLoader loader=getTargetContext().getClassLoader();Class<?> storeClass=Class.forName("com.resumestudio.Store",true,loader);
+        java.nio.file.Path directory=java.nio.file.Files.createTempDirectory(getTargetContext().getCacheDir().toPath(),"sync-conflict-");Object store=storeClass.getConstructor(java.nio.file.Path.class).newInstance(directory);
+        var job=new java.util.LinkedHashMap<String,Object>();job.put("id","local");job.put("title","独立的本机修改");job.put("url","https://example.org/job");storeClass.getMethod("save",String.class,java.util.Map.class).invoke(store,"favorites",job);
+        var local=(java.util.Map<?,?>)storeClass.getMethod("syncSnapshot").invoke(store);JSONObject remote=new JSONObject(new JSONObject(local).getJSONObject("snapshot").toString());remote.getJSONArray("favorites").getJSONObject(0).put("title","独立的云端修改");
+        JSONObject envelope=new JSONObject().put("protocol","resume-studio-sync").put("schemaVersion",1).put("snapshotId","remote").put("deviceId","other").put("createdAt","2000-01-01T00:00:00Z").put("data",remote).put("extensions",new JSONObject());
+        byte[] bytes=envelope.toString().getBytes(StandardCharsets.UTF_8);Class<?> fetchedClass=Class.forName("com.resumestudio.MobileSync$Fetched",true,loader);Class<?> remoteClass=Class.forName("com.resumestudio.MobileSync$Remote",true,loader);
+        Object fetched=fetchedClass.getConstructor(byte[].class,String.class).newInstance(bytes,"\"remote\"");
+        Object endpoint=java.lang.reflect.Proxy.newProxyInstance(loader,new Class[]{remoteClass},(proxy,method,args)->{if(method.getName().equals("read"))return fetched;throw new AssertionError("Automatic conflict must not write");});
+        Class<?> syncClass=Class.forName("com.resumestudio.MobileSync",true,loader);Object sync=syncClass.getConstructor(storeClass,java.nio.file.Path.class,remoteClass,String.class,String.class).newInstance(store,directory,endpoint,"fixture","device");
+        Object plan=syncClass.getMethod("inspectAuto").invoke(sync);var action=plan.getClass().getDeclaredField("action");action.setAccessible(true);if(!"conflict".equals(action.get(plan)))throw new IOException("Clock skew silently resolved a divergent automatic sync");
+        android.util.Log.i("ResumeStudioTest","Automatic sync preserves divergent edits despite different device times");
+    }
+    private void verifyNotificationDelivery()throws Exception{
+        Context context=getTargetContext();ClassLoader loader=context.getClassLoader();Class<?> data=Class.forName("com.resumestudio.MobileData",true,loader);Method open=data.getDeclaredMethod("open",java.nio.file.Path.class);open.setAccessible(true);Object store=open.invoke(null,context.getFilesDir().toPath().resolve("data"));
+        String id="notification-"+java.util.UUID.randomUUID();var item=new java.util.LinkedHashMap<String,Object>();item.put("id",id);item.put("title",id);item.put("kind","面试");item.put("startAt",java.time.OffsetDateTime.now().minusSeconds(2).toString());item.put("notes","");item.put("allDay",false);item.put("completed",false);item.put("reminderEnabled",true);item.put("reminderMinutes",0);
+        Method reconcile=Class.forName("com.resumestudio.MobileReminders",true,loader).getMethod("reconcile",Context.class);NotificationManager manager=(NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
+        try{
+            store.getClass().getMethod("save",String.class,java.util.Map.class).invoke(store,"schedule",item);reconcile.invoke(null,context);Thread.sleep(500);
+            var notifications=manager.getActiveNotifications();boolean found=false;for(var notification:notifications)if(id.equals(notification.getNotification().extras.getString(Notification.EXTRA_TITLE))){found=true;manager.cancel(notification.getId());}
+            if(!found)throw new IOException("System schedule notification was not delivered");reconcile.invoke(null,context);Thread.sleep(100);for(var notification:manager.getActiveNotifications())if(id.equals(notification.getNotification().extras.getString(Notification.EXTRA_TITLE)))throw new IOException("Schedule notification delivered twice");
+        }finally{store.getClass().getMethod("delete",String.class,String.class).invoke(store,"schedule",id);reconcile.invoke(null,context);}
     }
     private void verifyAndroidPlatformChannel()throws Exception{
         java.security.KeyPairGenerator generator=java.security.KeyPairGenerator.getInstance("RSA");generator.initialize(2048);var keys=generator.generateKeyPair();
