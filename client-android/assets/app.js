@@ -4,7 +4,7 @@ const pending=new Map();let serial=0;
 function api(method,input={}){return new Promise((resolve,reject)=>{const id=String(++serial);pending.set(id,{resolve,reject});ResumeNative.post(id,method,JSON.stringify(input));});}
 window.nativeReply=(id,r)=>{const p=pending.get(id);if(!p)return;pending.delete(id);r.ok?p.resolve(r.value):p.reject(new Error(r.error));};
 const state={page:'home',rows:[],templates:[],current:null,kind:'',pageIndex:0,query:'',filter:'all',dirty:false,saving:null,saveTimer:null,boot:null,deckIndex:0,answer:false,deckFilter:'all',imported:null,job:null,suggestions:[],returnOrigin:null};
-let noticeTimer,navEpoch=0,pageTransitionActive=false,sharedMotionUpdate=false,activePageTransition=null;
+let noticeTimer,pageTransitionActive=false,motionQueue=Promise.resolve(),motionRequest=0;
 function toast(message,persist=false){$('#notice').textContent=String(message);$('#notice').hidden=false;clearTimeout(noticeTimer);if(!persist)noticeTimer=setTimeout(()=>$('#notice').hidden=true,5000);}
 function options(values,current){return values.map(v=>{const a=Array.isArray(v)?v:[v,v];return `<option value="${E(a[0])}" ${String(a[0])===String(current)?'selected':''}>${E(a[1])}</option>`;}).join('');}
 function button(text,action,data='',primary=false){return `<button data-action="${action}" ${data} class="${primary?'primary':''}">${E(text)}</button>`;}
@@ -48,62 +48,85 @@ function releaseCardText(card){
  content.remove();card.style.viewTransitionName='';
 }
 function pagePosition(page){const tab=['home','interviews','templates','jobs','more'];return tab.indexOf(['home','interviews','templates','jobs'].includes(page)?page:'more');}
-async function runPageTransition(update,direction='forward'){
- const content=$('#content'),enabled=document.body.classList.contains('motion')&&!matchMedia('(prefers-reduced-motion: reduce)').matches;
- if(sharedMotionUpdate||!enabled)return update();
- if(typeof document.startViewTransition==='function'){
-  const previous=activePageTransition;if(previous){previous.skipTransition?.();try{await previous.finished;}catch(error){}}
-  document.documentElement.dataset.pageTransitionDirection=direction;content.classList.add('page-transition');
-  let transition;
-  try{transition=document.startViewTransition(async()=>{pageTransitionActive=true;try{await update();}finally{pageTransitionActive=false;}});}
-  catch(error){content.classList.remove('page-transition');delete document.documentElement.dataset.pageTransitionDirection;return runPageTransitionFallback(update);}
-  activePageTransition=transition;
-  try{await transition.finished;}catch(error){}finally{content.classList.remove('page-transition');delete document.documentElement.dataset.pageTransitionDirection;if(activePageTransition===transition)activePageTransition=null;}
-  return;
- }
- return runPageTransitionFallback(update);
+// One owner changes the page at a time. Rapid taps replace pending navigation,
+// while an in-flight save/render finishes before the latest destination opens.
+function queueMotion(run){
+ const request=++motionRequest;
+ const task=motionQueue.then(async()=>{
+  if(request!==motionRequest)return;
+  pageTransitionActive=true;cancelAnimationFrame(pageAnimationFrame);$('#content').classList.remove('page-enter');
+  try{return await run();}finally{pageTransitionActive=false;}
+ });
+ motionQueue=task.catch(()=>{});return task;
 }
-async function runPageTransitionFallback(update){
- const content=$('#content');pageTransitionActive=true;content.classList.remove('page-enter');content.classList.add('page-leave');
- try{await new Promise(resolve=>setTimeout(resolve,90));await update();}
- finally{content.classList.remove('page-leave');content.classList.add('page-enter');pageTransitionActive=false;setTimeout(()=>content.classList.remove('page-enter'),320);}
+function runPageTransition(update,direction='forward'){return queueMotion(()=>animatePage(update,direction));}
+async function animatePage(update,direction='forward'){
+ const content=$('#content'),enabled=document.body.classList.contains('motion')&&!matchMedia('(prefers-reduced-motion: reduce)').matches;
+ if(!enabled)return update();
+ let exit,enter;
+ try{
+  content.dataset.motionPhase='leaving';
+  if(typeof content.animate!=='function'){
+   content.classList.add('page-leave');await new Promise(resolve=>setTimeout(resolve,90));
+   content.dataset.motionPhase='updating';await update();content.classList.remove('page-leave');
+   content.dataset.motionPhase='entering';content.classList.add('page-enter');await new Promise(resolve=>setTimeout(resolve,220));return;
+  }
+  const sign=direction==='back'?-1:1;
+  exit=content.animate([{opacity:1,transform:'translate3d(0,0,0)'},{opacity:0,transform:`translate3d(${-sign*6}px,0,0)`}],{duration:90,easing:'ease-out',fill:'forwards'});
+  await exit.finished;
+  // Keep the only DOM content layer invisible throughout asynchronous rendering.
+  content.dataset.motionPhase='updating';await update();content.dataset.motionPhase='entering';
+  enter=content.animate([{opacity:0,transform:`translate3d(${sign*8}px,0,0)`},{opacity:1,transform:'translate3d(0,0,0)'}],{duration:190,easing:'cubic-bezier(.2,.75,.25,1)',fill:'both'});
+  exit.cancel();exit=null;await enter.finished;
+ }finally{
+  exit?.cancel();enter?.cancel();content.classList.remove('page-leave','page-enter');delete content.dataset.motionPhase;
+ }
 }
 function sharedMotion(source,update,destination){
- const enabled=document.body.classList.contains('motion')&&!matchMedia('(prefers-reduced-motion: reduce)').matches;
- if(!enabled||typeof document.startViewTransition!=='function')return update();
- source=sharedCard(source);if(!source)return update();
- const sourceContent=isolateCardText(source);source.style.viewTransitionName='rs-shared-card';
- if(sourceContent)sourceContent.style.viewTransitionName='rs-shared-content';
- let target=null,targetContent=null;
-  const transition=document.startViewTransition(async()=>{
-   pageTransitionActive=true;sharedMotionUpdate=true;$('#content').classList.add('shared-transition');
-   try{await update();target=sharedCard(destination?.());
+ return queueMotion(async()=>{
+  const enabled=document.body.classList.contains('motion')&&!matchMedia('(prefers-reduced-motion: reduce)').matches;
+  source=sharedCard(source);if(!enabled||typeof document.startViewTransition!=='function'||!source?.isConnected)return animatePage(update);
+  const sourceContent=isolateCardText(source);source.style.viewTransitionName='rs-shared-card';
+  if(sourceContent)sourceContent.style.viewTransitionName='rs-shared-content';
+  let target=null,targetContent=null;
+  $('#content').classList.add('shared-transition');
+  try{
+   const transition=document.startViewTransition(async()=>{
+    await update();target=sharedCard(destination?.());
     if(target){targetContent=target===source?sourceContent:isolateCardText(target);target.style.viewTransitionName='rs-shared-card';if(targetContent)targetContent.style.viewTransitionName='rs-shared-content';}
-   }finally{sharedMotionUpdate=false;pageTransitionActive=false;$('#content').classList.remove('shared-transition');}
+   });
+   await transition.updateCallbackDone;await transition.finished.catch(()=>{});
+  }finally{$('#content').classList.remove('shared-transition');releaseCardText(source);if(target&&target!==source)releaseCardText(target);}
  });
- return transition.finished.catch(()=>{}).finally(()=>{releaseCardText(source);if(target&&target!==source)releaseCardText(target);});
 }
 function originTarget(origin){return [...document.querySelectorAll(`[data-action="${origin.action}"][data-kind="${origin.kind}"][data-id]`)].find(el=>el.dataset.id===origin.id)||null;}
 async function openRecord(source,kind,id){
- const element=sharedCard(source);state.returnOrigin={kind,id:String(id),action:kind==='interviews'?'study':'edit',scrollY:window.scrollY};
- return sharedMotion(element,()=>kind==='interviews'?study(id):edit(kind,id),()=>$('#content .card'));
+ const element=sharedCard(source),origin={kind,id:String(id),action:kind==='interviews'?'study':'edit',scrollY:window.scrollY};
+ return sharedMotion(element,()=>{state.returnOrigin=origin;return kind==='interviews'?loadStudy(id):loadEditor(kind,id);},()=>$('#content .card'));
 }
 async function returnToOrigin(){
  const origin=state.returnOrigin;if(!origin||!state.current)return navigate(state.kind);
  const source=$('#content .card');let target=null;
- await sharedMotion(source,async()=>{await navigate(origin.kind);window.scrollTo(0,origin.scrollY);target=originTarget(origin);},()=>originTarget(origin));
- window.scrollTo(0,origin.scrollY);state.returnOrigin=null;
+ await sharedMotion(source,async()=>{await renderPage(origin.kind);window.scrollTo(0,origin.scrollY);target=originTarget(origin);state.returnOrigin=null;},()=>originTarget(origin));
 }
-function navigate(page){const direction=pagePosition(page)<pagePosition(state.page)?'back':'forward';return runPageTransition(()=>renderPage(page),direction);}
-async function renderPage(page){await flush();const epoch=++navEpoch;state.page=page;state.current=null;state.kind='';state.pageIndex=0;state.query='';state.filter='all';$('#content').innerHTML='<p class="empty">正在读取…</p>';document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===page||b.dataset.page==='more'&&!['home','interviews','templates','jobs'].includes(page)));moveNavIndicator();window.scrollTo(0,0);
- if(page==='home'){const lists=await Promise.all(['resumes','favorites','applications','schedule'].map(kind=>api('list',{kind})));if(epoch!==navEpoch)return;
+function navigate(page){return queueMotion(async()=>{const direction=pagePosition(page)<pagePosition(state.page)?'back':'forward',prepared=await preparePage(page);return animatePage(()=>renderPage(page,prepared),direction);});}
+async function preparePage(page){
+ await flush();
+ if(page==='home')return {lists:await Promise.all(['resumes','favorites','applications','schedule'].map(kind=>api('list',{kind})))};
+ if(['resumes','favorites','applications','schedule','interviews'].includes(page))return {rows:await api('list',{kind:page})};
+ if(page==='settings')return {boot:await api('boot')};
+ if(page==='jobs'||page==='sources')return {sources:await api('sources')};
+ return {};
+}
+async function renderPage(page,prepared){const data=prepared||await preparePage(page);state.page=page;state.current=null;state.kind='';state.pageIndex=0;state.query='';state.filter='all';document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===page||b.dataset.page==='more'&&!['home','interviews','templates','jobs'].includes(page)));moveNavIndicator();window.scrollTo(0,0);
+ if(page==='home'){const lists=data.lists;
  $('#content').innerHTML=`<section class="hero"><p class="eyebrow">把每一次准备，留给更好的机会</p><h1>你好，今天也向前一步。</h1><p>简历、职位、投递与面试准备，都在这里。</p><div class="actions">${button('新建简历','navigate','data-page="templates"',true)}${button('WebDAV 同步','navigate','data-page="settings"')}</div></section><div class="grid">${lists.map((list,i)=>`<div class="card clickable" data-action="navigate" data-page="${['resumes','favorites','applications','schedule'][i]}"><small>${['我的简历','职位收藏','投递记录','日程安排'][i]}</small><div class="stat">${list.length}</div><span class="meta">进入查看 →</span></div>`).join('')}</div><div class="card"><h2>接下来的安排</h2>${lists[3].filter(s=>!s.completed).sort((a,b)=>a.startAt.localeCompare(b.startAt)).slice(0,4).map(s=>`<p data-action="edit" data-kind="schedule" data-id="${E(s.id)}">${E(s.title)}<br><small>${E(s.kind)} · ${E(formatDate(s.startAt))}</small></p>`).join('')||'<p class="muted">还没有待办日程。可以为投递安排笔试、面试和跟进。</p>'}</div><div class="card"><h3>一份资料，随身携带</h3><p class="muted">在电脑和手机设置相同 WebDAV 目录，编辑完成后手动同步。首次同步或两端同时修改时，请核对保留方向。</p></div>`;
- }else if(['resumes','favorites','applications','schedule','interviews'].includes(page)){state.rows=await api('list',{kind:page});if(epoch!==navEpoch)return;renderList();}
+ }else if(['resumes','favorites','applications','schedule','interviews'].includes(page)){state.rows=data.rows;renderList();}
  else if(page==='templates')renderTemplates();
  else if(page==='more')$('#content').innerHTML=title('更多工作台')+[['职位收藏','favorites','查看保存的职位与个人备注'],['投递记录','applications','跟进状态、时间线和复盘'],['日程安排','schedule','笔试、面试、截止和跟进'],['公司来源','sources','管理企业官网和 ATS 招聘源'],['设置与同步','settings','WebDAV、AI、主题与备份']].map(([name,p,sub])=>`<section class="card clickable" data-action="navigate" data-page="${p}"><h2>${name} →</h2><p class="meta">${sub}</p></section>`).join('');
- else if(page==='settings'){state.boot=await api('boot');if(epoch===navEpoch)renderSettings();}
- else if(page==='jobs'){state.sources=await api('sources');if(epoch===navEpoch)renderJobs();}
- else if(page==='sources'){state.rows=await api('sources');if(epoch===navEpoch)renderSources();}
+ else if(page==='settings'){state.boot=data.boot;renderSettings();}
+ else if(page==='jobs'){state.sources=data.sources;renderJobs();}
+ else if(page==='sources'){state.rows=data.sources;renderSources();}
 }
 function formatDate(value){if(!value)return '';const d=new Date(value);return Number.isNaN(d.getTime())?value:d.toLocaleString('zh-CN',{hour12:false});}
 function renderList(){const names={resumes:['我的简历','为每个机会，准备一份合适的表达。'],favorites:['职位收藏','记录值得关注的机会，保留自己的备注。'],applications:['投递记录','从投递到复盘，每一步都有迹可循。'],schedule:['日程安排','安排笔试、面试、跟进与截止时间。'],interviews:['面试题背诵','把读过的知识，变成能够说清的答案。']},[name,sub]=names[state.page];
@@ -119,7 +142,8 @@ function renderListItems(){let rows=state.rows.filter(r=>JSON.stringify(r).toLow
 function sampleContent(title,category){if(title.includes('教育'))return '## 示例大学 · 计算机相关专业 | 2023.09 - 2027.06\n本科\n- 相关课程：数据结构、操作系统、计算机网络。';if(title.includes('技能'))return category==='嵌入式开发'?'- 语言与系统：[填写 C / C++、RTOS / Linux 的实际掌握情况]\n- 平台与调试：[填写 MCU / SoC、接口协议、调试工具]':'- 编程语言：[填写实际掌握的技术]\n- 工具与实践：[填写目标岗位相关能力]';if(title.includes('作品'))return '- 个人主页：[填写作品链接]\n- 开源贡献：[填写仓库与实际贡献]';return `## ${title}示例 | 时间范围\n角色 / 技术栈 / 平台\n- 说明你负责的设计、开发或调试工作。\n- 描述可核实的成果与 **验证方式**，不编造指标。`;}
 function blankResume(t){return {title:t.name+'简历',templateId:t.id,color:t.color,fontFamily:'MiSans',fontSize:t.origin==='github'?11:12,lineHeight:t.origin==='github'?1.45:1.6,profile:{name:'',role:'',phone:'',email:'',city:'',link:'',summary:''},sections:t.sections.map(title=>({title,content:'',visible:true,_sourceIndex:-1}))};}
 function renderTemplates(){$('#content').innerHTML=title('模板中心','所有模板均支持照片与无照片预览。示例不会保存到你的简历。')+`<div class="grid">${state.templates.map(t=>`<section class="card"><div class="template-art" style="--accent:${/^#[0-9a-f]{6}$/i.test(t.color)?t.color:'#167d78'}"><i></i><i></i><i></i><i></i></div><span class="badge">${E(t.category)}</span><h3>${E(t.name)}</h3><p class="meta">${E(t.description)}</p><div class="actions">${button('使用模板','useTemplate',`data-id="${t.id}"`,true)}${button('双预览','templatePreview',`data-id="${t.id}"`)}</div><small>${E(t.license||'MIT')} ${E(t.sourceRepo||'内置模板')}</small></section>`).join('')}</div>`;}
-function edit(kind,id){return runPageTransition(async()=>{await flush();state.kind=kind;state.page=kind;state.current=id?await api('get',{kind,id}):newDoc(kind);state.undo=[];if(kind==='resumes')state.current.sections.forEach((s,i)=>s._sourceIndex=i);state.dirty=false;renderEditor();window.scrollTo(0,0);},'forward');}
+function edit(kind,id){return runPageTransition(()=>loadEditor(kind,id),'forward');}
+async function loadEditor(kind,id){await flush();state.kind=kind;state.page=kind;state.current=id?await api('get',{kind,id}):newDoc(kind);state.undo=[];if(kind==='resumes')state.current.sections.forEach((s,i)=>s._sourceIndex=i);state.dirty=false;renderEditor();window.scrollTo(0,0);}
 function newDoc(kind){return kind==='favorites'?{title:'',url:'',company:'',location:'',salary:'',description:'',notes:''}:kind==='applications'?{title:'',url:'',company:'',status:'已打开',notes:'',dueAt:'',eventKind:'面试',review:'',timeline:[]}:kind==='schedule'?{title:'',kind:'面试',startAt:new Date().toISOString(),notes:'',applicationId:'',allDay:false,completed:false,reminderEnabled:true,reminderMinutes:15}:kind==='sources'?{name:'',adapter:'jsonld',url:'',slug:'',enabled:true,region:'国内'}:{title:'',questions:[]};}
 function renderEditor(){const d=state.current,k=state.kind;let html=title(k==='resumes'?'简历工作台':k==='schedule'?'日程详情':k==='sources'?'公司招聘源':k==='applications'?'投递详情':'职位详情')+`<div class="toolbar">${button('返回列表','navigate',`data-page="${k}"`)}${button('保存','save','',true)}<span class="save-status" id="save-status">${d.id?'已保存':'填写后保存'}</span></div>`;
  if(k==='resumes'){html+=`<section class="card">${field('简历名称','title',d.title)}<div class="form-grid">${select('模板','templateId',state.templates.map(t=>[t.id,t.name]),d.templateId)}${field('强调色','color',d.color,'color')}${select('字体','fontFamily',['MiSans','Microsoft YaHei','SimSun','Arial','Times New Roman'],d.fontFamily||'MiSans')}${field('字号（10–16 pt）','fontSize',d.fontSize||12,'number')}${field('行距（1.2–2）','lineHeight',d.lineHeight||1.6,'number')}</div><div class="actions">${button('预览 / PDF','preview')}${button('撤销','undo')}${button('保存版本','checkpoint')}${button('历史版本','history')}${button('复制简历','clone')}${button('内容检查','check')}${button('岗位优化','fit')}</div></section><section class="card"><h2>基本资料</h2><div class="form-grid">${[['姓名','name'],['目标岗位','role'],['电话','phone'],['邮箱','email'],['城市','city'],['个人主页','link']].map(([l,key])=>field(l,'profile.'+key,d.profile?.[key])).join('')}</div>${area('个人简介','profile.summary',d.profile?.summary)}<div class="actions">${d.photo?`<img src="${E(d.photo)}" class="photo-thumb" alt="照片">`:''}${button('选择照片','photo')}${button('移除照片','removePhoto')}</div></section><div id="sections">${d.sections.map((s,i)=>`<section class="card" data-section="${i}" draggable="true"><div class="section-head"><span class="badge">模块 ${i+1}</span><div class="section-tools">${button('↑','moveSection',`data-index="${i}" data-delta="-1"`)}${button('↓','moveSection',`data-index="${i}" data-delta="1"`)}${button('移除','removeSection',`data-index="${i}"`)}</div></div>${field('模块名称',`sections.${i}.title`,s.title)}${check('显示模块',`sections.${i}.visible`,s.visible)}<div class="formatting">${[['加粗','bold'],['小标题','heading'],['列表','list'],['表格','table']].map(([l,f])=>button(l,'format',`data-index="${i}" data-format="${f}"`)).join('')}</div>${area('正文（支持 Markdown）',`sections.${i}.content`,s.content,'section-content')}</section>`).join('')}</div>${button('添加模块','addSection')}`;
@@ -157,7 +181,8 @@ async function resumeHtml(original,examples=false,photo=true){if(!resumeStyle)re
 }
 function renderSettings(){const b=state.boot,p=b.settings;setTheme(p);const autoStatus=b.autoSyncStatus?`最近自动同步：${E(b.autoSyncStatus)}${b.autoSyncAt?' · '+E(formatDate(new Date(b.autoSyncAt).toISOString())):''}`:'尚未自动同步';$('#content').innerHTML=title('设置与同步','电脑和手机使用同一 WebDAV 目录。')+`<section class="card"><h2>WebDAV 数据同步</h2><p class="meta">同步简历、照片、历史、收藏、投递、日程、公司来源、面试题库与掌握进度和非敏感设置。远端文件以明文存储；密码和 AI Key 仅留本机。面试题库与背诵标记也会参与双向同步。</p><label>实际 HTTPS 同步目录（与电脑设置中保存的目录相同）</label><input id="dav-url" type="url" placeholder="https://dav.example.com/resume/" value="${E(b.davUrl)}"><label>用户名</label><input id="dav-user" autocomplete="username" value="${E(b.davUser)}"><label>密码 / 应用专用密码</label><input id="dav-password" type="password" autocomplete="new-password" placeholder="${b.davPasswordSaved?'已加密保存，留空保留原密码':'填写 WebDAV 密码'}"><div class="actions">${button('保存配置','saveDav')}${button('检查并同步','sync','',true)}${button('清除凭据','clearDav')}</div><label class="check auto-sync"><input id="pref-auto-sync" type="checkbox" ${b.autoSyncEnabled?'checked':''}>每 30 分钟自动同步（网络可用且应用在后台时）</label><div class="actions">${button("保存自动同步设置","saveAutoSync")}</div><p class="meta">${autoStatus}</p><p class="meta">每 30 分钟在后台联网检查：仅一端变化时按共同基线自动同步；双方变化时始终暂停，等待确认或逐条合并。下载前自动备份；条件写入会拦截检查后的并发变更。</p><div id="sync-result"></div></section><section class="card"><h2>界面</h2><label>界面风格</label><select id="pref-style">${options([['haru','Haru'],['classic','经典']],p.interfaceStyle||'haru')}</select><label>主题</label><select id="pref-theme">${options([['system','跟随系统'],['light','浅色'],['dark','深色']],p.theme||'system')}</select><label class="check"><input id="pref-motion" type="checkbox" ${p.motionEnabled!==false?'checked':''}>界面动效</label><div class="actions">${button('保存界面设置','savePrefs')}</div></section><section class="card"><h2>软件更新</h2><p class="meta">当前 ${E(b.version)}。安卓独立更新通道，使用 RSA-PSS 签名和 APK 摘要校验。</p><label>更新通道</label><select id="pref-update-channel">${options([['stable','Stable · 正式版'],['nightly','Nightly · 测试版']],p.updateChannel||'stable')}</select><label>更新线路</label><select id="pref-update-route">${options([['auto','自动'],['direct','GitHub 直连'],['proxy','GH-Proxy 公益代理']],p.updateRoute||'auto')}</select><label class="check"><input id="pref-check-updates" type="checkbox" ${p.checkUpdatesOnStartup!==false?'checked':''}>启动时检查更新</label><div class="actions">${button('检查安卓更新','checkUpdate')}${button('下载并安装','installUpdate')}${button('取消下载','cancelUpdate')}</div><div id="update-result" role="status" aria-live="polite"></div></section><section class="card"><h2>AI 岗位优化</h2><p class="meta">主动点击生成时发送当前简历可见模块及职位描述。建议逐项确认，生成独立岗位简历。</p><label>兼容 Chat Completions 的完整 HTTPS 接口</label><input id="ai-endpoint" type="url" value="${E(p.aiEndpoint||'')}"><label>模型名称</label><input id="ai-model" value="${E(p.aiModel||'')}"><label>API Key</label><input id="ai-key" type="password" placeholder="${b.aiKeySaved?'已加密保存，留空保留':'填写 Key'}"><div class="actions">${button('保存 AI 配置','saveAi')}${button('清除 Key','clearAi')}</div></section><section class="card"><h2>全局搜索与批量管理</h2>${button('搜索全部资料','workspace')}${button('批量管理收藏','workspace','data-kind="favorites"')}${button('批量管理投递','workspace','data-kind="applications"')}</section><section class="card"><h2>日程通知</h2><p>允许系统通知后可在后台接收提醒；重启后自动恢复。系统省电策略可能延迟提醒，也可导出到系统日历。</p>${button('允许日程通知','enableNotifications')}${button('导出日历 ICS','exportCalendar')}</section><section class="card"><h2>本机备份</h2><p class="meta">下载云端资料前自动备份，可恢复替换前的数据。</p>${button('查看同步备份','backups')}${button('导入备份 JSON','importBackup')}${button('查看临时草稿','recoverDraft')}</section><section class="card"><h2>拾简 · Android</h2><p class="meta">${E(b.version)} · Android 8.0 或更新版本<br>离线资料保存在应用私有目录；卸载应用会删除本机资料，请先完成 WebDAV 同步。</p>${button('开源与许可','license')}</section>`;}function renderJobs(){$('#content').innerHTML=title('岗位查询','读取企业公开招聘信息；访问状态以官网为准。')+`<section class="card"><label>企业来源</label><select id="job-provider">${options([['all','全部启用来源'],...state.sources.filter(s=>s.enabled).map(s=>[s.id,s.name])],'tencent')}</select><label>关键词</label><input id="job-keyword" placeholder="嵌入式 / Java / 前端"><label>城市</label><input id="job-city" placeholder="期望城市"><div class="actions">${button('查询','searchJobs','data-page="1"',true)}${button('BOSS 浏览收藏','browse','data-url="https://www.zhipin.com/web/geek/jobs"')}${button('牛客浏览收藏','browse','data-url="https://www.nowcoder.com/jobs/intern/center"')}</div></section><div id="job-results"></div>`;}
 function renderSources(){$('#content').innerHTML=title('公司来源','预设来源不代表已验证覆盖，动态官网可能需要登录或专用适配。')+button('新增公司来源','new','data-kind="sources"',true)+state.rows.map(s=>`<section class="card"><h3>${E(s.name)} <span class="badge">${s.enabled?'启用':'停用'}</span></h3><p class="meta">${E(s.adapter)} · ${E(s.status||'未查询')}<br>${E(s.message||'')}</p><div class="actions">${button('编辑','editSource',`data-id="${E(s.id)}"`)}${button('打开官网','browse',`data-url="${E(s.url)}"`)}</div></section>`).join('');}
-function study(id){return runPageTransition(async()=>{await flush();state.kind='interviews';state.page='interviews';state.current=await api('get',{kind:'interviews',id});state.deckIndex=Math.max(0,state.current.questions.findIndex(q=>q.id===state.current.lastQuestionId));state.answer=false;state.deckFilter='all';state.dirty=false;renderStudy();window.scrollTo(0,0);},'forward');}
+function study(id){return runPageTransition(()=>loadStudy(id),'forward');}
+async function loadStudy(id){await flush();state.kind='interviews';state.page='interviews';state.current=await api('get',{kind:'interviews',id});state.deckIndex=Math.max(0,state.current.questions.findIndex(q=>q.id===state.current.lastQuestionId));state.answer=false;state.deckFilter='all';state.dirty=false;renderStudy();window.scrollTo(0,0);}
 function deckQuestions(){return state.current.questions.filter(q=>state.deckFilter==='all'||state.deckFilter==='due'&&(!q.nextReviewAt||Date.parse(q.nextReviewAt)<=Date.now())||q.status===state.deckFilter);}
 function renderStudy(){const d=state.current,questions=deckQuestions();state.deckIndex=Math.min(state.deckIndex,Math.max(0,questions.length-1));const q=questions[state.deckIndex];$('#content').innerHTML=title(d.title)+`<div class="toolbar">${button('返回题库','navigate','data-page="interviews"')}${button('随机抽题','randomQuestion')}<span id="save-status" class="save-status">已保存</span></div><div class="card"><p class="meta">共 ${d.questions.length} 题 · 已记住 ${d.questions.filter(q=>q.status==='remembered').length} · 未掌握 ${d.questions.filter(q=>q.status==='learning').length} · 未标记 ${d.questions.filter(q=>q.status==='unseen').length}</p><select id="deck-filter">${options([['all','全部题目'],['learning','未掌握'],['remembered','已记住'],['unseen','未标记'],['due','今日待复习']],state.deckFilter)}</select></div>${q?`<section class="card"><p class="meta">${state.deckIndex+1} / ${questions.length} · ${E({unseen:'未标记',learning:'未掌握',remembered:'已记住'}[q.status])}</p><div class="progress"><div style="width:${(state.deckIndex+1)/questions.length*100}%"></div></div><div class="question">${E(q.title)}</div><div class="actions">${button(state.answer?'隐藏答案':'显示答案','answer','',true)}</div>${state.answer?`<div class="answer" id="answer">${E(q.answer)}</div>`:'<p class="muted">先试着说出答案，再展开核对。</p>'}<div class="actions">${button('未掌握','review','data-status="learning"')}${button('已记住','review','data-status="remembered"')}${button('重置标记','review','data-status="unseen"')}</div><div class="actions">${button('上一题','question','data-delta="-1"')}${button('下一题','question','data-delta="1"')}</div></section>`:'<p class="empty">这个分类暂时没有题目。</p>'}`;}
 function splitImport(level){const blocks=state.imported.blocks,answerHeading=t=>/^(答案|解答|解析|答题要点|注意事项|示例|代码示例|补充|参考答案|answer|explanation)[:：]?$/i.test(t.trim());let questions=[],q=null;for(const b of blocks){if(b.level===level&&level>0&&b.text.trim()&&!answerHeading(b.text)){if(q)questions.push(q);q={id:crypto.randomUUID(),title:b.text.trim(),answer:'',status:'unseen'};}else if(b.level>0&&b.level<level){if(q)questions.push(q);q=null;}else if(q)q.answer+=(b.level?'#'.repeat(b.level)+' ':'')+b.text+'\n';}if(q)questions.push(q);if(level===0)questions=[{id:crypto.randomUUID(),title:state.imported.sourceName.replace(/\.[^.]+$/,''),answer:blocks.map(b=>b.text).join('\n'),status:'unseen'}];questions.forEach(q=>q.answer=q.answer.trim());return questions;}
@@ -224,7 +249,7 @@ const actions={
  aiFit:async()=>{state.fitJob={...state.fitJob,description:$('#fit-description').value};if(!await confirm('将当前简历可见模块和这份职位描述发送到你配置的 AI 接口，生成修改建议？'))return;state.suggestions=await api('ai',{id:state.fitResumeId,job:state.fitJob});showSuggestions();},
  applySuggestions:async()=>{const chosen=[...document.querySelectorAll('[data-suggestion]:checked')].map(el=>state.suggestions[+el.dataset.suggestion]);if(!chosen.length)throw new Error('请至少选择一条建议');const r=await api('applySuggestions',{id:state.fitResumeId,suggestions:chosen});await edit('resumes',r.id);toast('已创建独立岗位简历');}
 };
-document.addEventListener('click',async event=>{if(Date.now()<suppressNavClickUntil&&event.target.closest('#nav button')){event.preventDefault();event.stopImmediatePropagation();return;}const el=event.target.closest('[data-action]');if(!el||el.disabled)return;const f=actions[el.dataset.action];if(!f)return;const navigationButton=el.matches('#nav button');if(!navigationButton)el.disabled=true;window.__activeActionElement=el;try{if(el.dataset.action==='navigate'&&!navigationButton&&el.closest('.card')){const targetPage=el.dataset.page;await sharedMotion(sharedCard(el),()=>navigate(targetPage),()=>$('#content .card')||$('#content .hero')||$('#content h1'));}else await f(el.dataset);}catch(e){toast(e.message,true);if($('#sync-result')&&el.dataset.action==='sync')$('#sync-result').textContent='同步未完成：'+e.message;}finally{window.__activeActionElement=null;if(!navigationButton)el.disabled=false;}});
+document.addEventListener('click',async event=>{if(Date.now()<suppressNavClickUntil&&event.target.closest('#nav button')){event.preventDefault();event.stopImmediatePropagation();return;}const el=event.target.closest('[data-action]');if(!el||el.disabled)return;const f=actions[el.dataset.action];if(!f)return;const navigationButton=el.matches('#nav button');if(!navigationButton)el.disabled=true;window.__activeActionElement=el;try{if(el.dataset.action==='navigate'&&!navigationButton&&el.closest('.card')){const targetPage=el.dataset.page;await sharedMotion(sharedCard(el),()=>renderPage(targetPage),()=>$('#content .card')||$('#content .hero')||$('#content h1'));}else await f(el.dataset);}catch(e){toast(e.message,true);if($('#sync-result')&&el.dataset.action==='sync')$('#sync-result').textContent='同步未完成：'+e.message;}finally{window.__activeActionElement=null;if(!navigationButton)el.disabled=false;}});
 document.addEventListener('input',event=>{const el=event.target;if(el.dataset.field&&state.current){updateField(el.dataset.field,readField(el));markDirty();}else if(el.id==='search'){state.query=el.value;state.pageIndex=0;renderListItems();}});
 document.addEventListener('change',async event=>{const el=event.target;try{if(el.id==='list-filter'){state.filter=el.value;state.pageIndex=0;renderListItems();}else if(el.id==='backup-record'){const name=$('#backup-choice')?.value;const preview=await api('backupCatalog',{operation:'preview',name:state.backupName});$('#backup-content').textContent=preview.records[+el.value]?.content||'';}else if(el.id==='deck-filter'){await flush();state.deckFilter=el.value;state.deckIndex=0;state.answer=false;renderStudy();}else if(el.id==='import-level'){state.importLevel=+el.value;renderImportPreview();}else if(el.id==='fit-job'){state.fitJob=state.fitFavorites.find(j=>j.id===el.value)||{title:'目标岗位',company:'',description:''};$('#fit-description').value=state.fitJob.description;}}catch(e){toast(e.message,true);}});
 let dragIndex=-1;document.addEventListener('dragstart',e=>{const s=e.target.closest('[data-section]');if(s)dragIndex=+s.dataset.section;});document.addEventListener('dragover',e=>{if(e.target.closest('[data-section]'))e.preventDefault();});document.addEventListener('drop',async e=>{const s=e.target.closest('[data-section]');if(!s||dragIndex<0)return;e.preventDefault();try{await flush();const [moved]=state.current.sections.splice(dragIndex,1);state.current.sections.splice(+s.dataset.section,0,moved);markDirty();renderEditor();}catch(err){toast(err.message,true);}dragIndex=-1;});

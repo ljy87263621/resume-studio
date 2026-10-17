@@ -17,8 +17,8 @@ import java.util.concurrent.*;
 
 /** Runs against the signed production APK; no test bridge or debugging mode is shipped in the app. */
 public final class AcceptanceInstrumentation extends Instrumentation {
-    private WebView web;private String davPort;private boolean onlineUpdate,installerOnly,notificationChecks;
-    @Override public void onCreate(Bundle args){super.onCreate(args);davPort=args.getString("davPort","");onlineUpdate=Boolean.parseBoolean(args.getString("onlineUpdate","false"));installerOnly=Boolean.parseBoolean(args.getString("installerOnly","false"));notificationChecks=Boolean.parseBoolean(args.getString("notificationChecks","false"));start();}
+    private WebView web;private String davPort;private boolean onlineUpdate,installerOnly,notificationChecks,animationOnly;
+    @Override public void onCreate(Bundle args){super.onCreate(args);davPort=args.getString("davPort","");onlineUpdate=Boolean.parseBoolean(args.getString("onlineUpdate","false"));installerOnly=Boolean.parseBoolean(args.getString("installerOnly","false"));notificationChecks=Boolean.parseBoolean(args.getString("notificationChecks","false"));animationOnly=Boolean.parseBoolean(args.getString("animationOnly","false"));start();}
     private WebView find(View v){if(v instanceof WebView)return(WebView)v;if(v instanceof ViewGroup g)for(int i=0;i<g.getChildCount();i++){WebView w=find(g.getChildAt(i));if(w!=null)return w;}return null;}
     private String js(String script)throws Exception{CompletableFuture<String> result=new CompletableFuture<>();runOnMainSync(()->web.evaluateJavascript(script,result::complete));return result.get(120,TimeUnit.SECONDS);}
     @Override public void onStart(){Bundle results=new Bundle();try{
@@ -26,6 +26,8 @@ public final class AcceptanceInstrumentation extends Instrumentation {
         if(installerOnly){results.putString("report","PASS: production installer closes APK write stream before commit");finish(0,results);return;}
         Intent i=new Intent();i.setClassName("com.resumestudio.mobile","com.resumestudio.MainActivity");i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);Activity a=startActivitySync(i);runOnMainSync(()->web=find(a.getWindow().getDecorView()));
         for(int n=0;n<100;n++){if("true".equals(js("typeof actions==='object' && state.templates.length===14 && document.querySelector('#content h1')!==null")))break;Thread.sleep(200);}
+        try(InputStream in=getContext().getAssets().open("motion-acceptance.js")){js(new String(in.readAllBytes(),StandardCharsets.UTF_8));}
+        if(animationOnly){String motionReport=verifyMotionFrames();results.putString("report",motionReport);finish(motionReport.contains("\"error\"")?1:0,results);return;}
         verifyBrowserSafeArea(a);
         js("window.testDavPort="+JSONObject.quote(davPort));String script;try(InputStream in=getContext().getAssets().open("acceptance.js")){script=new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}js(script);
         String report="null";for(int n=0;n<600;n++){report=js("window.acceptanceResult||null");if(!report.equals("null"))break;Thread.sleep(200);}
@@ -51,6 +53,18 @@ public final class AcceptanceInstrumentation extends Instrumentation {
     }catch(Exception ex){Throwable cause=ex;while(cause.getCause()!=null)cause=cause.getCause();android.util.Log.e("ResumeStudioTest","Acceptance failed",ex);results.putString("error",cause.toString());finish(1,results);}}
     private void capture(File dir,String name)throws IOException {
         Bitmap image=getUiAutomation().takeScreenshot();try(FileOutputStream out=new FileOutputStream(new File(dir,name))){image.compress(Bitmap.CompressFormat.PNG,100,out);}image.recycle();
+    }
+    private String verifyMotionFrames()throws Exception {
+        File dir=new File(getTargetContext().getExternalFilesDir(null),"acceptance");dir.mkdirs();
+        js("window.motionResult=null;verifyPageMotion().then(passed=>window.motionResult={passed,count:passed.length,frames:window.motionFrameSamples},error=>window.motionResult={error:error.stack||error.message});true");
+        String report="null";
+        for(int n=0;n<600;n++){
+            report=js("window.motionResult||null");if(!report.equals("null"))break;Thread.sleep(30);
+        }
+        if(report.equals("null"))throw new IOException("Motion frame acceptance timed out");
+        capture(dir,"motion-final.png");
+        try(FileOutputStream output=new FileOutputStream(new File(dir,"motion-result.json"))){output.write(report.getBytes(StandardCharsets.UTF_8));}
+        return report;
     }
     private void verifyBrowserSafeArea(Activity activity)throws Exception{
         Dialog[] dialog=new Dialog[1];WebView[] page=new WebView[1];android.widget.Button[] captureButton=new android.widget.Button[1];

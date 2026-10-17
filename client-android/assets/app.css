@@ -47,10 +47,13 @@ nav button:focus{background:transparent!important;box-shadow:none!important;outl
 nav button:focus-visible{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent);outline-offset:-3px}
 nav button.active{background:transparent;color:var(--accent)}
 #notice{bottom:calc(var(--inset-bottom) + 94px);max-height:min(35vh,280px);}
-body.motion #content.page-enter>:nth-child(-n+4){animation:page-arrive .24s cubic-bezier(.2,.75,.25,1) both}
-@keyframes page-arrive{from{opacity:.76;transform:translate3d(0,6px,0)}to{opacity:1;transform:translate3d(0,0,0)}}
+body.motion #content.page-enter{animation:page-arrive .22s cubic-bezier(.2,.75,.25,1) both}
+@keyframes page-arrive{from{opacity:0;transform:translate3d(0,6px,0)}to{opacity:1;transform:translate3d(0,0,0)}}
 #content.back-preview{transform:translateX(var(--back-offset,0px));transform-origin:center;transition:transform .08s linear;border-radius:18px;box-shadow:0 10px 32px #17362b16}
-::view-transition-old(root),::view-transition-new(root){animation-duration:260ms}
+/* Only the card morphs. The page behind it must never cross-fade two text layouts. */
+:root{view-transition-name:none}
+::view-transition-old(root){display:none}
+::view-transition-new(root){animation:none;opacity:1;mix-blend-mode:normal}
 ::view-transition-group(rs-shared-card){animation-duration:420ms;animation-timing-function:cubic-bezier(.2,.75,.25,1)}
 ::view-transition-old(rs-shared-card),::view-transition-new(rs-shared-card){animation:none;mix-blend-mode:normal}
 ::view-transition-group(rs-shared-content){animation:none}
@@ -59,7 +62,7 @@ body.motion #content.page-enter>:nth-child(-n+4){animation:page-arrive .24s cubi
 @keyframes rs-card-content-out{to{opacity:0}}
 @keyframes rs-card-content-in{from{opacity:0}to{opacity:1}}
 body.motion .card.clickable{transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s ease,border-color .22s ease}
-body.motion .card.clickable:active{transform:scale(.985);box-shadow:0 2px 9px #193a3014}
+body.motion .card.clickable:active{transform:translate3d(0,1px,0);box-shadow:0 2px 9px #193a3014}
 button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 35%,transparent);outline-offset:2px}
 @media(max-width:390px){nav{width:calc(100% - 20px - var(--inset-left) - var(--inset-right));}nav button{font-size:12px;padding-left:2px;padding-right:2px}}
 @media(prefers-reduced-motion:reduce){#content.back-preview{transition:none}}
@@ -120,24 +123,14 @@ body:not(.classic).dark .card{box-shadow:inset 0 1px #ffffff0d,0 14px 32px #0000
 
 #modal-body pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:35vh;overflow:auto}#modal-body select{max-width:100%}
 
-/* Page changes move the content as one layer; text remains unscaled and crisp. */
-#content.page-transition{view-transition-name:rs-page-content}
-::view-transition-group(rs-page-content){animation-duration:280ms;animation-timing-function:cubic-bezier(.2,.75,.25,1)}
-::view-transition-old(rs-page-content){animation:rs-page-out-forward 100ms ease both}
-::view-transition-new(rs-page-content){animation:rs-page-in-forward 220ms cubic-bezier(.2,.75,.25,1) 60ms both}
-:root[data-page-transition-direction="back"]::view-transition-old(rs-page-content){animation-name:rs-page-out-back}
-:root[data-page-transition-direction="back"]::view-transition-new(rs-page-content){animation-name:rs-page-in-back}
-@keyframes rs-page-out-forward{to{opacity:0;transform:translate3d(-10px,0,0)}}
-@keyframes rs-page-in-forward{from{opacity:0;transform:translate3d(14px,0,0)}}
-@keyframes rs-page-out-back{to{opacity:0;transform:translate3d(10px,0,0)}}
-@keyframes rs-page-in-back{from{opacity:0;transform:translate3d(-14px,0,0)}}
+/* Generic routes animate the one live DOM layer, with no old-page screenshot. */
+#content[data-motion-phase]{pointer-events:none}
 #content.page-leave{pointer-events:none;animation:rs-page-fallback-out 90ms ease both}
-#content.page-leave~#nav{pointer-events:none}
-@keyframes rs-page-fallback-out{to{opacity:.55;transform:translate3d(0,5px,0)}}
+@keyframes rs-page-fallback-out{to{opacity:0;transform:translate3d(0,5px,0)}}
 body.motion button:not(:disabled){transition:transform .18s cubic-bezier(.2,.75,.25,1),filter .18s ease,box-shadow .18s ease}
 body.motion button:not(:disabled):active{transform:scale(.97);filter:brightness(.97)}
 body.motion .overlay:not([hidden]){animation:rs-overlay-in 180ms ease both}
 body.motion .modal{animation:rs-modal-in 240ms cubic-bezier(.2,.75,.25,1) both}
 @keyframes rs-overlay-in{from{opacity:0}to{opacity:1}}
 @keyframes rs-modal-in{from{opacity:0;transform:translate3d(0,9px,0)}to{opacity:1;transform:translate3d(0,0,0)}}
-@media(prefers-reduced-motion:reduce){#content.page-transition{view-transition-name:none}#content.page-leave,#content.page-enter,body.motion .overlay:not([hidden]),body.motion .modal{animation:none!important}}
+@media(prefers-reduced-motion:reduce){#content.page-leave,#content.page-enter,body.motion .overlay:not([hidden]),body.motion .modal{animation:none!important}}
