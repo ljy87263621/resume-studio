@@ -119,3 +119,25 @@ body.dark nav button.active{color:#effff9;font-weight:700;text-shadow:0 1px 3px 
 body:not(.classic).dark .card{box-shadow:inset 0 1px #ffffff0d,0 14px 32px #0000002e,0 3px 8px #0000001c}
 
 #modal-body pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:35vh;overflow:auto}#modal-body select{max-width:100%}
+
+/* Page changes move the content as one layer; text remains unscaled and crisp. */
+#content.page-transition{view-transition-name:rs-page-content}
+::view-transition-group(rs-page-content){animation-duration:280ms;animation-timing-function:cubic-bezier(.2,.75,.25,1)}
+::view-transition-old(rs-page-content){animation:rs-page-out-forward 170ms ease both}
+::view-transition-new(rs-page-content){animation:rs-page-in-forward 280ms cubic-bezier(.2,.75,.25,1) both}
+:root[data-page-transition-direction="back"]::view-transition-old(rs-page-content){animation-name:rs-page-out-back}
+:root[data-page-transition-direction="back"]::view-transition-new(rs-page-content){animation-name:rs-page-in-back}
+@keyframes rs-page-out-forward{to{opacity:.72;transform:translate3d(-10px,0,0)}}
+@keyframes rs-page-in-forward{from{opacity:.55;transform:translate3d(14px,0,0)}}
+@keyframes rs-page-out-back{to{opacity:.72;transform:translate3d(10px,0,0)}}
+@keyframes rs-page-in-back{from{opacity:.55;transform:translate3d(-14px,0,0)}}
+#content.page-leave{pointer-events:none;animation:rs-page-fallback-out 90ms ease both}
+#content.page-leave~#nav{pointer-events:none}
+@keyframes rs-page-fallback-out{to{opacity:.55;transform:translate3d(0,5px,0)}}
+body.motion button:not(:disabled){transition:transform .18s cubic-bezier(.2,.75,.25,1),filter .18s ease,box-shadow .18s ease}
+body.motion button:not(:disabled):active{transform:scale(.97);filter:brightness(.97)}
+body.motion .overlay:not([hidden]){animation:rs-overlay-in 180ms ease both}
+body.motion .modal{animation:rs-modal-in 240ms cubic-bezier(.2,.75,.25,1) both}
+@keyframes rs-overlay-in{from{opacity:0}to{opacity:1}}
+@keyframes rs-modal-in{from{opacity:0;transform:translate3d(0,9px,0)}to{opacity:1;transform:translate3d(0,0,0)}}
+@media(prefers-reduced-motion:reduce){#content.page-transition{view-transition-name:none}#content.page-leave,#content.page-enter,body.motion .overlay:not([hidden]),body.motion .modal{animation:none!important}}
