@@ -2,12 +2,12 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
 // Exercise the actual WebView action and dialog with a minimal DOM, without native/network services.
 const nodes=new Map();let activeElement;
-function element(){return {hidden:true,children:[],textContent:'',_html:'',set innerHTML(value){this._html=value;this.children=[];},get innerHTML(){return this._html;},append(child){this.children.push(child);},focus(){activeElement=this;},click(){this.onclick?.();}};}
-for(const id of ['#overlay','#modal-body','#modal-buttons','#sync-result','#notice'])nodes.set(id,element());
-const document={querySelector:s=>s==='#modal-buttons button'?nodes.get('#modal-buttons').children[0]:nodes.get(s),createElement:element,addEventListener(){},get activeElement(){return activeElement;}};
-const context=vm.createContext({document,setTimeout,clearTimeout,console,window:{},addEventListener(){}});
+function element(){return {addEventListener(){},style:{setProperty(){}},classList:{remove(){}},hidden:true,children:[],textContent:'',_html:'',set innerHTML(value){this._html=value;this.children=[];},get innerHTML(){return this._html;},append(child){this.children.push(child);},focus(){activeElement=this;},click(){this.onclick?.();}};}
+for(const id of ['#overlay','#modal-body','#modal-buttons','#sync-result','#notice','#content'])nodes.set(id,element());
+const document={querySelector:s=>s==='#modal-buttons button'?nodes.get('#modal-buttons').children[0]:(nodes.get(s)||(()=>{const e=element();nodes.set(s,e);return e;})()),querySelectorAll:()=>[],createElement:element,addEventListener(){},get activeElement(){return activeElement;}};
+const context=vm.createContext({document,setTimeout,clearTimeout,console,window:{addEventListener(){}},addEventListener(){}});
 const source=fs.readFileSync(path.join(__dirname,'../../client-android/assets/app.js'),'utf8');
-const bootstrap=source.lastIndexOf('\n(async()=>{try{state.boot');assert(bootstrap>0);vm.runInContext(source.slice(0,bootstrap),context);
+const bootstrap=source.lastIndexOf('\n(async()=>');assert(bootstrap>0);vm.runInContext(source.slice(0,bootstrap),context);
 const version={exists:true,dataBytes:1234,deltaBytes:234,modifiedAt:'2026-01-02T03:04:05Z',counts:'1 份简历'};
 const plan={action:'push',requiresConfirmation:true,remoteExists:true,summary:'本机变化',baselineText:'上次成功同步',local:version,remote:{...version,deltaBytes:0},note:'',contentCheck:false};
 let current=plan,calls=[];
