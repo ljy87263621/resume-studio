@@ -36,7 +36,7 @@ public sealed partial class MainWindow
         var result=await new ContentDialog { XamlRoot=shell.XamlRoot,Title="AI 写简历提示词",Content="复制生成规则和当前简历 JSON，交给你选择的 AI 工具。要求保留真实事实、标明待确认项，并输出本应用可导入的 JSON。此按钮只复制文本，不连接在线 AI。",PrimaryButtonText="复制提示词",CloseButtonText="返回" }.ShowAsync();
         if(result!=ContentDialogResult.Primary) return;
         var text="请依据以下原始简历整理和改进表述，禁止编造学历、职位、项目职责、性能指标和成果。未知信息保留为空；待核实事项写入 sections 内的自定义模块内容中。只输出纯 JSON 对象，不要 Markdown 代码块。\n"
-            +"保持现有 schema：title、templateId、color、fontFamily、fontSize(10–16)、lineHeight(1.2–2)、photo、profile{name,role,phone,email,city,link,summary}、sections[{title,content,visible}]。templateId 和 fontFamily 不得改变，sections 最多30项。content 支持 ## 标题 | 时间、- 列表、**加粗**、Markdown表格。不要插入 HTML。\n原始简历：\n"+JsonSerializer.Serialize(current,BackendClient.Json);
+            +"保持现有 schema：title、templateId、color、fontFamily、fontSize(10–16)、lineHeight(1.2–2)、photo、pageMarginVertical(8–25)、pageMarginHorizontal(8–25)、sectionSpacing(0–12)、headerAlignment(template/left/center)、profile{name,role,phone,email,city,link,summary,items:[{emoji,label,value}]}、sections[{title,content,visible,images}]。templateId 和 fontFamily 不得改变，sections 最多30项。content 支持 ## 标题 | 时间、### 子板块、- 列表、**加粗**、Markdown表格。保留 images 原值和正文中的 resume-image 标记，不生成图片数据。不要插入 HTML。\n原始简历：\n"+JsonSerializer.Serialize(current,BackendClient.Json);
         var package=new DataPackage(); package.SetText(text); Clipboard.SetContent(package); Success("提示词已复制","将 AI 输出的 JSON 保存后，可在我的简历中导入。内容需要你核对。");
     }
     private async Task UpdateCapacity(WebView2 web)
@@ -45,7 +45,7 @@ public sealed partial class MainWindow
         int generation=navigationRevision;
         try
         {
-            string json=await web.CoreWebView2.ExecuteScriptAsync("(()=>{let a=document.querySelector('article');if(!a)return null;let top=a.getBoundingClientRect().top;let pad=parseFloat(getComputedStyle(a).paddingTop);let height=Math.max(...Array.from(a.children).map(x=>x.getBoundingClientRect().bottom-top-pad));let usable=269*96/25.4;return {pages:Math.max(1,Math.ceil(height/usable)),remaining:(usable-height)*25.4/96};})()");
+            string json=await web.CoreWebView2.ExecuteScriptAsync("(()=>{const a=document.querySelector('article');if(!a)return null;const style=getComputedStyle(a),scale=parseFloat(style.zoom)||1,top=a.getBoundingClientRect().top,pad=parseFloat(style.paddingTop);const height=Math.max(0,...Array.from(a.children).map(x=>(x.getBoundingClientRect().bottom-top)/scale-pad));const usable=297*96/25.4-pad-parseFloat(style.paddingBottom);return {pages:Math.max(1,Math.ceil((height-1)/usable)),remaining:(usable-height)*25.4/96};})()");
             if(json=="null") return; using var doc=JsonDocument.Parse(json); int pages=doc.RootElement.GetProperty("pages").GetInt32(); double remaining=doc.RootElement.GetProperty("remaining").GetDouble();
             if(web!=preview||!PageIsCurrent("editor",generation)||capacityText is null) return;
             capacityText.Text=pages>1?$"内容估算约 {pages} 页；超出单页约 {-remaining:0} mm，实际分页以 PDF 为准。":$"A4 单页内容余量约 {Math.Max(0,remaining):0} mm；实际分页以 PDF 为准。";

@@ -1,0 +1,48 @@
+using ResumeStudio;
+using ResumeStudio.Services;
+using System.Text.Json;
+
+int checks=0;
+void Check(bool value,string label){if(!value)throw new Exception(label);checks++;Console.WriteLine("PASS: "+label);}
+var options=new JsonSerializerOptions {PropertyNamingPolicy=JsonNamingPolicy.CamelCase};
+var old=JsonSerializer.Deserialize<Resume>("""{"profile":{"name":"旧简历","future":true},"sections":[{"title":"技能","content":"- C#","visible":true}],"futureRoot":42}""",options)!;
+Check(old.PageMarginVertical==14&&old.PageMarginHorizontal==16&&old.HeaderAlignment=="template"&&old.Profile.Items.Count==0,"old document defaults and custom contact defaults");
+var template=new Template {Layout="classic"};
+var html=ResumeRenderer.Html(old,template);
+old.Sections[0].Content="|";
+Check(ResumeRenderer.Html(old,template).Contains("<p>|</p>"),"a pipe-only line remains ordinary editable text");
+old.Sections[0].Content="- C#";
+Check(html.Contains("width:210mm")&&html.Contains("@page{size:A4;margin:14mm 16mm}")&&html.Contains("zoom:1"),"A4 width and print geometry are independent of preview scale");
+old.PageMarginVertical=double.NaN;old.PageMarginHorizontal=80;old.SectionSpacing=double.PositiveInfinity;old.FontSize=double.NaN;
+html=ResumeRenderer.Html(old,template);
+Check(!html.Contains("NaN")&&!html.Contains("Infinity")&&html.Contains("margin:14mm 25mm"),"nonfinite or out-of-range settings have safe numeric CSS");
+List<List<string>> rows=[["类别","含 | 管道"],["C:\\tools","多行\n内容"]];
+string markdown=ResumeLayout.Table(rows);
+var table=ResumeLayout.ReadTable("前文\n"+markdown+"\n后文",5)!;
+Check(table.Rows.Count==2&&table.Rows[0][1]==rows[0][1]&&table.Rows[1].SequenceEqual(rows[1]),"editable table preserves pipes, backslashes and multiline cells");
+Check(ResumeLayout.ReadTable("普通段落",0) is null,"table editing does not select ordinary text");
+var image=new ResumeImage {Id="sample",DataUrl="data:image/png;base64,iVBORw0KGgo=",Alt="<script>alt</script>",Caption="作品 <img onerror=alert(1)>"};
+var draft=new Resume {Profile=new Profile {Name="张三",Items=[new ProfileItem {Emoji="🎓",Label="学历",Value="本科 <test>"}]},Sections=[new ResumeSection {Title="作品",Content="### 子板块\n"+ResumeLayout.ImageToken(image)+"\n"+markdown,Images=[image]}]};
+html=ResumeRenderer.Html(draft,template);
+Check(html.Contains("<figure")&&html.Contains("<h4>")&&html.Contains("<thead>")&&html.Contains("<tbody>")&&html.Contains("本科 &lt;test&gt;"),"custom contacts, directory, images and semantic table render together");
+Check(!html.Contains("<script>")&&!html.Contains("<img onerror=")&&html.Contains("&lt;script&gt;alt"),"image labels and captions are escaped");
+Check(html.Contains("max-height:60mm"),"module images default to a compact height suitable for a resume");
+image.DataUrl="https://example.com/tracker.png";html=ResumeRenderer.Html(draft,template);
+Check(!html.Contains("src='https://example.com")&&!ResumeLayout.ValidImage(image.DataUrl),"external images are rejected");
+draft.Sections[0].Visible=false;html=ResumeRenderer.Html(draft,template);
+Check(!html.Contains("<figure")&&!html.Contains("<h4>"),"hidden rich modules stay out of export");
+var roundtrip=JsonSerializer.Deserialize<Resume>(JsonSerializer.Serialize(draft,options),options)!;
+Check(roundtrip.Sections[0].Images[0].Caption==image.Caption&&roundtrip.Profile.Items[0].Value==draft.Profile.Items[0].Value,"rich content survives JSON round-trip");
+var preview=ResumeExamples.ForPreview(draft,template);
+Check(preview.Profile.Items.Count==1&&preview.Sections[0].Images.Count==1,"preview deep copy preserves rich data");
+Check(JsonSerializer.Serialize(old.Profile.ExtensionData,options).Contains("future"),"unknown profile fields survive typed editing");
+string ImageData(int length)=>"data:image/png;base64,"+new string('A',length);
+var oldImage=new ResumeImage {DataUrl=ImageData(700000)};
+var bulk=new Resume {Photo=ImageData(900000),Sections=[new ResumeSection {Images=[oldImage]}]};
+ResumeLayout.ReplaceImage(bulk,oldImage,ImageData(300000),options);
+Check(oldImage.DataUrl.Length<310000,"replacing a large image with a smaller image counts the final document size");
+string originalImage=oldImage.DataUrl;bool rejected=false;
+bulk.Photo=ImageData(990000);bulk.Sections.Add(new ResumeSection {Images=[new ResumeImage {DataUrl=ImageData(700000)}]});
+try{ResumeLayout.ReplaceImage(bulk,oldImage,ImageData(900000),options);}catch(IOException){rejected=true;}
+Check(rejected&&oldImage.DataUrl==originalImage,"oversized replacement keeps the original image intact");
+Console.WriteLine($"Layout checks passed: {checks}");
