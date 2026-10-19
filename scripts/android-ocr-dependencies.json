@@ -96,22 +96,22 @@
   },
   {
     "name": "firebase-annotations-16.0.0.jar",
-    "url": "https://repo.maven.apache.org/maven2/com/google/firebase/firebase-annotations/16.0.0/firebase-annotations-16.0.0.jar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-annotations/16.0.0/firebase-annotations-16.0.0.jar",
     "sha256": "8830f2e8a5e434cbc5e4bd18133073b6e8518a8ce8ec2ce6f3b273c91d9664c2"
   },
   {
     "name": "firebase-components-16.1.0.aar",
-    "url": "https://repo.maven.apache.org/maven2/com/google/firebase/firebase-components/16.1.0/firebase-components-16.1.0.aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-components/16.1.0/firebase-components-16.1.0.aar",
     "sha256": "82e91aa5ed186eedaf1f2210f5d241ba6e4456cf0c32949d5cdbe152b0e2e88b"
   },
   {
     "name": "firebase-encoders-16.1.0.jar",
-    "url": "https://repo.maven.apache.org/maven2/com/google/firebase/firebase-encoders/16.1.0/firebase-encoders-16.1.0.jar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-encoders/16.1.0/firebase-encoders-16.1.0.jar",
     "sha256": "8f89a74298bbccc2c543385208a2f0c67f603ce67e6ec21cc772e98e688f7cf5"
   },
   {
     "name": "firebase-encoders-json-17.1.0.aar",
-    "url": "https://repo.maven.apache.org/maven2/com/google/firebase/firebase-encoders-json/17.1.0/firebase-encoders-json-17.1.0.aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-encoders-json/17.1.0/firebase-encoders-json-17.1.0.aar",
     "sha256": "8295c755bcadc87a2aaee5b9e568f27fd138fd45ff1159a8ee747cf4c3a38d85"
   },
   {
