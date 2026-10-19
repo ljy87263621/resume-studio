@@ -1,7 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
 using ResumeStudio.Services;
 using Windows.Storage.Pickers;
 using Windows.System;
@@ -15,9 +14,9 @@ public sealed partial class MainWindow
     private readonly SemaphoreSlim interviewSaveLock=new(1,1);
     private async Task MarkInterview(InterviewDeck deck,InterviewQuestion question,string status)
     {
-        await interviewSaveLock.WaitAsync();string before=question.Status,at=question.ReviewedAt;
-        try {question.Status=status;question.ReviewedAt=DateTimeOffset.UtcNow.ToString("O");var saved=await api.Save("interviews",deck);deck.UpdatedAt=saved.UpdatedAt;}
-        catch {question.Status=before;question.ReviewedAt=at;throw;}
+        await interviewSaveLock.WaitAsync();var previous=CloneDocument(question);string before=question.Status,at=question.ReviewedAt;
+        try {InterviewProgress.Review(question,status,DateTimeOffset.UtcNow);deck.LastQuestionId=question.Id;var saved=await api.Save("interviews",deck);deck.UpdatedAt=saved.UpdatedAt;}
+        catch {question.Status=before;question.ReviewedAt=at;question.ReviewCount=previous.ReviewCount;question.IntervalDays=previous.IntervalDays;question.NextReviewAt=previous.NextReviewAt;throw;}
         finally {interviewSaveLock.Release();}
     }
     private async Task ShowInterviews()
@@ -29,8 +28,8 @@ public sealed partial class MainWindow
         body.RowDefinitions.Add(new RowDefinition {Height=GridLength.Auto});body.RowDefinitions.Add(new RowDefinition {Height=new GridLength(1,GridUnitType.Star)});body.RowDefinitions.Add(new RowDefinition {Height=GridLength.Auto});
         var tools=Stack(9);var toolbar=Row();toolbar.Children.Add(Button("＋ 导入题目文档",ImportInterviews,true));
         var select=new ComboBox {Header="题库",ItemsSource=decks,MinWidth=200,MaxWidth=360,Tag="interview-deck"};
-        var filter=new ComboBox {Header="练习范围",ItemsSource=new[]{"全部题目","未掌握","已记住","未标记"},MinWidth=140,Tag="interview-filter"};
-        string[] filters=["all","learning","remembered","unseen"];filter.SelectedIndex=Math.Max(0,Array.IndexOf(filters,interviewFilter));
+        var filter=new ComboBox {Header="练习范围",ItemsSource=new[]{"全部题目","未掌握","已记住","未标记","今日待复习"},MinWidth=140,Tag="interview-filter"};
+        string[] filters=["all","learning","remembered","unseen","due"];filter.SelectedIndex=Math.Max(0,Array.IndexOf(filters,interviewFilter));
         toolbar.Children.Add(select);toolbar.Children.Add(filter);
         InterviewDeck? deck=decks.FirstOrDefault(d=>d.Id==interviewDeckId)??decks.FirstOrDefault();select.SelectedItem=deck;
         var remove=Button("删除题库",async ()=> {var selected=deck;if(selected is null)return;if(await Confirm("删除这份题库？",selected.Title+"，题目及背诵进度将一并删除。")){await api.Delete("interviews/"+selected.Id);interviewDeckId="";interviewIndex=0;await Navigate("interviews");}});remove.IsEnabled=deck is not null;toolbar.Children.Add(remove);
@@ -38,16 +37,17 @@ public sealed partial class MainWindow
         var host=new Border {MaxWidth=1040,HorizontalAlignment=HorizontalAlignment.Stretch,Tag="interview-card-host"};Grid.SetRow(host,1);body.Children.Add(host);
         var footer=Stack(8);footer.Margin=new Thickness(0,12,0,0);
         var arrows=Row();arrows.HorizontalAlignment=HorizontalAlignment.Center;
-        List<InterviewQuestion> visible=[];ScrollViewer? answerScroll=null;bool saving=false;var wheel=new InterviewWheelNavigator();
+        List<InterviewQuestion> visible=[];bool saving=false;
         Button previous=null!,next=null!;var position=Text("",13);position.VerticalAlignment=VerticalAlignment.Center;position.Tag="interview-position";
         previous=Button("← 上一题",()=>{Move(-1);return Task.CompletedTask;});
         next=Button("下一题 →",()=>{Move(1);return Task.CompletedTask;});arrows.Children.Add(previous);arrows.Children.Add(position);arrows.Children.Add(next);footer.Children.Add(arrows);
-        var tip=Text("滚轮或左右方向键切题；长答案区域先滚动阅读，到边界后继续滚动即可切题。标记后自动进入下一题。",11);tip.HorizontalAlignment=HorizontalAlignment.Center;footer.Children.Add(tip);Grid.SetRow(footer,2);body.Children.Add(footer);
+        var tip=Text("使用左右方向键或按钮切题；滚动鼠标滚轮可阅读答案。标记后自动进入下一题。",11);tip.HorizontalAlignment=HorizontalAlignment.Center;footer.Children.Add(tip);Grid.SetRow(footer,2);body.Children.Add(footer);
+        toolbar.Children.Add(Button("随机抽题",()=>{if(visible.Count>0){interviewIndex=Random.Shared.Next(visible.Count);Draw();_=SaveInterviewBookmark(deck!,visible[interviewIndex].Id);}return Task.CompletedTask;}));
         bool Alive()=>PageIsCurrent("interviews",generation);
-        bool Move(int delta){if(!Alive()||saving||visible.Count==0)return false;int target=Math.Clamp(interviewIndex+delta,0,visible.Count-1);if(target==interviewIndex)return false;interviewIndex=target;Draw();return true;}
+        bool Move(int delta){if(!Alive()||saving||visible.Count==0)return false;int target=Math.Clamp(interviewIndex+delta,0,visible.Count-1);if(target==interviewIndex)return false;interviewIndex=target;Draw();_=SaveInterviewBookmark(deck!,visible[interviewIndex].Id);return true;}
         void Draw()
         {
-            if(!Alive())return;answerScroll=null;visible=deck is null?[]:InterviewProgress.Filter(deck,interviewFilter).ToList();interviewIndex=Math.Clamp(interviewIndex,0,Math.Max(0,visible.Count-1));
+            if(!Alive())return;visible=deck is null?[]:InterviewProgress.Filter(deck,interviewFilter).ToList();interviewIndex=Math.Clamp(interviewIndex,0,Math.Max(0,visible.Count-1));
             var totals=InterviewProgress.Count(deck?.Questions??[]);stats.Text=$"共 {totals.Total} 题  ·  已记住 {totals.Remembered}  ·  未掌握 {totals.Learning}  ·  未标记 {totals.Unseen}";
             previous.IsEnabled=!saving&&interviewIndex>0;next.IsEnabled=!saving&&interviewIndex+1<visible.Count;select.IsEnabled=!saving;filter.IsEnabled=!saving;remove.IsEnabled=!saving&&deck is not null;
             position.Text=visible.Count==0?"0 / 0":$"第 {interviewIndex+1} / {visible.Count} 题";
@@ -57,7 +57,7 @@ public sealed partial class MainWindow
             var answer=Stack(12);var toggle=new ToggleSwitch {Header="显示答案",IsOn=true};answer.Children.Add(toggle);
             var text=Text(string.IsNullOrWhiteSpace(q.Answer)?"这道题没有正文，可以先口述你的答案。":q.Answer,15);text.IsTextSelectionEnabled=true;text.LineHeight=25;answer.Children.Add(text);
             toggle.Toggled+=(_,_)=>text.Visibility=toggle.IsOn?Visibility.Visible:Visibility.Collapsed;
-            answerScroll=new ScrollViewer {Content=answer,HorizontalScrollMode=ScrollMode.Disabled,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalContentAlignment=HorizontalAlignment.Stretch};Grid.SetRow(answerScroll,1);card.Children.Add(answerScroll);
+            var answerScroll=new ScrollViewer {Content=answer,HorizontalScrollMode=ScrollMode.Disabled,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalContentAlignment=HorizontalAlignment.Stretch};Grid.SetRow(answerScroll,1);card.Children.Add(answerScroll);
             var verdict=new Grid {ColumnSpacing=14};verdict.ColumnDefinitions.Add(new ColumnDefinition());verdict.ColumnDefinitions.Add(new ColumnDefinition());
             async Task Review(string status){if(saving||!Alive())return;saving=true;Draw();try {await MarkInterview(deck!,q,status);if(!Alive())return;var remains=InterviewProgress.Filter(deck!,interviewFilter).ToList();if(remains.Contains(q))interviewIndex=Math.Min(interviewIndex+1,Math.Max(0,remains.Count-1));}finally {saving=false;if(Alive())Draw();}}
             var remembered=Button("✓ 已记住",()=>Review("remembered"),true);remembered.Tag="interview-remembered";remembered.HorizontalAlignment=HorizontalAlignment.Stretch;remembered.IsEnabled=!saving;
@@ -66,14 +66,11 @@ public sealed partial class MainWindow
         }
         select.SelectionChanged+=(_,_)=>{if(!Alive()||saving)return;deck=select.SelectedItem as InterviewDeck;interviewDeckId=deck?.Id??"";interviewIndex=0;Draw();};
         filter.SelectionChanged+=(_,_)=>{if(!Alive()||saving)return;interviewFilter=filters[Math.Max(0,filter.SelectedIndex)];interviewIndex=0;Draw();};
-        host.AddHandler(UIElement.PointerWheelChangedEvent,(PointerEventHandler)((_,e)=>{
-            if(!Alive()||saving)return;int delta=e.GetCurrentPoint(host).Properties.MouseWheelDelta;if(delta==0)return;
-            bool inAnswer=false;for(var parent=e.OriginalSource as DependencyObject;parent is not null;parent=VisualTreeHelper.GetParent(parent))if(parent==answerScroll){inAnswer=true;break;}
-            if(inAnswer&&answerScroll is not null&&InterviewWheelNavigator.ReadingAnswer(delta,answerScroll.VerticalOffset,answerScroll.ScrollableHeight))return;
-            e.Handled=true;int step=wheel.Step(delta,DateTimeOffset.UtcNow);if(step!=0)DispatcherQueue.TryEnqueue(()=>Move(step));
-        }),true);
         foreach(var key in new[]{VirtualKey.Left,VirtualKey.Right}){var shortcut=new KeyboardAccelerator {Key=key};shortcut.Invoked+=(_,e)=>{e.Handled=true;Move(key==VirtualKey.Left?-1:1);};body.KeyboardAccelerators.Add(shortcut);}
-        interviewDeckId=deck?.Id??"";Draw();
+        interviewDeckId=deck?.Id??"";if(deck is not null)interviewIndex=Math.Max(0,InterviewProgress.Filter(deck,interviewFilter).ToList().FindIndex(q=>q.Id==deck.LastQuestionId));Draw();
+    }
+    private async Task SaveInterviewBookmark(InterviewDeck deck,string id){
+        await interviewSaveLock.WaitAsync();try{deck.LastQuestionId=id;var saved=await api.Save("interviews",deck);deck.UpdatedAt=saved.UpdatedAt;}catch(Exception ex){Feedback("断点保存未完成",ex.Message);}finally{interviewSaveLock.Release();}
     }
     private async Task ImportInterviews()
     {

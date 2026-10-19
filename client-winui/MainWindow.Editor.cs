@@ -56,6 +56,7 @@ public sealed partial class MainWindow
         toolbar.PrimaryCommands.Add(EditorAction("我的简历",Symbol.Back,()=>Navigate("resumes")));
         toolbar.PrimaryCommands.Add(EditorAction("保存",Symbol.Save,async ()=> {await SaveCurrent();Feedback("简历已保存","修改已写入本机。");}));
         toolbar.PrimaryCommands.Add(EditorAction("导出 PDF",Symbol.Download,ExportPdf));
+        toolbar.SecondaryCommands.Add(EditorAction("导出可编辑 Word",Symbol.Document,ExportWord));
         layoutButton=EditorAction("排版设置",Symbol.Font,()=> {ToggleLayoutSettings();return Task.CompletedTask;});
         ToolTipService.SetToolTip(layoutButton,"展开模板、字体、颜色、字号与行距设置");toolbar.PrimaryCommands.Add(layoutButton);
         toolbar.PrimaryCommands.Add(EditorAction("刷新预览",Symbol.Refresh,RenderPreview));

@@ -22,7 +22,8 @@ public sealed partial class MainWindow
         int generation=navigationRevision;
         Heading("求职日程","把笔试、面试、投递截止和自己的待办安排放在一起。");
         var entries=await ReadAgenda(); if(!PageIsCurrent("schedule",generation)) return;
-        var panel=Stack(16); var tools=Row();
+        var panel=Stack(16);
+        panel.Children.Add(Button("导出到系统日历（ICS）",async ()=>{var picker=new Windows.Storage.Pickers.FileSavePicker {SuggestedFileName="求职日程"};picker.FileTypeChoices.Add("日历文件",new[]{".ics"});InitPicker(picker);var file=await picker.PickSaveFileAsync();if(file is not null){await File.WriteAllTextAsync(file.Path,CalendarExport.Create(await ReadAgenda()),new System.Text.UTF8Encoding(false));Success("日历已导出","可导入系统日历，在应用关闭时由日历提醒。");}})); var tools=Row();
         tools.Children.Add(Button("＋ 新增日程",()=>EditSchedule(new ScheduleItem {StartAt=new DateTimeOffset(scheduleDate.AddHours(9),TimeZoneInfo.Local.GetUtcOffset(scheduleDate)).ToString("O")}),true));
         tools.Children.Add(Button("今天",async ()=> {scheduleDate=DateTime.Today; scheduleView=0; await Navigate("schedule");})); tools.Children.Add(Button("刷新",()=>Navigate("schedule"))); panel.Children.Add(tools);
         var metrics=new Grid {ColumnSpacing=10};for(int i=0;i<3;i++)metrics.ColumnDefinitions.Add(new ColumnDefinition {Width=new GridLength(1,GridUnitType.Star)});
@@ -30,7 +31,7 @@ public sealed partial class MainWindow
         foreach(var stat in new[] {("今日安排",pending.Count(e=>e.Date==DateTime.Today),"#245AE8"),("近七天",pending.Count(e=>e.End>=DateTimeOffset.Now&&e.Date<=DateTime.Today.AddDays(6)),"#167D78"),("已到期待办",pending.Count(e=>e.Overdue(DateTimeOffset.Now)),"#CC7B20")}) {
             var content=Stack(4);var value=Text(stat.Item2.ToString(),26,true);value.Foreground=Brush(stat.Item3);content.Children.Add(value);content.Children.Add(Text(stat.Item1,12));var card=Card(content,new Thickness(16));Grid.SetColumn(card,metricIndex++);metrics.Children.Add(card);
         }panel.Children.Add(metrics);
-        panel.Children.Add(Text("投递记录中的下一次安排会自动显示；在日程中可另外添加多次面试或自定义事项。提醒只在软件运行时显示，重新打开会检查未处理事项。",12));
+        panel.Children.Add(Text("投递记录中的下一次安排会自动显示；在日程中可另外添加多次面试或自定义事项。运行时发送系统通知；关闭软件后的提醒可使用导出的系统日历，重新打开也会检查未处理事项。",12));
         var grid=new Grid {ColumnSpacing=18,RowSpacing=18}; grid.ColumnDefinitions.Add(new ColumnDefinition {Width=GridLength.Auto}); grid.ColumnDefinitions.Add(new ColumnDefinition {Width=new GridLength(1,GridUnitType.Star)}); grid.RowDefinitions.Add(new RowDefinition {Height=GridLength.Auto}); grid.RowDefinitions.Add(new RowDefinition {Height=GridLength.Auto});
         scheduleCalendar=new CalendarView {SelectionMode=CalendarViewSelectionMode.Single,Language="zh-CN",FirstDayOfWeek=Windows.Globalization.DayOfWeek.Monday,HorizontalAlignment=HorizontalAlignment.Stretch,MinWidth=320,MinDate=new DateTimeOffset(new DateTime(2000,1,1)),MaxDate=new DateTimeOffset(new DateTime(2100,12,31))};
         var calendar=scheduleCalendar;

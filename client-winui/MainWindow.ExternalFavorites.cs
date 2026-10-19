@@ -27,6 +27,7 @@ public sealed partial class MainWindow
         var content=Stack(12); if(!string.IsNullOrEmpty(message)) content.Children.Add(Text(message,12));
         var title=new TextBox { Header="职位名称",Text=job.Title,MaxLength=250 }; var company=new TextBox { Header="公司",Text=job.Company,MaxLength=200 }; var location=new TextBox { Header="城市 / 地点",Text=job.Location,MaxLength=200 }; var salary=new TextBox { Header="薪资",Text=job.Salary,MaxLength=100 }; var url=new TextBox { Header="职位详情链接",Text=job.Url,MaxLength=3000 }; var description=new TextBox { Header="职位描述（可从原站复制）",AcceptsReturn=true,Text=job.Description,TextWrapping=TextWrapping.Wrap,MinHeight=100,MaxLength=30000 }; var notes=new TextBox { Header="备注",AcceptsReturn=true,Text=job.Notes,TextWrapping=TextWrapping.Wrap,MinHeight=60,MaxLength=5000 };
         foreach(var field in new[] {title,company,location,salary,url,description,notes}) content.Children.Add(field);
+        var tags=new TextBox {Header="标签（逗号分隔）",Text=job.Tags,MaxLength=500};var deadline=new TextBox {Header="截止时间（含时区，可留空）",Text=job.DeadlineAt,MaxLength=50};content.Children.Add(tags);content.Children.Add(deadline);
         bool created=true;
         var dialog=SaveForm(create?"核对并收藏职位":"编辑收藏",content,"保存收藏",async ()=> {
         if(string.IsNullOrWhiteSpace(title.Text)) throw new InvalidOperationException("请填写职位名称。");JobWorkflow.ValidateLink(url.Text);
@@ -35,7 +36,7 @@ public sealed partial class MainWindow
         // Only external links use the canonical URL identifier; live provider IDs remain unchanged.
         if(create)job.Id=normalized.Job.Id;
         if(create||job.Id.StartsWith("external-"))job.Source=normalized.Job.Source;
-        job.InfoStatus="用户核对";
+        job.Tags=tags.Text;job.DeadlineAt=deadline.Text;job.InfoStatus="用户核对";
         if(create){var result=await api.Post<CollectionResult<Job>>("favorites/collect",job);created=result.Created;job=result.Record;}
         else {job=await api.Save("favorites",job);}
         });

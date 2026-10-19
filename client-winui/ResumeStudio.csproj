@@ -23,7 +23,7 @@
     <TrimMode Condition="'$(LightweightPublish)' == 'true'">partial</TrimMode>
     <JsonSerializerIsReflectionEnabledByDefault Condition="'$(LightweightPublish)' == 'true'">true</JsonSerializerIsReflectionEnabledByDefault>
     <BuiltInComInteropSupport Condition="'$(LightweightPublish)' == 'true'">true</BuiltInComInteropSupport>
-    <Version>0.9.4</Version>
+    <Version>0.9.11</Version>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
@@ -41,6 +41,9 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
     <!-- Reference only the WinUI stack; the umbrella package also ships unused AI/ML and Widgets runtimes. -->
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="1.8.260224000" />
+    <!-- Resource-only source for the notification runtime satellite; build.ps1
+         extracts one DLL without adding the umbrella runtime's other payloads. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="1.8.260317003" ExcludeAssets="all" />
     <PackageReference Include="PdfPig" Version="0.1.16" />
   </ItemGroup>
   <!-- Preserve the complete application (including JSON models / XAML bindings) and native interop.

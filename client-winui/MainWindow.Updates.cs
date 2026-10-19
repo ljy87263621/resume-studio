@@ -16,7 +16,7 @@ public sealed partial class MainWindow
     private IReadOnlyList<ReleaseNote> updateNotes=[];
     private string updateNotesError="";
     private ReleaseIdentity? checkedReleaseIdentity;
-    private static bool VerificationSession=>Environment.GetCommandLineArgs().Any(a=>a is "--self-test" or "--feature-test" or "--iteration-test" or "--benchmark" or "--appearance-review" or "--template-assets" or "--workbench-test" or "--navigation-test" or "--capture-layout-test" or "--favorites-editor-test" or "--lightweight-test" or "--interview-test");
+    private static bool VerificationSession=>Environment.GetCommandLineArgs().Any(a=>a is "--self-test" or "--feature-test" or "--iteration-test" or "--benchmark" or "--appearance-review" or "--template-assets" or "--workbench-test" or "--navigation-test" or "--capture-layout-test" or "--favorites-editor-test" or "--lightweight-test" or "--interview-test" or "--notification-test" or "--resume-import-test");
     private ReleaseUpdate UpdateClient()=>new(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"Assets","UpdatePublicKey.pem")));
     private UIElement UpdateSettingsCard()
     {
@@ -75,11 +75,11 @@ public sealed partial class MainWindow
         updateBusy=true; string workspace=Path.Combine(api.DataDirectory,"updates",Guid.NewGuid().ToString("N")); Directory.CreateDirectory(workspace);
         try {
             using var cancellation=CancellationTokenSource.CreateLinkedTokenSource(updateCancellation.Token);
-            var status=Text("正在下载更新包…",14); var loading=new ContentDialog {XamlRoot=shell.XamlRoot,Title="下载软件更新",Content=status,CloseButtonText="取消"};
+            var watch=System.Diagnostics.Stopwatch.StartNew();var status=Text("正在下载更新包…",14); var progress=new ProgressBar {Minimum=0,Maximum=100,Height=6};var progressPanel=Stack(10);progressPanel.Children.Add(status);progressPanel.Children.Add(progress);var loading=new ContentDialog {XamlRoot=shell.XamlRoot,Title="下载软件更新",Content=progressPanel,CloseButtonText="取消"};
             loading.CloseButtonClick+=(_,_)=>cancellation.Cancel(); var shown=loading.ShowAsync(); string source;
             try {
                 using var client=UpdateClient(); string zip=Path.Combine(workspace,selected.Identity.PackageName);
-                await client.Download(selected,preferences.UpdateRoute,zip,new Progress<double>(p=>status.Text=$"正在下载：{p:0}%"),cancellation.Token);
+                await client.Download(selected,preferences.UpdateRoute,zip,new Progress<double>(p=>{progress.Value=p;status.Text=$"正在下载：{p:0}% · {selected.Package.Size*p/100/1024/Math.Max(0.1,watch.Elapsed.TotalSeconds):0} KiB/s";}),cancellation.Token);
                 status.Text="下载完成，正在校验和准备安装…"; source=await UpdateInstaller.Prepare(zip,workspace,selected.Identity,cancellation.Token);
                 File.Delete(zip); // The verified extracted payload is sufficient; avoid keeping both copies.
             }

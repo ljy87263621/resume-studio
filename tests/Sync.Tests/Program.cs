@@ -10,6 +10,7 @@ var local=Data("one"); var remote=Data("two");
 ModelRoundTrip.Verify();
 await ConfirmationCoverage.RunAsync();
 await ComparisonCoverage.RunAsync();
+await MergeCoverage.RunAsync();
 await DirectoryCoverage.RunAsync();
 await AutoCreateCoverage.RunAsync();
 await ContentRevisionCoverage.RunAsync();

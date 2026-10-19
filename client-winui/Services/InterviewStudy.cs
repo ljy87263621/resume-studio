@@ -11,6 +11,9 @@ public sealed class InterviewQuestion
     public string Answer {get;set;}="";
     public string Status {get;set;}="unseen";
     public string ReviewedAt {get;set;}="";
+    public int ReviewCount {get;set;}
+    public int IntervalDays {get;set;}
+    public string NextReviewAt {get;set;}="";
 }
 public sealed class InterviewDeck
 {
@@ -18,6 +21,7 @@ public sealed class InterviewDeck
     public string Id {get;set;}=Guid.NewGuid().ToString();
     public string Title {get;set;}="";
     public string SourceName {get;set;}="";
+    public string LastQuestionId {get;set;}="";
     public string UpdatedAt {get;set;}="";
     public List<InterviewQuestion> Questions {get;set;}=[];
     public override string ToString()=>Title;
@@ -26,19 +30,11 @@ public readonly record struct InterviewCounts(int Total,int Remembered,int Learn
 public static class InterviewProgress
 {
     public static InterviewCounts Count(IEnumerable<InterviewQuestion> questions){var list=questions.ToList();return new(list.Count,list.Count(q=>q.Status=="remembered"),list.Count(q=>q.Status=="learning"),list.Count(q=>q.Status=="unseen"));}
-    public static IEnumerable<InterviewQuestion> Filter(InterviewDeck deck,string status)=>deck.Questions.Where(q=>status=="all"||q.Status==status);
-    public static string Label(string status)=>status switch {"remembered"=>"已记住","learning"=>"未掌握",_=>"未标记"};
-}
-public sealed class InterviewWheelNavigator
-{
-    private int accumulated;
-    private DateTimeOffset last=DateTimeOffset.MinValue;
-    public static bool ReadingAnswer(int delta,double offset,double extent)=>delta>0?offset>1:offset<extent-1;
-    public int Step(int delta,DateTimeOffset now)
-    {
-        if(delta==0||(now-last).TotalMilliseconds<350)return 0;
-        accumulated=Math.Sign(accumulated)==Math.Sign(delta)?accumulated+delta:delta;
-        if(Math.Abs(accumulated)<120)return 0;
-        last=now;accumulated=0;return delta<0?1:-1;
+    public static IEnumerable<InterviewQuestion> Filter(InterviewDeck deck,string status)=>deck.Questions.Where(q=>status=="all"||status=="due"&&(!DateTimeOffset.TryParse(q.NextReviewAt,out var due)||due<=DateTimeOffset.Now)||q.Status==status);
+    public static void Review(InterviewQuestion question,string status,DateTimeOffset now){
+        question.Status=status;question.ReviewedAt=now.ToString("O");question.ReviewCount=Math.Min(100000,question.ReviewCount+1);
+        question.IntervalDays=status=="remembered"?(question.IntervalDays==0?1:Math.Min(90,question.IntervalDays*2+1)):0;
+        question.NextReviewAt=(status=="remembered"?now.AddDays(question.IntervalDays):now.AddMinutes(10)).ToString("O");
     }
+    public static string Label(string status)=>status switch {"remembered"=>"已记住","learning"=>"未掌握",_=>"未标记"};
 }

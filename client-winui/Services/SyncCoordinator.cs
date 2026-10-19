@@ -51,7 +51,7 @@ public sealed class SyncCoordinator(ISyncLocalStore local,ISyncRemoteStore remot
         if(action==SyncAction.Push)
         {
             var envelope=plan.RemoteEnvelope is null?SyncProtocol.Create(current.Snapshot,deviceId):(JsonObject)plan.RemoteEnvelope.DeepClone();
-            SyncProtocol.WriteSnapshot(envelope,current.Snapshot); envelope["deviceId"]=deviceId; envelope["snapshotId"]=Guid.NewGuid().ToString("N"); envelope["createdAt"]=DateTimeOffset.UtcNow.ToString("O");
+            SyncProtocol.WriteSnapshot(envelope,current.Snapshot); envelope["deviceId"]=deviceId;envelope["deviceName"]=Environment.MachineName; envelope["snapshotId"]=Guid.NewGuid().ToString("N"); envelope["createdAt"]=DateTimeOffset.UtcNow.ToString("O");
             var bytes=Encoding.UTF8.GetBytes(envelope.ToJsonString()); etag=await remote.WriteAsync(bytes,plan.ETag,cancellationToken); dataHash=SyncProtocol.Hash(current.Snapshot);
         }
         else if(action==SyncAction.Pull)
@@ -66,5 +66,17 @@ public sealed class SyncCoordinator(ISyncLocalStore local,ISyncRemoteStore remot
         Directory.CreateDirectory(directory); string temporary=baselineFile+".tmp";
         await File.WriteAllTextAsync(temporary,JsonSerializer.Serialize(new SyncBaseline(target,dataHash,etag,DateTimeOffset.UtcNow.ToString("O"),dataBytes)),cancellationToken); File.Move(temporary,baselineFile,true);
         return action;
+    }
+    public async Task<SyncAction> MergeAsync(SyncPlan plan,JsonObject merged,CancellationToken cancellationToken=default)
+    {
+        await local.ValidateAsync(merged,cancellationToken);
+        if((await local.ReadAsync(cancellationToken)).Hash!=plan.Local.Hash||(await remote.ReadAsync(cancellationToken))?.ETag!=plan.ETag)throw new IOException("资料已变化，请重新检查合并。");
+        if(plan.RemoteEnvelope is null)throw new IOException("云端资料不存在。");
+        string backups=Path.Combine(directory,"sync-backups");Directory.CreateDirectory(backups);
+        string backupName="merge-remote-"+Guid.NewGuid().ToString("N")+".json";
+        await File.WriteAllTextAsync(Path.Combine(backups,backupName),SyncProtocol.Snapshot(plan.RemoteEnvelope,plan.Local.Snapshot).ToJsonString(),cancellationToken);
+        await File.WriteAllTextAsync(Path.Combine(backups,backupName+".info"),JsonSerializer.Serialize(new {device=plan.RemoteEnvelope["deviceName"]?.GetValue<string>()??plan.RemoteEnvelope["deviceId"]?.GetValue<string>()??"未知云端设备",source="云端合并前",at=DateTimeOffset.UtcNow.ToString("O")}),cancellationToken);
+        var applied=await local.ApplyAsync(plan.Local.Hash,merged,cancellationToken);
+        return await ExecuteAsync(new(SyncAction.Push,applied,plan.RemoteEnvelope,plan.ETag,plan.Target),SyncAction.Push,cancellationToken);
     }
 }

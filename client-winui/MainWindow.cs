@@ -50,6 +50,9 @@ public sealed partial class MainWindow : Window
         var catalogue=Path.Combine(AppContext.BaseDirectory,"Assets","TemplateCatalog.json");
         if(File.Exists(catalogue)) templates=JsonSerializer.Deserialize<List<Template>>(File.ReadAllText(catalogue),BackendClient.Json)??[];
         if(templates.Count>0) ShowTemplates();
+        var searchShortcut=new Microsoft.UI.Xaml.Input.KeyboardAccelerator {Key=Windows.System.VirtualKey.K,Modifiers=Windows.System.VirtualKeyModifiers.Control};
+        searchShortcut.Invoked+=async (_,e)=>{e.Handled=true;await Run(()=>ShowWorkspaceTools());};shell.KeyboardAccelerators.Add(searchShortcut);
+        SystemNotices.Activated+=()=>DispatcherQueue.TryEnqueue(()=>{Activate();_=Run(()=>Navigate("schedule"));});
         Content=shell;
         Activated+=(_,_)=> { if(haruStyle) NativeWindowGlass.Enable(WinRT.Interop.WindowNative.GetWindowHandle(this),darkStyle); };
         shell.Loaded+=async (_,_)=>await Run(Initialize);
@@ -106,12 +109,14 @@ public sealed partial class MainWindow : Window
         await AcknowledgeUpdateStartup();
         if(!VerificationSession)_=Run(MaintainStorageAfterStartup);
         if(!VerificationSession&&preferences.CheckUpdatesOnStartup) _=Run(()=>CheckForUpdates(true));
+        if(Environment.GetCommandLineArgs().Contains("--notification-test")){string output=Environment.GetEnvironmentVariable("RESUMESTUDIO_TEST_OUTPUT")??api.DataDirectory;Directory.CreateDirectory(output);try{bool passed=await SystemNotices.VerifyAsync();await File.WriteAllTextAsync(Path.Combine(output,"notification-result.json"),JsonSerializer.Serialize(new {passed,error=SystemNotices.LastError},BackendClient.Json));}catch(Exception ex){await File.WriteAllTextAsync(Path.Combine(output,"notification-result.json"),JsonSerializer.Serialize(new {passed=false,error=ex.ToString()},BackendClient.Json));}return;}
         if(Environment.GetCommandLineArgs().Contains("--benchmark")) { await Benchmark(); return; }
         if(Environment.GetCommandLineArgs().Contains("--iteration-test")) { await IterationOnlyTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--feature-test")) { await FeatureTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--navigation-test")) { await NavigationTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--capture-layout-test")) { await CaptureLayoutTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--favorites-editor-test")) { await FavoritesEditorTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--resume-import-test")) { await ResumeImportFeatureTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--interview-test")) { await InterviewFeatureTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--lightweight-test")) { await LightweightTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--workbench-test")) { await WorkbenchTest(); return; }
@@ -181,7 +186,7 @@ public sealed partial class MainWindow : Window
     {
         int generation=navigationRevision;
         Heading("我的简历","每个求职方向都可以有一份独立简历，编辑时自动保存。");
-        var panel=Stack(18); var toolbar=Row(); toolbar.Children.Add(Button("＋ 新建简历",()=>Navigate("templates"),true)); toolbar.Children.Add(Button("导入备份",ImportResume)); panel.Children.Add(toolbar);
+        var panel=Stack(18); var toolbar=Row(); toolbar.Children.Add(Button("＋ 新建简历",()=>Navigate("templates"),true)); toolbar.Children.Add(Button("从 PDF 导入",ImportPdfResume));toolbar.Children.Add(Button("导入备份",ImportResume)); panel.Children.Add(toolbar);
         var list=await api.Get<List<Resume>>("resumes");
         if(!PageIsCurrent("resumes",generation)) return;
         if(list.Count==0) panel.Children.Add(Card(Text("还没有简历。从模板中心选择一套模板，开始填写你的经历。",16)));
@@ -277,6 +282,7 @@ public sealed partial class MainWindow : Window
     {
         var c=Stack(12);
         if(!favorite){c.Children.Add(Text(j.Title,20,true)); c.Children.Add(Text($"{j.Company}  ·  {j.Location}  ·  {j.Experience}",13)); c.Children.Add(Text($"{j.Source}  ·  {(string.IsNullOrEmpty(j.PublishedAt)?j.InfoStatus:"更新："+j.PublishedAt)}  ·  {j.Salary}",11));}
+        if(!string.IsNullOrWhiteSpace(j.Tags))c.Children.Add(Text("标签："+j.Tags,12));var attention=WorkspaceAlerts.For(j.DeadlineAt,"");if(attention!="")c.Children.Add(Text(attention,13,true));
         if(!string.IsNullOrWhiteSpace(j.Notes)) c.Children.Add(Text("备注："+j.Notes,12));
         var description=Text(j.Description,13);
         if(favorite)c.Children.Add(new ScrollViewer {Content=description,MaxHeight=320,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollMode=ScrollMode.Disabled});

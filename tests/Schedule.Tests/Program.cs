@@ -22,3 +22,9 @@ upcoming.Completed=false;upcoming.StartAt=now.AddDays(31).ToString("O");Check(!S
 upcoming.StartAt=now.AddDays(-1).ToString("O");Check(ScheduleService.Merge([upcoming],[])[0].Overdue(now),"past incomplete event remains overdue");
 var orphan=ScheduleService.Merge([upcoming],[])[0];Check(orphan.Item is not null&&orphan.Company=="","deleting linked application retains independent schedule");
 Console.WriteLine($"PASS: {checks} schedule date, reminder and projection checks");
+
+var calendarItem=new ScheduleItem {Id="calendar",Title="面试,中文;\n"+new string('中',100),StartAt="2026-10-18T09:00:00+08:00",ReminderEnabled=true,ReminderMinutes=15,AllDay=true};
+var ics=CalendarExport.Create(ScheduleService.Merge(new[]{calendarItem},Array.Empty<ApplicationRecord>()));
+if(!ics.Contains("DTSTART;VALUE=DATE:20261018")||!ics.Contains("BEGIN:VALARM")||ics.Split("\r\n").Any(line=>System.Text.Encoding.UTF8.GetByteCount(line)>75))throw new Exception("ICS export, all-day dates or Unicode folding failed");
+if(!WorkspaceAlerts.For(DateTimeOffset.Now.AddDays(1).ToString("O"),DateTimeOffset.Now.AddDays(-8).ToString("O"),"已投递").Contains("未跟进"))throw new Exception("Follow-up alert missing");
+Console.WriteLine("PASS: calendar all-day dates, alarm, UTF-8 folding and follow-up alerts");

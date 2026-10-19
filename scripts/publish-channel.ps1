@@ -1,8 +1,8 @@
-param([Parameter(Mandatory)][ValidateSet('stable','nightly')][string]$Channel)
+﻿param([Parameter(Mandatory)][ValidateSet('stable','nightly')][string]$Channel)
 $ErrorActionPreference='Stop'
 $repository=$env:GITHUB_REPOSITORY
 if($repository -ne 'scj040921/resume-studio'){throw 'Channel publication only supports the official repository'}
-$index=Join-Path 'release' ($Channel+'.json')
+$index=Join-Path 'release' ('desktop-'+$Channel+'.json')
 $bytes=[IO.File]::ReadAllBytes((Join-Path (Get-Location) 'release/release-info.json'))
 $signature=(Get-Content release/release-info.sig -Raw).Trim()
 $rsa=[Security.Cryptography.RSA]::Create()
@@ -11,6 +11,7 @@ try {
     if(!$rsa.VerifyData($bytes,[Convert]::FromBase64String($signature),[Security.Cryptography.HashAlgorithmName]::SHA256,[Security.Cryptography.RSASignaturePadding]::Pss)){throw 'Channel metadata signature is invalid'}
 } finally {$rsa.Dispose()}
 $info=Get-Content release/release-info.json -Raw|ConvertFrom-Json
+if($info.platform -ne 'desktop'){throw 'Desktop channel requires signed desktop metadata'}
 if($info.channel -ne $Channel -or $info.packageSize -le 0 -or $info.packageSize -gt 512000000 -or $info.commit -notmatch '^[0-9a-f]{40}$'){throw 'Channel does not match the signed release'}
 if(($Channel -eq 'stable' -and $info.tag -ne ('v'+$info.version)) -or ($Channel -eq 'nightly' -and $info.tag -notmatch '^nightly-\d{8}-[0-9a-f]{8}$')){throw 'Invalid channel release tag'}
 [IO.File]::WriteAllText($index,(@{data=[Convert]::ToBase64String($bytes);signature=$signature}|ConvertTo-Json -Compress),[Text.UTF8Encoding]::new($false))
@@ -22,11 +23,6 @@ foreach($name in @($info.packageName,'release-info.json','release-info.sig')){
 }
 $package=@($published.assets|Where-Object {$_.name -eq $info.packageName})[0]
 if($package.size -ne $info.packageSize){throw 'Published package size does not match the signed index'}
-if($info.PSObject.Properties.Name -contains 'androidPackageName'){
-    if($info.androidPackageName -notmatch '^ResumeStudio-Android-v\d+\.\d+\.\d+(?:-nightly\.\d{8}\.[0-9a-f]{8})?\.apk$' -or $info.androidSha256 -notmatch '^[0-9a-f]{64}$' -or $info.androidPackageSize -le 0 -or $info.androidPackageSize -gt 150000000 -or $info.androidVersionCode -le 0 -or !$info.androidVersionName){throw 'Signed Android APK metadata is invalid'}
-    $apk=@($published.assets|Where-Object {$_.name -eq $info.androidPackageName})
-    if($apk.Count -ne 1 -or $apk[0].size -ne $info.androidPackageSize){throw 'Published Android APK does not match signed metadata'}
-}
 if($info.PSObject.Properties.Name -contains 'changeLogName'){
     $publishedLog=@($published.assets|Where-Object {$_.name -eq $info.changeLogName})
     if($publishedLog.Count -ne 1 -or $publishedLog[0].size -ne $info.changeLogSize){throw 'Signed changelog has not been uploaded completely'}
