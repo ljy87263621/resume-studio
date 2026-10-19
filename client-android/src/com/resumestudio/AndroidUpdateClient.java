@@ -11,7 +11,7 @@ import java.util.*;
 
 /** Android has its own signed channels and release tags, independent of desktop releases. */
 final class AndroidUpdateClient {
-    static final String REPOSITORY="scj040921/resume-studio";
+    static final String REPOSITORY="ljy87263621/resume-studio";
     static final long MAX_APK=150L*1024L*1024L;
     static final class Release {
         final String channel,version,versionName,tag,commit,sha256,packageName;

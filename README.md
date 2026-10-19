@@ -6,7 +6,7 @@ Windows / Android 简历与求职管理软件。电脑使用 WinUI 3 与本地 J
 
 ## 下载与安装
 
-从 [GitHub Releases](https://github.com/scj040921/resume-studio/releases) 下载 `Setup-x64.exe`，点击“一键安装”，自动创建桌面和开始菜单快捷方式。也可使用完整的便携 ZIP。
+从 [GitHub Releases](https://github.com/ljy87263621/resume-studio/releases) 下载 `Setup-x64.exe`，点击“一键安装”，自动创建桌面和开始菜单快捷方式。也可使用完整的便携 ZIP。
 
 需要 Windows 10 2004 或更新的 x64 系统。.NET 与 Java 随包提供；安装器会在缺少 WebView2 时联网补装。覆盖安装和卸载保留个人数据。
 

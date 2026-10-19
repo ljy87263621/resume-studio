@@ -1,6 +1,6 @@
 # 安装与卸载
 
-1. 从 [GitHub Releases](https://github.com/scj040921/resume-studio/releases) 下载对应通道的 `Setup-x64.exe`。
+1. 从 [GitHub Releases](https://github.com/ljy87263621/resume-studio/releases) 下载对应通道的 `Setup-x64.exe`。
 2. 双击后点击“一键安装”，自动创建桌面和开始菜单快捷方式。
 3. 完成页可直接启动拾简。
 

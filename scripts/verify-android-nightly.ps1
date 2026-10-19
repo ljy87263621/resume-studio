@@ -1,6 +1,6 @@
 param([Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$Commit,[Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version)
 $ErrorActionPreference='Stop'
-$repository='scj040921/resume-studio'
+$repository='ljy87263621/resume-studio'
 $runs=gh api "repos/$repository/actions/workflows/android-release.yml/runs?head_sha=$Commit&status=success&per_page=100"|ConvertFrom-Json
 if($LASTEXITCODE -or !@($runs.workflow_runs|Where-Object {$_.head_sha -eq $Commit -and $_.conclusion -eq 'success'}).Count){throw 'Publish a successful Android Nightly for this exact source first'}
 $releases=gh api "repos/$repository/releases?per_page=100"|ConvertFrom-Json

@@ -1,6 +1,6 @@
 param([Parameter(Mandatory)][ValidateSet('stable','nightly')][string]$Channel)
-$ErrorActionPreference='Stop';$repository='scj040921/resume-studio'
-if($env:GITHUB_REPOSITORY -ne $repository){throw 'Only the official repository may publish Android channels'}
+$ErrorActionPreference='Stop';$repository='ljy87263621/resume-studio'
+if($env:GITHUB_REPOSITORY -ne $repository){throw 'Only this Fork repository may publish Android channels'}
 $bytes=[IO.File]::ReadAllBytes((Join-Path (Get-Location) 'release/android-release-info.json'))
 $signature=(Get-Content release/android-release-info.sig -Raw).Trim();$rsa=[Security.Cryptography.RSA]::Create()
 try{

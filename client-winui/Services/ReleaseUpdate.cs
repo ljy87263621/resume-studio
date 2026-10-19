@@ -63,7 +63,7 @@ public sealed class ReleaseChangeLog
 /// <summary>Only this public repository is accepted. Proxy transport never receives personal data or API credentials.</summary>
 public sealed class ReleaseUpdate : IDisposable
 {
-    public const string Repository="scj040921/resume-studio";
+    public const string Repository="ljy87263621/resume-studio";
     public const string ProxyPrefix="https://gh-proxy.org/";
     public static readonly JsonSerializerOptions Json=new() {PropertyNameCaseInsensitive=true,PropertyNamingPolicy=JsonNamingPolicy.CamelCase,WriteIndented=true};
     private readonly HttpClient http;
@@ -85,7 +85,7 @@ public sealed class ReleaseUpdate : IDisposable
         if(!Uri.TryCreate(url,UriKind.Absolute,out var u)||u.Scheme!="https"||u.UserInfo!=""||u.Fragment!=""||!u.IsDefaultPort) throw new IOException("更新地址无效。");
         bool allowed=u.Host=="api.github.com"&&u.AbsolutePath.StartsWith("/repos/"+Repository+"/releases",StringComparison.Ordinal)
             ||u.Host=="github.com"&&u.AbsolutePath.StartsWith("/"+Repository+"/releases/",StringComparison.Ordinal);
-        if(!allowed) throw new IOException("更新地址不属于拾简官方仓库。"); return u;
+        if(!allowed) throw new IOException("更新地址不属于当前 Fork 仓库。"); return u;
     }
     private static IEnumerable<(Uri Url,string Name)> Routes(string address,string route)
     {

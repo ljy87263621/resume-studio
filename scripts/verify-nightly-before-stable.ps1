@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$Commit,
     [Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
-    [string]$Repository='scj040921/resume-studio'
+    [string]$Repository='ljy87263621/resume-studio'
 )
 $ErrorActionPreference='Stop'
 $runs=gh api "repos/$Repository/actions/workflows/nightly.yml/runs?head_sha=$Commit&status=success&per_page=10"|ConvertFrom-Json

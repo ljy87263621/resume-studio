@@ -1,5 +1,11 @@
 # 更新与发布
 
+当前更新与发行仓库为 [ljy87263621/resume-studio](https://github.com/ljy87263621/resume-studio/releases)。Windows 与 Android 客户端、签名通道发布脚本和 Nightly → Stable 校验均绑定此 Fork；不会回退到上游仓库的软件包。上游链接仅在历史记录、第三方署名或运行时源码归档中保留。
+
+Fork 使用独立 RSA 更新签名公钥，私钥通过 `RESUMESTUDIO_UPDATE_SIGNING_KEY` Actions Secret 提供。首次从上游切换，需要手动安装 Fork 构建一次；此前的上游安装包仍使用其原更新地址和公钥。Android APK 还有独立的安装签名，新 Fork 签名与原安装包不同的情况下无法直接覆盖，需先备份／同步数据后再迁移。新签名建立后，Fork 内后续更新使用同一组密钥。
+
+上传源码不等于已发布安装包或上线通道索引。第一个成功的 Fork Nightly 会创建 `update-channels` Release 并写入已验证的索引；Stable 仍需同提交 Nightly 验收后再发布。
+
 “设置 → 软件更新”可选择 Stable／Nightly 和自动／直连／公益代理。启动时后台检查，下载和安装需要用户主动操作。
 
 ## 通道
@@ -54,4 +60,4 @@ Android `0.9.5-nightly.20261015.ede43b32` 发行包缺少更新验证公钥，�
 
 0.9.8 及以前读取无平台前缀的 `stable.json`／`nightly.json`。首次发布拆分版本后，同提交、同基础版本、同日的双端发行可手动运行 `platform-migration.yml`：验签并合成一次旧协议桥接发行，让旧客户端正常收到迁移更新。该操作仅改旧索引，不改四个独立索引。桥接包包含同签名 APK，升级后各端自动进入独立通道；以后单端发布不再碰旧索引。两个平台版本已经分叉时不能运行此桥接，脚本会拒绝。
 
-尚未运行迁移时，旧客户端仍停留在旧索引；请勿将独立分发误报为旧客户端已经收到更新。首次安卓独立发行前，应确保 `update-channels` Release 已存在（现有仓库已具备）。
+尚未运行迁移时，旧客户端仍停留在旧索引；请勿将独立分发误报为旧客户端已经收到更新。首次安卓独立发行前，应先成功发布一次 Fork 桌面 Nightly，以创建 `update-channels` Release。此处桥接仅用于同仓库旧协议升级，不能跨越上游与 Fork 的仓库和签名边界。

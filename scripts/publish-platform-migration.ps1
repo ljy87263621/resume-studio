@@ -1,7 +1,7 @@
 param([ValidateSet('stable','nightly')][string]$Channel='nightly',[Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$Commit)
 $ErrorActionPreference='Stop'
-$repository='scj040921/resume-studio'
-if($env:GITHUB_REPOSITORY -ne $repository -or !$env:RESUMESTUDIO_UPDATE_SIGNING_KEY){throw 'Official repository and signing key required'}
+$repository='ljy87263621/resume-studio'
+if($env:GITHUB_REPOSITORY -ne $repository -or !$env:RESUMESTUDIO_UPDATE_SIGNING_KEY){throw 'Fork repository and signing key required'}
 $releases=gh api "repos/$repository/releases?per_page=100"|ConvertFrom-Json
 if($LASTEXITCODE){throw 'Cannot query migration releases'}
 $work=Join-Path (Get-Location) 'release/platform-migration';New-Item -ItemType Directory -Force $work|Out-Null

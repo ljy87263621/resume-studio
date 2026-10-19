@@ -25,7 +25,7 @@ function gh {
 $savedDirectory=[Environment]::CurrentDirectory
 Push-Location $fixture;[Environment]::CurrentDirectory=$fixture
 try{
-    $env:RESUMESTUDIO_UPDATE_SIGNING_KEY=$rsa.ExportPkcs8PrivateKeyPem();$env:GITHUB_REPOSITORY='scj040921/resume-studio'
+    $env:RESUMESTUDIO_UPDATE_SIGNING_KEY=$rsa.ExportPkcs8PrivateKeyPem();$env:GITHUB_REPOSITORY='ljy87263621/resume-studio'
     [IO.File]::WriteAllText("$fixture/release/desktop-nightly.json",'desktop-index-sentinel')
     [IO.File]::WriteAllText("$fixture/release/nightly.json",'legacy-index-sentinel')
     foreach($channel in @('nightly','stable')){
@@ -38,6 +38,9 @@ try{
         $info=[Text.Encoding]::UTF8.GetString($bytes)|ConvertFrom-Json
         if($info.platform -ne 'android' -or $info.version -ne $version -or $info.tag -ne $tag -or $info.androidSha256 -ne (Get-FileHash $apk -Algorithm SHA256).Hash.ToLowerInvariant() -or $info.PSObject.Properties.Name -contains 'packageName'){throw 'Android metadata leaked desktop package identity'}
         & "$fixture/scripts/publish-android-channel.ps1" -Channel $channel
+        $env:GITHUB_REPOSITORY='scj040921/resume-studio';$before=$global:androidChannelUploads;$wrongRepositoryRejected=$false
+        try{& "$fixture/scripts/publish-android-channel.ps1" -Channel $channel}catch{$wrongRepositoryRejected=$true}finally{$env:GITHUB_REPOSITORY='ljy87263621/resume-studio'}
+        if(!$wrongRepositoryRejected -or $global:androidChannelUploads -ne $before){throw 'Upstream repository reached Fork Android publication'}
         $global:androidChannelBadDigest=$true;$uploads=$global:androidChannelUploads;$badAssetRejected=$false
         try{& "$fixture/scripts/publish-android-channel.ps1" -Channel $channel}catch{$badAssetRejected=$true}
         if(!$badAssetRejected -or $global:androidChannelUploads -ne $uploads){throw 'Invalid APK digest was advertised'}

@@ -9,7 +9,7 @@ param(
     [switch]$SignOnly
 )
 $ErrorActionPreference='Stop'
-$repository='scj040921/resume-studio'
+$repository='ljy87263621/resume-studio'
 if($Version -notmatch '^\d+\.\d+\.\d+$' -or $Commit -notmatch '^[0-9a-f]{40}$' -or $VersionCode -le 0){throw 'Invalid Android release identity'}
 $suffix=if($Channel -eq 'nightly'){
     if($Tag -notmatch '^android-nightly-\d{8}-[0-9a-f]{8}$' -or !$Tag.EndsWith($Commit.Substring(0,8))){throw 'Invalid Android Nightly tag'}
@@ -35,7 +35,7 @@ New-Item -ItemType Directory -Force release|Out-Null
 $index="release/android-$Channel.json"
 [IO.File]::WriteAllText($index,(@{data=[Convert]::ToBase64String($bytes);signature=$signature}|ConvertTo-Json -Compress),[Text.UTF8Encoding]::new($false))
 if($SignOnly){return}
-if($env:GITHUB_REPOSITORY -ne $repository){throw 'Android publication only supports the official repository'}
+if($env:GITHUB_REPOSITORY -ne $repository){throw 'Android publication only supports this Fork repository'}
 if($Channel -eq 'stable'){& "$PSScriptRoot/verify-android-nightly.ps1" -Commit $Commit -Version $Version}
 $notes="Android $VersionName`n`n<!-- source-commit: $Commit -->`n`n仅更新安卓端，桌面更新通道保持独立。"
 $featureNotes=Join-Path (Split-Path $PSScriptRoot -Parent) ".github/release-notes/android-v$Version.md"

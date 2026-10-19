@@ -21,7 +21,7 @@ function gh {
 }
 Push-Location $fixture;[Environment]::CurrentDirectory=$fixture
 try{
-    $env:RESUMESTUDIO_UPDATE_SIGNING_KEY=$rsa.ExportPkcs8PrivateKeyPem();$env:GITHUB_REPOSITORY='scj040921/resume-studio'
+    $env:RESUMESTUDIO_UPDATE_SIGNING_KEY=$rsa.ExportPkcs8PrivateKeyPem();$env:GITHUB_REPOSITORY='ljy87263621/resume-studio'
     $apk="$fixture/source/ResumeStudio-Android-v0.9.9-nightly.20261016.aaaaaaaa.apk";[IO.File]::WriteAllText($apk,'migration APK fixture')
     & "$root/scripts/publish-android-release.ps1" -Channel nightly -Version 0.9.9 -Commit ('a'*40) -Tag android-nightly-20261016-aaaaaaaa -VersionName 0.9.9-nightly.20261016.aaaaaaaa -VersionCode 9928900 -PackagePath $apk -SignOnly
     Copy-Item release/android-release-info.* source/

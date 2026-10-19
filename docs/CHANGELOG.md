@@ -1,6 +1,6 @@
 # 版本记录
 
-完整发布说明见 [GitHub Releases](https://github.com/scj040921/resume-studio/releases)，旧实现与验收记录可从 Git 历史查看。
+完整发布说明见 [GitHub Releases](https://github.com/ljy87263621/resume-studio/releases)，旧实现与验收记录可从 Git 历史查看。
 
 | 版本 | 主要变化 |
 | --- | --- |

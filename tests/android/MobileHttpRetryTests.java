@@ -39,7 +39,7 @@ public final class MobileHttpRetryTests {
         public boolean cancelled(){return false;}
     }
     public static void main(String[] args)throws Exception{
-        URI uri=URI.create("https://github.com/scj040921/resume-studio/releases/download/test/app.apk");
+        URI uri=URI.create("https://github.com/ljy87263621/resume-studio/releases/download/test/app.apk");
         byte[] payload=new byte[128*1024];new Random(42).nextBytes(payload);
         Path dir=Files.createTempDirectory("android-update-retry-");
         try{
