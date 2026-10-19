@@ -59,7 +59,7 @@ public static class ResumePdfImport
                 double scale=Math.Min(2200/page.Size.Width,2600/page.Size.Height);
                 await page.RenderToStreamAsync(stream,new PdfPageRenderOptions {DestinationWidth=(uint)(page.Size.Width*scale),DestinationHeight=(uint)(page.Size.Height*scale)});
                 stream.Seek(0);var decoder=await BitmapDecoder.CreateAsync(stream);using var bitmap=await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8,BitmapAlphaMode.Ignore);
-                var result=await engine.RecognizeAsync(bitmap);string recognized=string.Join("\n",result.Lines.Select(l=>l.Text));
+                var result=await engine.RecognizeAsync(bitmap);string recognized=string.Join("\n",result.Lines.OrderBy(l=>l.Words.Min(w=>w.BoundingRect.Y)).ThenBy(l=>l.Words.Min(w=>w.BoundingRect.X)).Select(l=>l.Text));
                 // The Latin recognizer is more reliable for email addresses embedded in Chinese text.
                 var english=OcrEngine.TryCreateFromLanguage(new Language("en-US"));
                 if(english is not null){var latin=await english.RecognizeAsync(bitmap);var email=System.Text.RegularExpressions.Regex.Match(latin.Text,@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}");if(email.Success)recognized="邮箱："+email.Value+"\n"+recognized;var phone=System.Text.RegularExpressions.Regex.Match(latin.Text,@"(?<!\d)1[3-9]\d{9}(?!\d)");if(phone.Success)recognized="电话："+phone.Value+"\n"+recognized;}
