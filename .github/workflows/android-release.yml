@@ -46,7 +46,7 @@ jobs:
             $previous=@($releases|Where-Object {$_.prerelease -and !$_.draft -and $_.tag_name -match '^android-nightly-'}|Sort-Object published_at -Descending|Select-Object -First 1)
             if($previous.Count -and $previous[0].body -match 'source-commit: ([0-9a-f]{40})'){
               $prior=$Matches[1]
-              $changes=@(git diff --name-only $prior $sha -- client-android backend/src/main/java client-winui/Assets client-winui/MainWindow.PlatformCapture.cs client-winui/Services/ResumeRenderer.cs scripts/build-android.ps1 scripts/setup-android-sdk.ps1 scripts/get-android-nightly-version-code.ps1 scripts/publish-android-release.ps1 scripts/publish-android-channel.ps1 scripts/verify-android-nightly.ps1 .github/workflows/android-release.yml)
+              $changes=@(git diff --name-only $prior $sha -- client-android backend/src/main/java client-winui/Assets client-winui/MainWindow.PlatformCapture.cs client-winui/Services/ResumeRenderer.cs scripts/build-android.ps1 scripts/setup-android-ocr.ps1 scripts/android-ocr-dependencies.json scripts/setup-android-sdk.ps1 scripts/get-android-nightly-version-code.ps1 scripts/publish-android-release.ps1 scripts/publish-android-channel.ps1 scripts/verify-android-nightly.ps1 .github/workflows/android-release.yml)
               if($LASTEXITCODE){throw 'Cannot compare Android source'}
               if(!$changes.Count){Add-Content $env:GITHUB_OUTPUT 'changed=false';Add-Content $env:GITHUB_OUTPUT "existing_tag=$($previous[0].tag_name)";exit 0}
             }

@@ -38,6 +38,8 @@ if($SignOnly){return}
 if($env:GITHUB_REPOSITORY -ne $repository){throw 'Android publication only supports the official repository'}
 if($Channel -eq 'stable'){& "$PSScriptRoot/verify-android-nightly.ps1" -Commit $Commit -Version $Version}
 $notes="Android $VersionName`n`n<!-- source-commit: $Commit -->`n`n仅更新安卓端，桌面更新通道保持独立。"
+$featureNotes=Join-Path (Split-Path $PSScriptRoot -Parent) ".github/release-notes/android-v$Version.md"
+if(Test-Path -LiteralPath $featureNotes){$notes+="`n`n"+[IO.File]::ReadAllText($featureNotes).Trim()}
 [IO.File]::WriteAllText('release/android-notes.md',$notes,[Text.UTF8Encoding]::new($false))
 $releaseArgs=@('release','create',$Tag,$PackagePath,'release/android-release-info.json','release/android-release-info.sig','--repo',$repository,'--target',$Commit,'--title',"拾简 Android $VersionName",'--latest=false','--notes-file','release/android-notes.md')
 if($Channel -eq 'nightly'){$releaseArgs+='--prerelease'}

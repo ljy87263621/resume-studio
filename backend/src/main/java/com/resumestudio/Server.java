@@ -26,6 +26,12 @@ public final class Server {
             String path=e.getRequestURI().getPath().substring(5), method=e.getRequestMethod();
             if(path.equals("health")&&method.equals("GET")) { send(e,200,Map.of("status","ok","version","0.9.3","java",System.getProperty("java.version"))); return; }
             if(path.equals("templates")&&method.equals("GET")) { send(e,200,Templates.all()); return; }
+            if((path.equals("resume-import")||path.equals("resume-import/create"))&&method.equals("POST")){
+                byte[] bytes=e.getRequestBody().readNBytes(1000001);if(bytes.length>1000000)throw new IllegalArgumentException("简历导入内容过大");
+                var request=Json.object(Json.parse(new String(bytes,StandardCharsets.UTF_8)));
+                if(path.endsWith("/create")){var resume=ResumeImport.create(request);validate("resumes",resume);send(e,200,store.save("resumes",resume));}
+                else send(e,200,ResumeImport.parse(request));return;
+            }
             if(path.equals("job-sources")&&method.equals("GET")) { send(e,200,jobs.sources()); return; }
             if(path.equals("export/docx")&&method.equals("POST")){var request=Json.object(Json.parse(new String(e.getRequestBody().readNBytes(200001),StandardCharsets.UTF_8)));String id=Json.str(request,"id");var resume=store.list("resumes").stream().filter(r->id.equals(Json.str(r,"id"))).findFirst().orElseThrow(()->new IllegalArgumentException("简历不存在"));send(e,200,Map.of("base64",Base64.getEncoder().encodeToString(ResumeDocx.create(resume))));return;}
             if(path.equals("workspace")&&method.equals("POST")){var request=Json.object(Json.parse(new String(e.getRequestBody().readNBytes(200001),StandardCharsets.UTF_8)));send(e,200,WorkspaceTools.call(store,request));return;}

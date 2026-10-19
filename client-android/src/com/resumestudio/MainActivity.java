@@ -29,6 +29,7 @@ public final class MainActivity extends Activity {
     private AndroidUpdateClient.Release availableAndroidUpdate;
     private byte[] pendingExport;
     private volatile boolean cancelDownload;private volatile java.net.HttpURLConnection downloadConnection;
+    private volatile boolean resumeImportBusy;
     private android.window.OnBackInvokedCallback backCallback;
     private int systemInsetLeft,systemInsetTop,systemInsetRight,systemInsetBottom;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
@@ -93,6 +94,7 @@ public final class MainActivity extends Activity {
     }
     private Object handle(String method,Map<String,Object> request)throws Exception {
         switch(method){
+            case "pickResumePdf":if(resumeImportBusy)throw new IOException("请先完成当前 PDF 识别");resumeImportBusy=true;runOnUiThread(()->{try{pick(46,"application/pdf");}catch(Exception ex){resumeImportBusy=false;event("error",ex.getMessage());}});return true;
             case "boot":{
                 Map<String,Object> prefs=Json.object(api.call("settings",Collections.emptyMap()));Map<String,Object> dav=dav();String share=shared;shared="";
                 var local=getSharedPreferences("resume-studio",0);
@@ -191,13 +193,14 @@ public final class MainActivity extends Activity {
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);if(request==91){MobileReminders.reconcile(this);event("updateStatus",MobileReminders.permitted(this)?"系统日程通知已启用":"未获得通知权限，可在系统应用设置开启");}}
     private void pick(int code,String mime){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType(mime);startActivityForResult(i,code);}
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
-        super.onActivityResult(requestCode,resultCode,data);if(requestCode==44){byte[] bytes=pendingExport;pendingExport=null;if(resultCode==RESULT_OK&&data!=null&&data.getData()!=null&&bytes!=null){Uri target=data.getData();worker.execute(()->{try(OutputStream output=getContentResolver().openOutputStream(target)){if(output==null)throw new IOException("无法写入文件");output.write(bytes);event("updateStatus","文件已导出");}catch(Exception ex){event("error","导出失败："+ex.getMessage());}});}return;}if(resultCode!=RESULT_OK||data==null||data.getData()==null)return;Uri uri=data.getData();
+        super.onActivityResult(requestCode,resultCode,data);if(requestCode==44){byte[] bytes=pendingExport;pendingExport=null;if(resultCode==RESULT_OK&&data!=null&&data.getData()!=null&&bytes!=null){Uri target=data.getData();worker.execute(()->{try(OutputStream output=getContentResolver().openOutputStream(target)){if(output==null)throw new IOException("无法写入文件");output.write(bytes);event("updateStatus","文件已导出");}catch(Exception ex){event("error","导出失败："+ex.getMessage());}});}return;}if(resultCode!=RESULT_OK||data==null||data.getData()==null){if(requestCode==46)resumeImportBusy=false;return;}Uri uri=data.getData();
         worker.execute(()->{try(InputStream in=getContentResolver().openInputStream(uri)){
             if(requestCode==45){String name=BackupCatalog.importBytes(api.root,MobileCompat.readNBytes(in,SyncStore.MAX_BYTES+8193));event("backupImported",name);return;}
             byte[] bytes=MobileCompat.readNBytes(in,20*1024*1024+1);if(bytes.length>20*1024*1024)throw new IOException("文件不能超过 20 MiB");
             if(requestCode==42){BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);if(options.outWidth<1||options.outHeight<1)throw new IOException("图片格式无效");options.inSampleSize=Math.max(1,Math.max(options.outWidth,options.outHeight)/700);options.inJustDecodeBounds=false;Bitmap bitmap=BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);ByteArrayOutputStream out=new ByteArrayOutputStream();bitmap.compress(Bitmap.CompressFormat.JPEG,85,out);bitmap.recycle();if(out.size()>1_000_000)throw new IOException("照片过大，请选择较小图片");event("photo","data:image/jpeg;base64,"+Base64.getEncoder().encodeToString(out.toByteArray()));}
+            else if(requestCode==46){String name="简历.pdf";try(Cursor cursor=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){if(cursor!=null&&cursor.moveToFirst())name=cursor.getString(0);}event("resumeImportStatus","正在读取 PDF，扫描页面会在本机识别…");event("resumeDocument",MobileResumePdf.read(this,name,bytes,s->event("resumeImportStatus",s)));}
             else if(requestCode==43){String name="document.txt";try(Cursor cursor=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){if(cursor!=null&&cursor.moveToFirst())name=cursor.getString(0);}event("document",MobileImport.read(name,bytes));}
-        }catch(Exception ex){event("error",Objects.toString(ex.getMessage(),"文件读取失败"));}});
+        }catch(Exception ex){event("error",Objects.toString(ex.getMessage(),"文件读取失败"));}finally{if(requestCode==46)resumeImportBusy=false;}});
     }
     private static void checkUrl(String text){URI uri=URI.create(text);if(!"https".equals(uri.getScheme())||uri.getHost()==null||uri.getUserInfo()!=null)throw new IllegalArgumentException("仅支持 HTTPS 链接");}
     private Dialog browser(String url){

@@ -116,6 +116,7 @@ public sealed partial class MainWindow : Window
         if(Environment.GetCommandLineArgs().Contains("--navigation-test")) { await NavigationTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--capture-layout-test")) { await CaptureLayoutTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--favorites-editor-test")) { await FavoritesEditorTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--resume-import-test")) { await ResumeImportFeatureTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--interview-test")) { await InterviewFeatureTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--lightweight-test")) { await LightweightTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--workbench-test")) { await WorkbenchTest(); return; }
@@ -185,7 +186,7 @@ public sealed partial class MainWindow : Window
     {
         int generation=navigationRevision;
         Heading("我的简历","每个求职方向都可以有一份独立简历，编辑时自动保存。");
-        var panel=Stack(18); var toolbar=Row(); toolbar.Children.Add(Button("＋ 新建简历",()=>Navigate("templates"),true)); toolbar.Children.Add(Button("导入备份",ImportResume)); panel.Children.Add(toolbar);
+        var panel=Stack(18); var toolbar=Row(); toolbar.Children.Add(Button("＋ 新建简历",()=>Navigate("templates"),true)); toolbar.Children.Add(Button("从 PDF 导入",ImportPdfResume));toolbar.Children.Add(Button("导入备份",ImportResume)); panel.Children.Add(toolbar);
         var list=await api.Get<List<Resume>>("resumes");
         if(!PageIsCurrent("resumes",generation)) return;
         if(list.Count==0) panel.Children.Add(Card(Text("还没有简历。从模板中心选择一套模板，开始填写你的经历。",16)));

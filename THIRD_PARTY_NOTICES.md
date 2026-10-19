@@ -46,3 +46,7 @@ Setup 使用 Inno Setup 6.7.3 构建，来源为 [JRSoftware 官方发行版](ht
 # Android PDFBox
 
 Android document import uses [PdfBox-Android](https://github.com/TomRoush/PdfBox-Android) 2.0.27.0, an Android port of Apache PDFBox / FontBox, under Apache License 2.0. Copyright notices and license resources from the original AAR/JAR are retained in the APK. The dependency is downloaded from Maven Central with a pinned SHA-256 during Android build; it is not part of the Windows runtime.
+
+## Android PDF 简历 OCR
+
+Google ML Kit Text Recognition v2 Chinese 16.0.1 及固定版本支持组件用于本机扫描件识别。SDK 条款、数据说明与依赖归属见 `ThirdParty/AndroidOCR/NOTICE.md`；精确版本和 SHA-256 见 `scripts/android-ocr-dependencies.json`。

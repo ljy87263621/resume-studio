@@ -21,6 +21,7 @@ public final class MobileApi {
             case "workspace":return WorkspaceTools.call(store,request);
             case "backupCatalog":return BackupCatalog.call(root,store,request);
             case "templates":return Templates.all();
+            case "resumeImportCreate":{var resume=ResumeImport.create(request);resume.remove("id");return save("resumes",resume,"");}
             case "list":return store.list(kind);
             case "get":return find(kind,id);
             case "save":return save(kind,Json.object(request.get("doc")),Json.str(request,"expectedAt"));
