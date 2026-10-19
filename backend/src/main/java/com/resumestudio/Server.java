@@ -109,6 +109,7 @@ public final class Server {
             return;
         }
         if(kind.equals("resumes")) {
+            ResumeLayout.validate(doc);
             if(doc.containsKey("fontFamily")&&!Set.of("MiSans","Microsoft YaHei","SimSun","Arial","Times New Roman").contains(Json.str(doc,"fontFamily"))) throw new IllegalArgumentException("简历字体无效");
             if(Json.str(doc,"title").isBlank()) throw new IllegalArgumentException("简历名称不能为空");
             if(Templates.all().stream().noneMatch(t->Json.str(t,"id").equals(Json.str(doc,"templateId")))) throw new IllegalArgumentException("Unknown template");

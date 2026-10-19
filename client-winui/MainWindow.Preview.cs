@@ -59,7 +59,7 @@ public sealed partial class MainWindow
             var template=templates.First(t=>t.Id==current.TemplateId);
             var document=showPreviewExamples&&!renderingPdf?Services.ResumeExamples.ForPreview(current,template):current;
             string html=PreviewHtml(document,template);
-            if(html==lastRenderedHtml) return;
+            if(html==lastRenderedHtml){await UpdatePreviewScale();await UpdateCapacity(web);return;}
             string marker=Guid.NewGuid().ToString("N"); renderMarker=marker;
             if(lastRenderedHtml.Length==0)
             {
@@ -107,7 +107,13 @@ public sealed partial class MainWindow
                 previewPatches++;
             }
             if(web!=preview||!PageIsCurrent("editor",generation))return;
-            lastRenderedHtml=html; await UpdateCapacity(web);
+            lastRenderedHtml=html;await UpdatePreviewScale();
+            // Wait for fonts and images before measuring the same layout used by PDF export.
+            for(int i=0;i<120;i++) {
+                if(web!=preview||!PageIsCurrent("editor",generation))return;
+                if(await core.ExecuteScriptAsync("document.querySelector('meta[name=resume-render-id]')?.content")==JsonSerializer.Serialize(marker)){await UpdateCapacity(web);break;}
+                await Task.Delay(50);
+            }
         }
         finally { renderLock.Release(); }
     }

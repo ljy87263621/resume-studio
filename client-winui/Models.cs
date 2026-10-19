@@ -36,6 +36,24 @@ public sealed class Profile
     public string City { get; set; } = "";
     public string Link { get; set; } = "";
     public string Summary { get; set; } = "";
+    public List<ProfileItem> Items { get; set; } = [];
+}
+public sealed class ProfileItem
+{
+    [JsonExtensionData] public Dictionary<string,JsonElement>? ExtensionData { get; set; }
+    public string Emoji { get; set; } = "";
+    public string Label { get; set; } = "";
+    public string Value { get; set; } = "";
+}
+public sealed class ResumeImage
+{
+    [JsonExtensionData] public Dictionary<string,JsonElement>? ExtensionData { get; set; }
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string DataUrl { get; set; } = "";
+    public string Alt { get; set; } = "";
+    public string Caption { get; set; } = "";
+    public double WidthPercent { get; set; } = 100;
+    public double MaxHeightMm { get; set; } = 60;
 }
 public sealed class ResumeSection
 {
@@ -43,7 +61,10 @@ public sealed class ResumeSection
     public string Title { get; set; } = "";
     public string Content { get; set; } = "";
     public bool Visible { get; set; } = true;
-    public override string ToString() => "≡  "+Title+(Visible?"":" · 隐藏");
+    public List<ResumeImage> Images { get; set; } = [];
+    [JsonIgnore] public string EditorStatus=>!Visible?"已隐藏":string.IsNullOrWhiteSpace(Content)?"未填":Content.Contains("[填写")||Content.Contains("示例")||Content.Contains("待补充")?"待优化":"已填";
+    [JsonIgnore] public string StatusColor=>EditorStatus=="已填"?"#167D78":EditorStatus=="待优化"?"#A56A05":"#77849A";
+    public override string ToString() => "≡  "+Title+" · "+EditorStatus;
 }
 public sealed class Resume
 {
@@ -55,6 +76,10 @@ public sealed class Resume
     public double FontSize { get; set; } = 12;
     public double LineHeight { get; set; } = 1.6;
     public string FontFamily { get; set; } = "MiSans";
+    public double PageMarginVertical { get; set; } = 14;
+    public double PageMarginHorizontal { get; set; } = 16;
+    public double SectionSpacing { get; set; } = 4.8;
+    public string HeaderAlignment { get; set; } = "template";
     public string Photo { get; set; } = "";
     public Profile Profile { get; set; } = new();
     public List<ResumeSection> Sections { get; set; } = [];
