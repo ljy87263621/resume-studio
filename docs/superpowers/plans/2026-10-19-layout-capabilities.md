@@ -28,7 +28,7 @@ Windows is the priority selected by the user. Optional fields remain in JSON and
 
 `ResumeLayout.Table(rows)` emits Markdown preserving literal pipes/backslashes/newlines. `ResumeLayout.ReadTable(content, caret)` returns a replaceable range and cell matrix. `ResumeLayout.ImageToken(image)` references only the generated identifier. `ResumeLayout.ValidImage(dataUrl)` permits bounded PNG/JPEG/WebP data URLs. Renderer must escape all user labels/captions/text and reject external images. Old documents retain 14/16 mm page margins and template header alignment. Preview zoom must never affect printed A4 geometry.
 
-No release publishing or remote repository mutations are part of this task.
+The original implementation scope excluded release publishing and remote repository mutations. The later upstream submission is documented separately in `docs/diffs/2026-10-20-resume-layout.md`.
 
 ## Acceptance, 2026-10-20
 
@@ -38,4 +38,4 @@ No release publishing or remote repository mutations are part of this task.
 - PDF pages rendered with Poppler and visually inspected. Word exported with embedded media/editable cells, converted with LibreOffice and visually inspected.
 - Independent review findings fixed: literal pipe-only line crash; template CSS precedence; rotated image stride; replacement image budget double-counting. Reviewer confirmed no remaining findings.
 - Final GUI assembly copied to a fresh `artifacts/layout-verified` directory after an old verification process locked the previous output. DLL SHA-256 matches the final build: `B3AA0093CE2694E4380AFC1C944A8174C94A3FA2509AB340022B89B1E317E9FA`.
-- Branch: `Beta/layout-capabilities`. Changes remain local for review; no release or pull request created.
+- Original acceptance branch: `Beta/layout-capabilities`. These results describe the implementation before publication. The separate upstream branch, scope and fresh verification are recorded in `docs/diffs/2026-10-20-resume-layout.md`; no Release is published by that submission.

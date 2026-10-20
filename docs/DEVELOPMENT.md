@@ -26,6 +26,8 @@ Windows + PowerShell 7 + .NET 8 SDK + JDK 21。设置 `JAVA_HOME`；脚本优先
 
 ## 验证
 
+本轮排版改动的文件导读、数据兼容边界与上游分支验证见 [排版 diff 说明](diffs/2026-10-20-resume-layout.md)。
+
 `test-workbench.ps1` 同时运行纯 C# 排版回归用例，覆盖旧数据默认值、表格转义与往返、图片与自定义信息的安全渲染。`test-offline.ps1` 包含 Java `ResumeLayoutTest`，验证可选字段约束和 Word 可编辑表格／嵌入媒体。原生 `--workbench-test` 覆盖表格弹窗取消与应用、宽窄窗口、缩放前后 A4 容量一致、JSON 往返和实际 PDF。加 `--keep-workbench-open` 可在隔离验收后保留窗口供人工检查。
 
 Windows 扩展字段：`profile.items[{emoji,label,value}]`、`sections[].images[{id,dataUrl,alt,caption,widthPercent,maxHeightMm}]`、`pageMarginVertical`／`pageMarginHorizontal`（8–25 mm）、`sectionSpacing`（0–12 mm）、`headerAlignment`（template/left/center）。正文仍是 Markdown，图片使用 `![图片](resume-image:<id>)` 单独一行，目录使用 `### 子板块`。不加载远程图片。图片默认最多 60 mm 高，可调整 20–170 mm；每模块最多 12 张，仍受整份文档 2 MB 限制。新属性均有旧文档默认值，未知扩展字段继续往返保留。
