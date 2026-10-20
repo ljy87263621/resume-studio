@@ -8,6 +8,18 @@ public sealed partial class MainWindow
     private Grid? editorWorkspace,editorViewBar;
     private FrameworkElement? editorDirectory,editorPreviewFrame;
     private ComboBox? editorView,compactModulePicker;
+    private bool updatingCompactModulePicker;
+    private void RefreshCompactModulePicker()
+    {
+        if(current is null||compactModulePicker is null)return;
+        updatingCompactModulePicker=true;
+        try {
+            var titles=new[] {"基本信息"}.Concat(current.Sections.Select(s=>s.Title)).ToList();
+            if(!compactModulePicker.Items.Cast<string>().SequenceEqual(titles))compactModulePicker.ItemsSource=titles;
+            compactModulePicker.SelectedIndex=Math.Clamp(selectedEditorPart>=2?selectedEditorPart-1:0,0,current.Sections.Count);
+        }
+        finally {updatingCompactModulePicker=false;}
+    }
     private void UpdateWorkbenchLayout()
     {
         if(editorWorkspace is null||editorFields is null||editorPreviewFrame is null||editorDirectory is null)return;

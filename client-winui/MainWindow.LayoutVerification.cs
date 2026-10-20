@@ -39,6 +39,14 @@ public sealed partial class MainWindow
         Check(section.Content.Contains("| 验收表头 |")&&await preview.CoreWebView2.ExecuteScriptAsync("document.querySelector('th').textContent === '验收表头'")=="true","native table editor applies edited cell and refreshes saved preview");
         var saved=(await api.Get<List<Resume>>("resumes")).Single(r=>r.Id==current.Id);
         Check(saved.PageMarginVertical==12&&saved.HeaderAlignment=="center"&&saved.Profile.Items.Single().Value=="本科"&&saved.Sections[0].Images.Single().DataUrl==image.DataUrl,"layout settings, contacts and image bytes persist in backend");
+        editorModules.Move(0,1);Check(CommitEditorOrder(section),"module reorder updates the compact picker regression fixture");ShowEditorPart();await Task.Delay(150);
+        Check(compactModulePicker!.Items.Cast<string>().SequenceEqual(new[] {"基本信息"}.Concat(current.Sections.Select(s=>s.Title)))&&compactModulePicker.SelectedIndex==2,"compact module picker follows reordered modules and preserves the active module");
+        string originalTitle=section.Title;var titleInput=FindTextField(body,"模块标题")??throw new Exception("Reordered module title field missing after layout");titleInput.Text="改名后的作品";await Task.Delay(150);
+        Check(compactModulePicker.Items[2]?.ToString()=="改名后的作品"&&ReferenceEquals(titleInput,FindTextField(body,"模块标题")),"compact module picker follows title edits without rebuilding the active field; title="+compactModulePicker.Items[2]+", sameField="+ReferenceEquals(titleInput,FindTextField(body,"模块标题")));
+        compactModulePicker.SelectedIndex=1;await Task.Delay(150);
+        Check(selectedEditorPart==2&&FindTextField(body,"模块标题")!.Text==current.Sections[0].Title,"compact picker selection opens the module matching its displayed title");
+        editorModules.Move(1,0);CommitEditorOrder(section);ShowEditorPart();await Task.Delay(150);FindTextField(body,"模块标题")!.Text=originalTitle;await Task.Delay(150);
+        await SaveCurrent();await WaitForPreview();
         double originalWidth=AppWindow.Size.Width,originalHeight=AppWindow.Size.Height;
         double scale=shell.XamlRoot.RasterizationScale;
         AppWindow.Resize(new Windows.Graphics.SizeInt32((int)(1500*scale),(int)(1000*scale)));await Task.Delay(400);await UpdatePreviewScale();

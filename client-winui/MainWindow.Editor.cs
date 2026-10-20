@@ -86,7 +86,7 @@ public sealed partial class MainWindow
         var viewBar=new Grid {ColumnSpacing=12,Margin=new Thickness(0,0,0,10)};viewBar.ColumnDefinitions.Add(new ColumnDefinition {Width=GridLength.Auto});viewBar.ColumnDefinitions.Add(new ColumnDefinition {Width=new GridLength(1,GridUnitType.Star)});
         editorView=new ComboBox {Header="工作台视图",ItemsSource=new[] {"编辑内容","A4 预览"},SelectedIndex=0,MinWidth=140};viewBar.Children.Add(editorView);
         compactModulePicker=new ComboBox {Header="当前模块",ItemsSource=new[] {"基本信息"}.Concat(current.Sections.Select(s=>s.Title)).ToList(),SelectedIndex=selectedEditorPart>=2?selectedEditorPart-1:0,HorizontalAlignment=HorizontalAlignment.Stretch};
-        compactModulePicker.SelectionChanged+=(_,_)=>{if(!PageIsCurrent("editor",generation)||compactModulePicker.SelectedIndex<0)return;if(compactModulePicker.SelectedIndex==0)SelectBasicInformation();else editorParts!.SelectedIndex=compactModulePicker.SelectedIndex-1;};
+        compactModulePicker.SelectionChanged+=(_,_)=>{if(!PageIsCurrent("editor",generation)||updatingCompactModulePicker||compactModulePicker.SelectedIndex<0)return;if(compactModulePicker.SelectedIndex==0)SelectBasicInformation();else editorParts!.SelectedIndex=compactModulePicker.SelectedIndex-1;};
         Grid.SetColumn(compactModulePicker,1);viewBar.Children.Add(compactModulePicker);Grid.SetColumnSpan(viewBar,5);workspace.Children.Add(viewBar);editorViewBar=viewBar;
         editorView.SelectionChanged+=(_,_)=>UpdateWorkbenchLayout();
         var moduleColumn=Stack(10); moduleColumn.Children.Add(Text("内容目录",14,true));
@@ -166,7 +166,7 @@ public sealed partial class MainWindow
         }
         var scroll=new ScrollViewer { Content=Card(fields,new Thickness(18)),VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollMode=ScrollMode.Disabled,HorizontalContentAlignment=HorizontalAlignment.Stretch };
         scroll.SizeChanged+=(_,e)=>fields.Width=Math.Max(0,e.NewSize.Width-52); editorFields.Children.Add(scroll);
-        if(compactModulePicker is not null)compactModulePicker.SelectedIndex=selectedEditorPart>=2?selectedEditorPart-1:0;
+        RefreshCompactModulePicker();
     }
     private void UpdateEditorProgress()
     {
@@ -211,6 +211,7 @@ public sealed partial class MainWindow
         updatingDirectory=true;
         try {editorModules[index]=section;editorParts.SelectedItem=section;}
         finally {updatingDirectory=false;}
+        RefreshCompactModulePicker();
     }
 
     private bool CommitEditorOrder(ResumeSection? selected)
@@ -220,6 +221,7 @@ public sealed partial class MainWindow
         if(editorModules.Count!=current.Sections.Count||editorModules.Distinct().Count()!=editorModules.Count||editorModules.Any(section=>!current.Sections.Contains(section)))return false;
         current.Sections=editorModules.ToList();
         selectedEditorPart=selected is null?0:current.Sections.IndexOf(selected)+2;
+        RefreshCompactModulePicker();
         lastUndoCapture=DateTime.MinValue;Changed();return true;
     }
 
