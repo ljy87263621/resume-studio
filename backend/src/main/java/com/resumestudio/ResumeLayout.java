@@ -7,7 +7,7 @@ import java.util.regex.*;
 public final class ResumeLayout {
     private ResumeLayout(){}
     static final Pattern IMAGE=Pattern.compile("^!\\[图片\\]\\(resume-image:([A-Za-z0-9_-]{1,80})\\)$");
-    static double number(Map<String,Object> doc,String field,double fallback,double min,double max){Object value=doc.get(field);return value instanceof Number n&&Double.isFinite(n.doubleValue())?Math.clamp(n.doubleValue(),min,max):fallback;}
+    static double number(Map<String,Object> doc,String field,double fallback,double min,double max){Object value=doc.get(field);return value instanceof Number n&&Double.isFinite(n.doubleValue())?Math.max(min,Math.min(max,n.doubleValue())):fallback;}
     static boolean validImage(String data){
         if(data.length()>1_000_000||!data.matches("data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}"))return false;
         try{return Base64.getDecoder().decode(data.substring(data.indexOf(',')+1)).length>0;}catch(IllegalArgumentException invalid){return false;}
