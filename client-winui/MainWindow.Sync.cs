@@ -75,7 +75,7 @@ public sealed partial class MainWindow
                 if(plan.RequiresConfirmation)
                 {
                     if(plan.Action==SyncAction.Conflict&&plan.RemoteEnvelope is not null){
-                        var modeDialog=new ContentDialog {XamlRoot=shell.XamlRoot,Title="两端资料均有变化",Content=Text("可逐条比较并保留两端不同记录；也可明确选择整套覆盖。",14),PrimaryButtonText="逐条比较",SecondaryButtonText="整套选择",CloseButtonText="取消",DefaultButton=ContentDialogButton.Close};
+                        var modeDialog=new ContentDialog {XamlRoot=shell.XamlRoot,RequestedTheme=shell.RequestedTheme,Title="两端资料均有变化",Content=Text("可逐条比较并保留两端不同记录；也可明确选择整套覆盖。",14),PrimaryButtonText="逐条比较",SecondaryButtonText="整套选择",CloseButtonText="取消",DefaultButton=ContentDialogButton.Close};
                         syncConflictDialog=modeDialog;var mode=await modeDialog.ShowAsync();syncConflictDialog=null;
                         if(mode==ContentDialogResult.None||closeRequested)return;
                         if(mode==ContentDialogResult.Primary){var merged=await ReviewSyncRecords(plan);if(merged is null)return;current=null;dirty=false;shownCompanyJobs=null;companySearch=null;await DetachPreviewAsync(true);completedAction=await coordinator.MergeAsync(plan,merged);}
@@ -117,7 +117,7 @@ public sealed partial class MainWindow
         if(contentCheck)details.Children.Add(Text("云端缺少强 ETag，使用内容校验；请同一时间只在一台设备同步。",12));
         return new ContentDialog
         {
-            XamlRoot=shell.XamlRoot,Title="比较同步版本",CloseButtonText="取消",PrimaryButtonText="保留本机并上传",
+            XamlRoot=shell.XamlRoot,RequestedTheme=shell.RequestedTheme,Title="比较同步版本",CloseButtonText="取消",PrimaryButtonText="保留本机并上传",
             SecondaryButtonText=plan.RemoteEnvelope is null?"":"保留云端并下载",DefaultButton=ContentDialogButton.Close,
             Content=new ScrollViewer {Content=details,MaxHeight=520}
         };

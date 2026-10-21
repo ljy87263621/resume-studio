@@ -99,6 +99,7 @@ public sealed partial class MainWindow
             var conflictFixture=CreateSyncComparisonDialog(comparisonPlan);syncConflictDialog=conflictFixture;
             Check(conflictFixture.DefaultButton==ContentDialogButton.Close&&conflictFixture.SecondaryButtonText=="","missing cloud dialog defaults to cancel and has no download");
             var conflictShown=conflictFixture.ShowAsync();await Task.Delay(200);
+            Check(conflictFixture.RequestedTheme==shell.RequestedTheme&&conflictFixture.ActualTheme==shell.ActualTheme,"comparison dialog inherits the active window theme and keeps dark text contrast");
             Check(conflictFixture.IsEnabled&&FeatureButton(conflictFixture,"取消")?.IsEnabled==true,"comparison dialog remains interactive while underlying inputs are blocked");
             Check(FeatureButton(conflictFixture,"保留本机并上传")?.IsEnabled==true,"first upload requires selectable explicit confirmation");
             await SaveNativePreview(Path.Combine(output,"sync-first-upload-confirmation.png"),conflictFixture);
