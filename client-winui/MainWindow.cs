@@ -93,7 +93,7 @@ public sealed partial class MainWindow : Window
     private async Task Run(Func<Task> action)
     {
         try { await action(); }
-        catch(Exception ex) { notice.Title="操作未完成"; notice.Message=ex.Message; notice.Severity=InfoBarSeverity.Error; notice.IsOpen=true; }
+        catch(Exception ex) { notice.Title="操作未完成"; notice.Message=string.IsNullOrWhiteSpace(ex.Message)?$"{ex.GetType().Name}（0x{ex.HResult:X8}）":ex.Message; notice.Severity=InfoBarSeverity.Error; notice.IsOpen=true; }
     }
     private async Task Initialize()
     {
@@ -119,6 +119,7 @@ public sealed partial class MainWindow : Window
         if(Environment.GetCommandLineArgs().Contains("--resume-import-test")) { await ResumeImportFeatureTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--interview-test")) { await InterviewFeatureTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--lightweight-test")) { await LightweightTest(); return; }
+        if(Environment.GetCommandLineArgs().Contains("--picker-test")) { await PickerTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--workbench-test")) { await WorkbenchTest(); return; }
         if(Environment.GetCommandLineArgs().Contains("--template-assets")) { await GenerateTemplateAssets(); return; }
         if(Environment.GetCommandLineArgs().Contains("--self-test"))
@@ -243,24 +244,33 @@ public sealed partial class MainWindow : Window
     }
     private async Task ExportJson()
     {
-        if(current is null) return; await SaveCurrent(); var picker=new FileSavePicker { SuggestedFileName=SafeName(current.Title) }; picker.FileTypeChoices.Add("简历备份",new List<string> {".json"}); InitPicker(picker); var file=await picker.PickSaveFileAsync(); if(file is null) return;
-        await File.WriteAllTextAsync(file.Path,JsonSerializer.Serialize(current,BackendClient.Json)); Success("备份已导出",file.Path);
+        if(current is null) return; await SaveCurrent();var path=DesktopFileDialog.Save(WinRT.Interop.WindowNative.GetWindowHandle(this),"导出简历 JSON",[".json"],SafeName(current.Title));if(path is null)return;
+        await ExportResumeFile(path);Success("备份已导出",path);
     }
     private async Task ImportResume()
     {
-        var picker=new FileOpenPicker(); picker.FileTypeFilter.Add(".json"); InitPicker(picker); var file=await picker.PickSingleFileAsync(); if(file is null) return;
-        if(new FileInfo(file.Path).Length>2_000_000) throw new IOException("备份不能超过 2 MB");
-        var r=JsonSerializer.Deserialize<Resume>(await File.ReadAllTextAsync(file.Path),BackendClient.Json)??throw new IOException("无法识别简历备份");
+        var path=DesktopFileDialog.Open(WinRT.Interop.WindowNative.GetWindowHandle(this),"导入简历 JSON",[".json"]);if(path is null)return;await SaveCurrent();await ImportResumeFile(path);
+    }
+    private Task ExportResumeFile(string path)=>File.WriteAllTextAsync(path,JsonSerializer.Serialize(current,BackendClient.Json));
+    private async Task ImportResumeFile(string path)
+    {
+        if(new FileInfo(path).Length>2_000_000) throw new IOException("备份不能超过 2 MB");
+        var r=JsonSerializer.Deserialize<Resume>(await File.ReadAllTextAsync(path),BackendClient.Json)??throw new IOException("无法识别简历备份");
         if(r.Profile is null||r.Sections is null||r.Sections.Any(s=>s is null)||templates.All(t=>t.Id!=r.TemplateId)) throw new IOException("备份内容或模板无效");
         r.Id=Guid.NewGuid().ToString(); r.Title+=" · 导入"; current=await api.Save("resumes",r); dirty=false; await OpenEditor();
     }
     private async Task ImportPhoto()
     {
-        var picker=new FileOpenPicker(); picker.FileTypeFilter.Add(".png"); picker.FileTypeFilter.Add(".jpg"); picker.FileTypeFilter.Add(".jpeg"); InitPicker(picker); var file=await picker.PickSingleFileAsync(); if(file is null||current is null) return;
-        if(new FileInfo(file.Path).Length>600_000) throw new IOException("请选择小于 600 KB 的 PNG/JPEG 照片。");
-        var sourceFile=await Windows.Storage.StorageFile.GetFileFromPathAsync(file.Path);
+        if(current is null)return;var path=DesktopFileDialog.Open(WinRT.Interop.WindowNative.GetWindowHandle(this),"添加证件照",[".png",".jpg",".jpeg"]);if(path is null)return;await ImportPhotoFile(path);
+    }
+    private async Task ImportPhotoFile(string path)
+    {
+        var target=current??throw new IOException("请先打开要添加照片的简历。");string targetId=target.Id;
+        if(new FileInfo(path).Length>20*1024*1024)throw new IOException("请选择小于 20 MiB 的 PNG/JPEG 照片，导入后自动缩小。 ");
+        var sourceFile=await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
         using var input=await sourceFile.OpenAsync(Windows.Storage.FileAccessMode.Read);
         var decoder=await BitmapDecoder.CreateAsync(input);
+        if((long)decoder.PixelWidth*decoder.PixelHeight>40_000_000)throw new IOException("照片分辨率过大，请先缩小到 4000 万像素以内。");
         double scale=Math.Min(1d,Math.Min(480d/decoder.OrientedPixelWidth,640d/decoder.OrientedPixelHeight));
         uint width=(uint)Math.Max(1,Math.Round(decoder.OrientedPixelWidth*scale)),height=(uint)Math.Max(1,Math.Round(decoder.OrientedPixelHeight*scale));
         var transform=new BitmapTransform { ScaledWidth=width,ScaledHeight=height,InterpolationMode=BitmapInterpolationMode.Fant };
@@ -270,7 +280,12 @@ public sealed partial class MainWindow : Window
         encoder.SetPixelData(BitmapPixelFormat.Bgra8,BitmapAlphaMode.Ignore,width,height,96,96,pixels.DetachPixelData());
         await encoder.FlushAsync(); output.Seek(0);
         using var reader=new DataReader(output.GetInputStreamAt(0)); await reader.LoadAsync((uint)output.Size); var bytes=new byte[(int)output.Size]; reader.ReadBytes(bytes);
-        current.Photo="data:image/jpeg;base64,"+Convert.ToBase64String(bytes); Changed();
+        ApplyImportedPhoto(target,targetId,"data:image/jpeg;base64,"+Convert.ToBase64String(bytes));await SaveCurrent();if(ReferenceEquals(current,target)&&currentPage=="editor")await RenderPreview();
+    }
+    private void ApplyImportedPhoto(Resume target,string expectedId,string photo)
+    {
+        if(!ReferenceEquals(current,target)||current.Id!=expectedId||currentPage!="editor")throw new IOException("编辑的简历已切换，请重新选择照片。");
+        current.Photo=photo;Changed();
     }
     private void InitPicker(object picker) => WinRT.Interop.InitializeWithWindow.Initialize(picker,WinRT.Interop.WindowNative.GetWindowHandle(this));
     private static string SafeName(string text) => string.Join("_",text.Split(Path.GetInvalidFileNameChars(),StringSplitOptions.RemoveEmptyEntries));
