@@ -1,5 +1,7 @@
 # Sync Version Confirmation Implementation Plan
 
+> 历史设计草案。最终集成按用户要求保留每 30 分钟后台自动同步，并仅对手动同步及双端冲突要求确认；当前行为与验收见 `docs/PR-3-REVIEW.md`。
+
 > **For agentic workers:** Implement in this session using the existing coding-change-closed-loop and test-driven-development workflows; request an independent read-only review before publishing.
 
 **Goal:** Require the user to select the final whole-snapshot version whenever the two sides differ, after showing current sizes, changes since the last successful synchronization, and actual file modification times.
