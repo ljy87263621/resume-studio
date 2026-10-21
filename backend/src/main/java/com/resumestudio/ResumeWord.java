@@ -10,6 +10,8 @@ import java.util.zip.*;
 final class ResumeWord {
     private final Map<String,Object> resume;
     private final List<Media> media=new ArrayList<>();
+    private final Map<String,Integer> mediaIds=new HashMap<>();
+    private int drawingId,tableCells;
     private record Media(String path,byte[] bytes){}
     ResumeWord(Map<String,Object> resume){this.resume=resume;}
     private static String escape(String value){return value.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;").replaceAll("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]","");}
@@ -26,8 +28,12 @@ final class ResumeWord {
         while(matcher.find()){result.append(runs(text.substring(cursor,matcher.start()),heading>0,heading)).append(runs(matcher.group(1),true,heading));cursor=matcher.end();}
         return result.append(runs(text.substring(cursor),heading>0,heading)).append("</w:p>").toString();
     }
-    private String table(List<List<String>> rows){
+    private String table(List<List<String>> rows)throws IOException{
         if(rows.isEmpty())return "";int columns=rows.stream().mapToInt(List::size).max().orElse(1);
+        // A sparse Markdown table must not expand into an unbounded rectangular XML tree.
+        long cells=(long)columns*rows.size();
+        if(cells>10_000-tableCells)throw new IOException("Word 表格过大，请减少行列或拆分为单独的文档。");
+        tableCells+=(int)cells;
         long width=Math.round(11906-2*ResumeLayout.number(resume,"pageMarginHorizontal",16,8,25)*56.6929),cellWidth=width/columns;
         StringBuilder result=new StringBuilder("<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/><w:tblLayout w:type=\"fixed\"/><w:tblBorders>");
         for(String edge:List.of("top","left","bottom","right","insideH","insideV"))result.append("<w:").append(edge).append(" w:val=\"single\" w:sz=\"4\" w:color=\"CCD3DD\"/>");
@@ -47,16 +53,23 @@ final class ResumeWord {
     }
     private String image(Map<String,Object> image){
         String data=Json.str(image,"dataUrl"),caption=Json.str(image,"caption");StringBuilder result=new StringBuilder();
-        if(ResumeLayout.validImage(data)){
-            byte[] bytes=Base64.getDecoder().decode(data.substring(data.indexOf(',')+1));String type=data.substring(11,data.indexOf(';')),extension=type.equals("jpeg")?"jpg":type;int id=media.size()+1;media.add(new Media("image"+id+"."+extension,bytes));
+        Integer mediaId=mediaIds.get(data);
+        if(mediaId!=null||ResumeLayout.validImage(data)){
+            // One media payload may be referenced by many drawings, including across sections.
+            if(mediaId==null){
+                byte[] decoded=Base64.getDecoder().decode(data.substring(data.indexOf(',')+1));
+                String type=data.substring(11,data.indexOf(';')),extension=type.equals("jpeg")?"jpg":type;
+                mediaId=media.size()+1;media.add(new Media("image"+mediaId+"."+extension,decoded));mediaIds.put(data,mediaId);
+            }
+            byte[] bytes=media.get(mediaId-1).bytes();int id=++drawingId;
             int[] size=dimensions(bytes);double ratio=size[0]>0&&size[1]>0?(double)size[1]/size[0]:2d/3;
             long width=Math.min(Math.round((210-2*ResumeLayout.number(resume,"pageMarginHorizontal",16,8,25))*36000*ResumeLayout.number(image,"widthPercent",100,10,100)/100),Math.max(1,size[0])*9525L),height=Math.round(width*ratio),maxHeight=Math.round(ResumeLayout.number(image,"maxHeightMm",60,20,170)*36000);
             if(height>maxHeight){width=Math.round(width*(double)maxHeight/height);height=maxHeight;}
-            result.append("<w:p><w:pPr><w:jc w:val=\"center\"/></w:pPr><w:r><w:drawing><wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\"><wp:extent cx=\"").append(width).append("\" cy=\"").append(height).append("\"/><wp:docPr id=\"").append(id).append("\" name=\"图片").append(id).append("\" descr=\"").append(escape(Json.str(image,"alt"))).append("\"/><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic><pic:nvPicPr><pic:cNvPr id=\"0\" name=\"图片\"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed=\"rId").append(id).append("\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"").append(width).append("\" cy=\"").append(height).append("\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>");
+            result.append("<w:p><w:pPr><w:jc w:val=\"center\"/></w:pPr><w:r><w:drawing><wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\"><wp:extent cx=\"").append(width).append("\" cy=\"").append(height).append("\"/><wp:docPr id=\"").append(id).append("\" name=\"图片").append(id).append("\" descr=\"").append(escape(Json.str(image,"alt"))).append("\"/><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic><pic:nvPicPr><pic:cNvPr id=\"0\" name=\"图片\"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed=\"rId").append(mediaId).append("\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"").append(width).append("\" cy=\"").append(height).append("\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>");
         }
         if(!caption.isBlank())result.append(paragraph(caption,0,true));return result.toString();
     }
-    private String content(Map<String,Object> section){
+    private String content(Map<String,Object> section)throws IOException{
         StringBuilder result=new StringBuilder();List<List<String>> rows=new ArrayList<>();
         for(String line:Json.str(section,"content").split("\\R",-1)) {
             if(ResumeLayout.tableLine(line)){var cells=ResumeLayout.cells(line);if(!cells.stream().allMatch(c->c.matches(":?-{3,}:?")))rows.add(cells);continue;}

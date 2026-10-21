@@ -11,6 +11,8 @@ foreach($test in @('CompanyJobsTest','JobCaptureTest','WorkflowTest','ScheduleTe
     & (Join-Path $jdk 'bin/java.exe') --add-modules jdk.httpserver -cp ((Join-Path $root 'backend/build/classes')+';'+$classes) "com.resumestudio.$test"
     if($LASTEXITCODE -ne 0){throw "Offline test failed: $test"}
 }
+& (Join-Path $jdk 'bin/java.exe') -Xmx64m --add-modules jdk.httpserver -cp ((Join-Path $root 'backend/build/classes')+';'+$classes) com.resumestudio.ResumeWordBoundsTest
+if($LASTEXITCODE -ne 0){throw 'Word export memory-bound checks failed'}
 $distribution=if($ReleaseDirectory){[IO.Path]::GetFullPath($ReleaseDirectory)}else{Join-Path $root 'release/ResumeStudio'}
 & (Join-Path $jdk 'bin/java.exe') -cp ((Join-Path $root 'backend/build/classes')+';'+$classes) com.resumestudio.TemplateCatalogTest (Join-Path $distribution 'Assets/TemplateCatalog.json')
 if($LASTEXITCODE -ne 0){throw 'Packaged template catalogue encoding or content check failed'}
