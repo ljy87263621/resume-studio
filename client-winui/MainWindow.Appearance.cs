@@ -49,6 +49,7 @@ public sealed partial class MainWindow
         editorParts=null; editorFields=null; editorLayoutPanel=null; layoutButton=null;
         examplePreviewToggle=null; editorProgressText=null; editorContentCount=null;
         editorProgress=null; capacityText=null; editorModules=[];
+        editorWorkspace=null;editorViewBar=null;editorDirectory=null;editorPreviewFrame=null;editorView=null;compactModulePicker=null;
         draggingEditorModule=false; updatingDirectory=false;
     }
     private void BuildShell()

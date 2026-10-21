@@ -27,7 +27,7 @@ if($VersionName){$manifestText=[regex]::Replace($manifestText,'android:versionNa
 if($VersionCode -gt 0){$manifestText=[regex]::Replace($manifestText,'android:versionCode="\d+"',('android:versionCode="'+$VersionCode+'"'))}
 [IO.File]::WriteAllText($manifestPath,$manifestText,[Text.UTF8Encoding]::new($false))
 # Generate Android-compatible API calls without forking or changing desktop business behavior.
-$shared=@('Json','Store','ResumeHistory','SyncStore','SyncReview','CalendarText','BackupCatalog','ResumeDocx','WorkspaceTools','Templates','CompanySources','CompanyJobs','Jobs','JobWorkflow','JobCapture','JobPageText','ResumeAdvisor','ResumeImport','InterviewStudy')
+$shared=@('Json','Store','ResumeHistory','SyncStore','SyncReview','CalendarText','BackupCatalog','ResumeDocx','ResumeWord','ResumeLayout','WorkspaceTools','Templates','CompanySources','CompanyJobs','Jobs','JobWorkflow','JobCapture','JobPageText','ResumeAdvisor','ResumeImport','InterviewStudy')
 foreach($name in $shared){
     $text=[IO.File]::ReadAllText((Join-Path $root "backend\src\main\java\com\resumestudio\$name.java"))
     $text=$text.Replace('import java.net.http.*;','').Replace('Map.of(', 'MobileCompat.map(').Replace('Set.of(', 'MobileCompat.set(').Replace('List.of(', 'Arrays.asList(').Replace('.toList()', '.collect(java.util.stream.Collectors.toList())').Replace('.isBlank()', '.trim().isEmpty()').Replace('HexFormat.of().formatHex(', 'MobileCompat.hex(').Replace('Files.readString(', 'MobileCompat.readString(').Replace('Files.writeString(', 'MobileCompat.writeString(').Replace('Path.of(', 'Paths.get(').Replace('remaining.findAny().isEmpty()', '!remaining.findAny().isPresent()')
@@ -74,6 +74,9 @@ if(!$captureScript){throw 'Desktop platform extraction script missing'}
 $renderer=[IO.File]::ReadAllText((Join-Path $root 'client-winui\Services\ResumeRenderer.cs'))
 $style=[regex]::Match($renderer,'(?s)<style>(.*?)</style>').Groups[1].Value
 $style=$style.Replace('{{color}}','var(--accent)').Replace('{{size}}pt','var(--size)').Replace('{{size}}','var(--size)').Replace('{{line}}','var(--line)').Replace("'{{font}}'",'var(--family)').Replace('https://resumestudio.assets/Fonts/','https://app.resumestudio.local/fonts/')
+# Android retains its existing layout controls; resolve new Windows-only settings to compatible defaults.
+$style=$style.Replace('{{vertical}}','14').Replace('{{horizontal}}','16').Replace('{{gap}}','4.8').Replace('{{alignment}}','')
+if($style.Contains('{{')){throw 'Android resume CSS contains unresolved desktop layout settings'}
 [IO.File]::WriteAllText("$build\assets\resume.css",$style,[Text.UTF8Encoding]::new($false))
 New-Item -ItemType Directory -Force "$build\assets\fonts"|Out-Null
 Copy-Item -LiteralPath "$root\client-winui\Assets\Fonts\MiSans-Regular.ttf" -Destination "$build\assets\fonts" -Force

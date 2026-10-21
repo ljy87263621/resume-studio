@@ -59,10 +59,16 @@ public sealed partial class MainWindow
             ToggleLayoutSettings();await Task.Delay(180);await SaveNativePreview(Path.Combine(output,"workbench-layout.png"));ToggleLayoutSettings();
             var folder=await Windows.Storage.StorageFolder.GetFolderFromPathAsync(output);var image=await folder.CreateFileAsync("workbench-preview.png",Windows.Storage.CreationCollisionOption.ReplaceExisting);
             using(var stream=await image.OpenAsync(Windows.Storage.FileAccessMode.ReadWrite))await preview.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png,stream);
+            await VerifyResumeLayout(output,checks);
             await VerifyWorkflow(output,checks);
             await File.WriteAllTextAsync(Path.Combine(output,"workbench-result.json"),JsonSerializer.Serialize(new {status="passed",checks},BackendClient.Json));
         } catch(Exception error) {
+            if(preview?.CoreWebView2 is not null){await File.WriteAllTextAsync(Path.Combine(output,"failed-document.json"),await preview.CoreWebView2.ExecuteScriptAsync("JSON.stringify({html:document.documentElement.outerHTML,text:document.querySelector('article')?.textContent})"));await File.WriteAllTextAsync(Path.Combine(output,"failed-editor.json"),EditorSnapshot());}
             await File.WriteAllTextAsync(Path.Combine(output,"workbench-result.json"),JsonSerializer.Serialize(new {status="failed",checks,error=error.ToString()},BackendClient.Json));
-        } finally {await SaveCurrent();closing=true;api.Dispose();Close();}
+        } finally {
+            await SaveCurrent();
+            if(Environment.GetCommandLineArgs().Contains("--keep-workbench-open")){Title="拾简 · 排版验收（隔离数据）";preferences.Theme="light";await ApplyPreferences();editorParts!.SelectedIndex=0;await WaitForPreview();}
+            else {closing=true;api.Dispose();Close();}
+        }
     }
 }
