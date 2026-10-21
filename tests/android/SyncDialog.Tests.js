@@ -2,12 +2,12 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
 // Exercise the actual WebView action and dialog with a minimal DOM, without native/network services.
 const nodes=new Map();let activeElement;
-function element(){return {hidden:true,children:[],textContent:'',_html:'',set innerHTML(value){this._html=value;this.children=[];},get innerHTML(){return this._html;},append(child){this.children.push(child);},focus(){activeElement=this;},click(){this.onclick?.();}};}
-for(const id of ['#overlay','#modal-body','#modal-buttons','#sync-result','#notice'])nodes.set(id,element());
-const document={querySelector:s=>s==='#modal-buttons button'?nodes.get('#modal-buttons').children[0]:nodes.get(s),createElement:element,addEventListener(){},get activeElement(){return activeElement;}};
-const context=vm.createContext({document,setTimeout,clearTimeout,console,window:{},addEventListener(){}});
+function element(){return {hidden:true,children:[],textContent:'',_html:'',classList:{remove(){},add(){}},style:{setProperty(){}},addEventListener(){},set innerHTML(value){this._html=value;this.children=[];},get innerHTML(){return this._html;},append(child){this.children.push(child);},focus(){activeElement=this;},click(){this.onclick?.();}};}
+for(const id of ['#overlay','#modal-body','#modal-buttons','#sync-result','#notice','#content','#nav','.nav-indicator'])nodes.set(id,element());
+const document={querySelector:s=>s==='#modal-buttons button'?nodes.get('#modal-buttons').children[0]:nodes.get(s),querySelectorAll:()=>[],createElement:element,addEventListener(){},get activeElement(){return activeElement;}};
+const context=vm.createContext({document,setTimeout,clearTimeout,console,window:{addEventListener(){}},addEventListener(){}});
 const source=fs.readFileSync(path.join(__dirname,'../../client-android/assets/app.js'),'utf8');
-const bootstrap=source.lastIndexOf('\n(async()=>{try{state.boot');assert(bootstrap>0);vm.runInContext(source.slice(0,bootstrap),context);
+const bootstrap=source.lastIndexOf('\n(async()=>');assert(bootstrap>0);vm.runInContext(source.slice(0,bootstrap),context);
 const version={exists:true,dataBytes:1234,deltaBytes:234,modifiedAt:'2026-01-02T03:04:05Z',counts:'1 份简历'};
 const plan={action:'push',requiresConfirmation:true,remoteExists:true,summary:'本机变化',baselineText:'上次成功同步',local:version,remote:{...version,deltaBytes:0},note:'',contentCheck:false};
 let current=plan,calls=[];
@@ -21,6 +21,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
  await context.window.appBack();await pending;assert.equal(calls.filter(c=>c.method==='executeSync').length,0);assert(calls.some(c=>c.method==='cancelSync'));
  calls=[];pending=run();await tick();nodes.get('#modal-buttons').children[2].click();await pending;assert.equal(calls.find(c=>c.method==='executeSync').input.direction,'pull','local-only plan can keep cloud');
  current={...plan,action:'pull'};calls=[];pending=run();await tick();nodes.get('#modal-buttons').children[1].click();await pending;assert.equal(calls.find(c=>c.method==='executeSync').input.direction,'push','cloud-only plan can keep local');
+ current={...plan,action:'conflict'};calls=[];pending=run();await tick();assert.equal(nodes.get('#modal-buttons').children[3].textContent,'逐条比较并合并');nodes.get('#modal-buttons').children[0].click();await pending;assert(!calls.some(c=>c.method==='executeSync'||c.method==='mergeSync'));
  current={...plan,remoteExists:false,remote:{exists:false},baselineText:'无历史基线'};calls=[];pending=run();await tick();assert.equal(nodes.get('#modal-buttons').children.length,2);assert(nodes.get('#modal-body').innerHTML.includes('不存在'));nodes.get('#modal-buttons').children[0].click();await pending;assert(!calls.some(c=>c.method==='executeSync'));
  current={...plan,action:'unchanged',requiresConfirmation:false};calls=[];await run();assert.equal(nodes.get('#overlay').hidden,true);assert.equal(calls.find(c=>c.method==='executeSync').input.direction,'unchanged');assert(nodes.get('#sync-result').innerHTML.includes('无需同步'));
  current={...plan,remote:{...version,modifiedAt:'',deltaBytes:null},baselineText:'上次同步未记录大小'};pending=run();await tick();assert(nodes.get('#modal-body').innerHTML.includes('未提供 / 未知'));assert(nodes.get('#modal-body').innerHTML.includes('未记录大小'));nodes.get('#modal-buttons').children[0].click();await pending;

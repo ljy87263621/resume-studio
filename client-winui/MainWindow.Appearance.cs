@@ -134,6 +134,7 @@ public sealed partial class MainWindow
         var panel=Stack(18);
         panel.Children.Add(UpdateSettingsCard());
         panel.Children.Add(AiSettingsCard());
+        panel.Children.Add(Button("全局搜索资料",()=>ShowWorkspaceTools()));
         AddSyncSettings(panel);
         var appearance=Stack(14); appearance.Children.Add(Text("界面与主题",20,true));
         appearance.Children.Add(Text("界面字体：MiSans，由小米提供，随软件分发。",12));

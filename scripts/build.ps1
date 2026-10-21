@@ -65,6 +65,24 @@ if(Test-Path (Join-Path $root 'docs')) { Copy-Item -LiteralPath (Join-Path $root
 # Preserve redistribution terms from the exact NuGet versions resolved by this build.
 $assets = Get-Content (Join-Path $root 'client-winui\obj\project.assets.json') -Raw | ConvertFrom-Json
 $packageRoots = @($assets.packageFolders.PSObject.Properties.Name)
+# WinUI's component-only dependency graph omits the Insights resource satellite
+# from self-contained publish. Notification registration loads it at runtime.
+# Extract it from the exact runtime package resolved above, never an installed SDK.
+$runtimeLibrary = @($assets.libraries.PSObject.Properties.Name | Where-Object { $_ -like 'Microsoft.WindowsAppSDK.Runtime/*' })
+if ($runtimeLibrary.Count -ne 1) { throw 'Cannot identify resolved Windows App SDK runtime' }
+$runtimeMsix = $null
+foreach ($packageRoot in $packageRoots) {
+    $candidate = Join-Path $packageRoot ($runtimeLibrary[0].ToLowerInvariant() + '/tools/MSIX/win10-x64/Microsoft.WindowsAppRuntime.1.8.msix')
+    if (Test-Path -LiteralPath $candidate) { $runtimeMsix = $candidate; break }
+}
+if (!$runtimeMsix) { throw 'Missing Windows App SDK runtime package' }
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$runtimeArchive = [IO.Compression.ZipFile]::OpenRead($runtimeMsix)
+try {
+    $satellite = $runtimeArchive.GetEntry('Microsoft.WindowsAppRuntime.Insights.Resource.dll')
+    if (!$satellite) { throw 'Missing Windows App SDK notification resource' }
+    [IO.Compression.ZipFileExtensions]::ExtractToFile($satellite, (Join-Path $release $satellite.Name), $true)
+} finally { $runtimeArchive.Dispose() }
 $licensePackages = @($assets.libraries.PSObject.Properties | Where-Object { $_.Value.type -eq 'package' } | ForEach-Object { $_.Name })
 foreach ($framework in $assets.project.frameworks.PSObject.Properties) {
     foreach ($download in $framework.Value.downloadDependencies) {

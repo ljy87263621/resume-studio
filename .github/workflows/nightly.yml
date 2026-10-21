@@ -1,4 +1,4 @@
-name: Publish Nightly
+name: Publish Desktop Nightly
 on:
   schedule:
     - cron: '30 0 * * *'
@@ -15,6 +15,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: main
+          fetch-depth: 0
       - name: Check for source changes
         id: source
         shell: pwsh
@@ -31,21 +32,23 @@ jobs:
             Write-Output 'Source unchanged since successful Nightly; no new release.'
             exit 0
           }
+          if($last.Count -and $last[0].body -match 'source-commit: ([0-9a-f]{40})'){
+            $previous=$Matches[1]
+            git cat-file -e "$previous^{commit}" 2>$null
+            if($LASTEXITCODE -eq 0){
+              $changes=@(git diff --name-only $previous $sha -- client-winui backend ThirdParty installer scripts .github/workflows/nightly.yml .github/workflows/stable.yml .github/release-notes ':(exclude)scripts/*android*')
+              if(!$changes.Count){Add-Content $env:GITHUB_OUTPUT 'changed=false';Add-Content $env:GITHUB_OUTPUT "existing_tag=$($last[0].tag_name)";exit 0}
+            }
+          }
           $now=[DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(8))
           $date=$now.ToString('yyyyMMdd')
-          $dayOfYear=$now.DayOfYear
           [xml]$project=Get-Content client-winui/ResumeStudio.csproj
           $base=[string]$project.Project.PropertyGroup.Version
           $short=$sha.Substring(0,8)
-          $parts=$base.Split('.')
-          $androidCode=[int]$parts[0]*100000000+[int]$parts[1]*1000000+[int]$parts[2]*100000+$dayOfYear
-          $androidVersion="$base-nightly.$date.$short"
           Add-Content $env:GITHUB_OUTPUT 'changed=true'
           Add-Content $env:GITHUB_OUTPUT "tag=nightly-$date-$short"
           Add-Content $env:GITHUB_OUTPUT "label=$base-nightly.$date.$short"
           Add-Content $env:GITHUB_OUTPUT "sha=$sha"
-          Add-Content $env:GITHUB_OUTPUT "android_version=$androidVersion"
-          Add-Content $env:GITHUB_OUTPUT "android_code=$androidCode"
       - name: Refresh channel index for unchanged Nightly
         if: steps.source.outputs.changed == 'false'
         shell: pwsh
@@ -64,16 +67,9 @@ jobs:
         if: steps.source.outputs.changed == 'true'
         shell: pwsh
         run: ./scripts/setup-release-jdk.ps1
-      - name: Install Android SDK packages
-        if: steps.source.outputs.changed == 'true'
-        shell: pwsh
-        run: ./scripts/setup-android-sdk.ps1
       - name: Build and test Nightly
         if: steps.source.outputs.changed == 'true'
         shell: pwsh
-        env:
-          RESUMESTUDIO_ANDROID_KEYSTORE_B64: ${{ secrets.RESUMESTUDIO_ANDROID_KEYSTORE_B64 }}
-          RESUMESTUDIO_ANDROID_STORE_PASS: ${{ secrets.RESUMESTUDIO_ANDROID_STORE_PASS }}
         run: |
           ./scripts/build.ps1 -Channel nightly -BuildTag '${{ steps.source.outputs.tag }}'
           ./scripts/test-offline.ps1
@@ -83,11 +79,11 @@ jobs:
           node --version
           ./scripts/test-features.ps1 -ReuseBackendTestClasses
           ./scripts/test-workbench.ps1
+          ./scripts/test-resume-import.ps1 -TextOnly
           ./scripts/test-interviews.ps1 -ApplicationPath release/ResumeStudio/ResumeStudio.exe
           ./scripts/test-editor-navigation.ps1
           ./scripts/test-maintenance.ps1
           ./scripts/package.ps1 -PackageLabel '${{ steps.source.outputs.label }}'
-          ./scripts/build-android.ps1 -Output 'release/ResumeStudio-Android-v${{ steps.source.outputs.android_version }}.apk' -VersionName '${{ steps.source.outputs.android_version }}' -VersionCode ${{ steps.source.outputs.android_code }}
       - name: Install verified installer build tools
         if: steps.source.outputs.changed == 'true'
         shell: pwsh
@@ -103,7 +99,7 @@ jobs:
         shell: pwsh
         env:
           RESUMESTUDIO_UPDATE_SIGNING_KEY: ${{ secrets.RESUMESTUDIO_UPDATE_SIGNING_KEY }}
-        run: ./scripts/sign-release.ps1 -PackagePath 'release/ResumeStudio-v${{ steps.source.outputs.label }}-windows-x64.zip' -AndroidPackagePath 'release/ResumeStudio-Android-v${{ steps.source.outputs.android_version }}.apk' -AndroidVersionName '${{ steps.source.outputs.android_version }}' -AndroidVersionCode ${{ steps.source.outputs.android_code }}
+        run: ./scripts/sign-release.ps1 -PackagePath 'release/ResumeStudio-v${{ steps.source.outputs.label }}-windows-x64.zip'
       - name: Include corresponding OpenJDK source
         if: steps.source.outputs.changed == 'true'
         shell: pwsh
@@ -112,7 +108,7 @@ jobs:
           Invoke-WebRequest 'https://codeload.github.com/microsoft/openjdk-jdk21u/tar.gz/6f26c6b2b098814858e76ad2986c01d5e1c8987a' -OutFile $source
           $hash=(Get-FileHash $source -Algorithm SHA256).Hash.ToLowerInvariant()
           Add-Content release/SHA256SUMS.txt "$hash  microsoft-openjdk-jdk21u-6f26c6b2.tar.gz" -Encoding utf8
-      - name: Publish Nightly prerelease
+      - name: Publish Desktop Nightly prerelease
         if: steps.source.outputs.changed == 'true'
         shell: pwsh
         env:
@@ -121,7 +117,7 @@ jobs:
           $sha='${{ steps.source.outputs.sha }}'
           $notes="Nightly 每日测试版，可能包含尚未稳定的改动。`n`n源码提交：$sha`n`n<!-- source-commit: $sha -->"
           $notes | Set-Content release/nightly-notes.md -Encoding utf8
-          gh release create '${{ steps.source.outputs.tag }}' 'release/ResumeStudio-v${{ steps.source.outputs.label }}-windows-x64.zip' 'release/ResumeStudio-v${{ steps.source.outputs.label }}-Setup-x64.exe' 'release/ResumeStudio-Android-v${{ steps.source.outputs.android_version }}.apk' release/release-info.json release/release-info.sig release/release-changelog.json release/microsoft-openjdk-jdk21u-6f26c6b2.tar.gz release/SHA256SUMS.txt --repo "$env:GITHUB_REPOSITORY" --target $sha --title '拾简 Nightly ${{ steps.source.outputs.tag }}' --prerelease --latest=false --notes-file release/nightly-notes.md
+          gh release create '${{ steps.source.outputs.tag }}' 'release/ResumeStudio-v${{ steps.source.outputs.label }}-windows-x64.zip' 'release/ResumeStudio-v${{ steps.source.outputs.label }}-Setup-x64.exe' release/release-info.json release/release-info.sig release/release-changelog.json release/microsoft-openjdk-jdk21u-6f26c6b2.tar.gz release/SHA256SUMS.txt --repo "$env:GITHUB_REPOSITORY" --target $sha --title '拾简 Nightly ${{ steps.source.outputs.tag }}' --prerelease --latest=false --notes-file release/nightly-notes.md
           if($LASTEXITCODE -ne 0){throw 'Nightly publication failed'}
       - name: Publish signed Nightly channel index
         if: steps.source.outputs.changed == 'true'

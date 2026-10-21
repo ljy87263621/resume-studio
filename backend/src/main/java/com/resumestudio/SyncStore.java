@@ -13,6 +13,8 @@ final class SyncStore {
     static final int MAX_BYTES=64*1024*1024;
     static final List<String> KINDS=List.of("resumes","favorites","applications","sources","schedule");
     static final Set<String> SETTINGS=Set.of("interfaceStyle","theme","livePreview","motionEnabled","previewDelayMs","aiEndpoint","aiModel","updateChannel","updateRoute","checkUpdatesOnStartup");
+    // Accept legacy snapshots, but keep update preferences local to each platform/device.
+    static final Set<String> LOCAL_UPDATE_SETTINGS=Set.of("updateChannel","updateRoute","checkUpdatesOnStartup");
     private static String id(Object value) {
         if(!(value instanceof String s)||!s.matches("[a-zA-Z0-9_-]{1,100}")) throw new IllegalArgumentException("同步标识无效"); return s;
     }
@@ -56,7 +58,7 @@ final class SyncStore {
     static Map<String,Object> snapshot(Path root,Store store) throws IOException {
         var result=new LinkedHashMap<String,Object>();
         for(String kind:KINDS) { var records=new ArrayList<>(store.list(kind)); records.sort(Comparator.comparing(r->Json.str(r,"id"))); result.put(kind,records); }
-        var prefs=new LinkedHashMap<String,Object>(); settings(root).forEach((k,v)->{if(SETTINGS.contains(k)) prefs.put(k,v);}); result.put("settings",prefs);
+        var prefs=new LinkedHashMap<String,Object>(); settings(root).forEach((k,v)->{if(SETTINGS.contains(k)&&!LOCAL_UPDATE_SETTINGS.contains(k)) prefs.put(k,v);}); result.put("settings",prefs);
         var revisions=new ArrayList<Map<String,Object>>();
         for(var resume:Json.array(result.get("resumes"))) {
             String resumeId=Json.str(Json.object(resume),"id");
@@ -173,7 +175,8 @@ final class SyncStore {
             }
             try(var files=Files.list(dir)) { for(Path file:files.filter(p->p.getFileName().toString().endsWith(".json")).toList()) { safe(root,file); if(!names.contains(file)) Files.delete(file); } }
         }
-        var prefs=new LinkedHashMap<>(settings(root)); SETTINGS.forEach(prefs::remove); prefs.putAll(Json.object(snapshot.get("settings")));
+        var prefs=new LinkedHashMap<>(settings(root)); SETTINGS.stream().filter(k->!LOCAL_UPDATE_SETTINGS.contains(k)).forEach(prefs::remove);
+        Json.object(snapshot.get("settings")).forEach((k,v)->{if(!LOCAL_UPDATE_SETTINGS.contains(k))prefs.put(k,v);});
         atomic(root,root.resolve("settings.json"),Json.write(prefs).getBytes(StandardCharsets.UTF_8));
         Path history=root.resolve("history"); safe(root,history); Files.createDirectories(history); Set<Path> names=new HashSet<>();
         for(Object value:Json.array(snapshot.get("history"))) {
@@ -196,6 +199,7 @@ final class SyncStore {
         if(!hash(previous).equals(expectedHash)) throw new ConcurrentModificationException("本机资料已改变，请重新检查同步");
         String backupName=Instant.now().toString().replace(':','-')+"-"+UUID.randomUUID()+".json";
         atomic(root,root.resolve("sync-backups").resolve(backupName),Json.write(previous).getBytes(StandardCharsets.UTF_8));
+        BackupCatalog.info(root,backupName,BackupCatalog.device(root),"本机替换前");
         Path journal=root.resolve("sync-recovery.json"); atomic(root,journal,Json.write(previous).getBytes(StandardCharsets.UTF_8));
         try { apply(root,incoming); Files.delete(journal); }
         catch(IOException|RuntimeException ex) { try { recover(root); } catch(Exception rollback) { ex.addSuppressed(rollback); } throw ex; }

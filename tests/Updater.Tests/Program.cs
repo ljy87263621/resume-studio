@@ -27,6 +27,9 @@ Reject(()=>UpdateInstaller.ChildPath(root,"C:/outside"),"absolute ZIP path rejec
 byte[] bytes=JsonSerializer.SerializeToUtf8Bytes(info,ReleaseUpdate.Json);
 byte[] Sign(byte[] data)=>Encoding.UTF8.GetBytes(Convert.ToBase64String(key.SignData(data,HashAlgorithmName.SHA256,RSASignaturePadding.Pss)));
 Check(ReleaseUpdate.VerifyInfo(bytes,Sign(bytes),pem,"stable","v0.6.0").Commit==info.Commit,"signed metadata accepted");
+Check(ReleaseUpdate.ChannelAddress("stable").EndsWith("/desktop-stable.json"),"desktop reads only its own platform index");
+info.Platform="android";var androidInfo=JsonSerializer.SerializeToUtf8Bytes(info,ReleaseUpdate.Json);
+Reject(()=>ReleaseUpdate.VerifyInfo(androidInfo,Sign(androidInfo),pem,"stable","v0.6.0"),"valid Android signature cannot cross into desktop updater");info.Platform="";
 var altered=(byte[])bytes.Clone(); altered[20]^=1; Reject(()=>ReleaseUpdate.VerifyInfo(altered,Sign(bytes),pem,"stable","v0.6.0"),"metadata tampering rejected");
 Reject(()=>ReleaseUpdate.VerifyInfo(bytes,Sign(bytes),pem,"nightly","v0.6.0"),"signature cannot cross channels");
 
@@ -106,7 +109,7 @@ sealed class ChannelHandler(byte[]? index,byte[] package,bool proxyOnly=false):H
         if(proxyOnly&&url.Host!="gh-proxy.org")throw new HttpRequestException("isolated direct failure");
         var original=url.Host=="gh-proxy.org"?new Uri(url.AbsolutePath[url.AbsolutePath.IndexOf("https://",StringComparison.Ordinal)..]+url.Query):url;
         if(original.Host=="api.github.com")return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden));
-        byte[]? body=original.AbsolutePath.EndsWith("/nightly.json",StringComparison.Ordinal)?index:original.AbsolutePath.EndsWith(".zip",StringComparison.Ordinal)?package:null;
+        byte[]? body=original.AbsolutePath.EndsWith("/desktop-nightly.json",StringComparison.Ordinal)?index:original.AbsolutePath.EndsWith(".zip",StringComparison.Ordinal)?package:null;
         return Task.FromResult(body is null?new HttpResponseMessage(HttpStatusCode.NotFound):new HttpResponseMessage(HttpStatusCode.OK){Content=new ByteArrayContent(body)});
     }
 }

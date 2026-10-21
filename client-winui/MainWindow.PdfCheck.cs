@@ -18,6 +18,10 @@ public sealed partial class MainWindow
             await SaveCurrent(); int checkedRevision=revision; string checkedId=current.Id,checkedTitle=current.Title;
             await PrintPdf(path); var pages=await PdfInspection.Read(path);
             var panel=Stack(12); panel.Children.Add(Text($"实际 PDF 共 {pages.Count} 页",20,true));
+            if(preview?.CoreWebView2 is not null){
+                string raw=await preview.CoreWebView2.ExecuteScriptAsync("(()=>{const a=document.querySelector('article');if(!a)return '无法检查排版';const warnings=[];if(a.scrollWidth>a.clientWidth+2)warnings.push('存在横向溢出，请检查长链接、表格或字号');const page=1122;const blocks=[...a.querySelectorAll('h1,h2,h3,p,li')];if(blocks.some(b=>b.getBoundingClientRect().height>page))warnings.push('存在超过一页的长段落，建议拆分');if(blocks.some(b=>/^H/.test(b.tagName)&&b.getBoundingClientRect().top%page>page-70))warnings.push('部分标题接近估算页尾，请在下方实际 PDF 中核对孤立标题');return warnings.join('；');})()");
+                string warnings=System.Text.Json.JsonSerializer.Deserialize<string>(raw)??"";if(warnings!="")panel.Children.Add(Text("排版预检："+warnings,13,true));
+            }
             var blank=pages.Where(p=>p.NearlyBlank).Select(p=>p.Number).ToArray(); if(blank.Length>0) panel.Children.Add(Text("疑似空白页："+string.Join("、",blank)+"。请检查分页后再投递。",14,true));
             if(pages.Count>1) panel.Children.Add(Text("请检查跨页标题、项目条目和末页留白；可回到排版设置调整字号与行距。",13));
             string overflow=await preview!.CoreWebView2.ExecuteScriptAsync("(()=>{const a=document.querySelector('article');const b=a.getBoundingClientRect();return [...a.querySelectorAll('p,li,table,h3')].some(e=>{const r=e.getBoundingClientRect();return r.right>b.right+1||r.left<b.left-1||e.scrollWidth>e.clientWidth+2})})()");

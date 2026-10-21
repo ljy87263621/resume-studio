@@ -16,6 +16,8 @@ final class InterviewStudy {
             if(!(q.get("title") instanceof String t)||t.isBlank()||t.length()>300)throw new IllegalArgumentException("题目标题无效");
             if(!(q.get("answer") instanceof String answer)||answer.length()>50000)throw new IllegalArgumentException("单题正文不能超过 50000 个字符");
             if(!Set.of("unseen","remembered","learning").contains(Json.str(q,"status")))throw new IllegalArgumentException("掌握状态无效");
+            for(String number:List.of("reviewCount","intervalDays"))if(q.containsKey(number)&&(!(q.get(number) instanceof Number n)||n.doubleValue()!=n.intValue()||n.intValue()<0||n.intValue()>100000))throw new IllegalArgumentException("复习进度数字无效");
+            if(q.containsKey("nextReviewAt")&&!Json.str(q,"nextReviewAt").isEmpty())try{java.time.OffsetDateTime.parse(Json.str(q,"nextReviewAt"));}catch(Exception ex){throw new IllegalArgumentException("下次复习时间无效");}
             length+=t.length()+answer.length();
         }
         if(length>500000)throw new IllegalArgumentException("一个题库的文字不能超过 50 万字符，请拆分导入");

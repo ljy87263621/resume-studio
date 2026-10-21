@@ -1,4 +1,4 @@
-param([string]$Sdk = $env:ANDROID_HOME, [string]$Output = '', [string]$SigningStore = '', [string]$SigningAlias = 'resume-studio', [string]$VersionName = '', [int]$VersionCode = 0)
+﻿param([string]$Sdk = $env:ANDROID_HOME, [string]$Output = '', [string]$SigningStore = '', [string]$SigningAlias = 'resume-studio', [string]$VersionName = '', [int]$VersionCode = 0)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 if(!$Sdk){$Sdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'}
@@ -7,6 +7,12 @@ $java=Join-Path $jdk 'bin\java.exe'; $javac=Join-Path $jdk 'bin\javac.exe'
 $tools=Join-Path $Sdk 'build-tools\36.0.0'; $platform=Join-Path $Sdk 'platforms\android-35\android.jar'
 foreach($required in @($javac,$platform,(Join-Path $tools 'aapt2.exe'),(Join-Path $tools 'lib\d8.jar'))){if(!(Test-Path -LiteralPath $required)){throw "Required Android build tool missing: $required"}}
 $build=Join-Path $root 'artifacts\android-build'; $source=Join-Path $root 'client-android'
+# Only generated output is replaced; dependency caches and signing stores remain separate.
+foreach($name in @('classes','dex','generated','r-java','assets','ocr')){
+    $generated=[IO.Path]::GetFullPath((Join-Path $build $name));$boundary=[IO.Path]::GetFullPath($build)+[IO.Path]::DirectorySeparatorChar
+    if(!$generated.StartsWith($boundary,[StringComparison]::OrdinalIgnoreCase)){throw 'Generated Android path escaped the build directory'}
+    if(Test-Path -LiteralPath $generated){if((Get-Item -LiteralPath $generated).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Generated output must not be a link'};Remove-Item -LiteralPath $generated -Recurse -Force}
+}
 foreach($dir in @($build,"$build\classes","$build\dex","$build\generated\com\resumestudio","$build\assets")){New-Item -ItemType Directory -Force $dir|Out-Null}
 $dependency=Join-Path $root 'artifacts\android-dependencies';New-Item -ItemType Directory -Force $dependency|Out-Null
 $pdfAar=Join-Path $dependency 'pdfbox-android.aar'
@@ -21,7 +27,7 @@ if($VersionName){$manifestText=[regex]::Replace($manifestText,'android:versionNa
 if($VersionCode -gt 0){$manifestText=[regex]::Replace($manifestText,'android:versionCode="\d+"',('android:versionCode="'+$VersionCode+'"'))}
 [IO.File]::WriteAllText($manifestPath,$manifestText,[Text.UTF8Encoding]::new($false))
 # Generate Android-compatible API calls without forking or changing desktop business behavior.
-$shared=@('Json','Store','ResumeHistory','SyncStore','Templates','CompanySources','CompanyJobs','Jobs','JobWorkflow','JobCapture','JobPageText','ResumeAdvisor','InterviewStudy')
+$shared=@('Json','Store','ResumeHistory','SyncStore','SyncReview','CalendarText','BackupCatalog','ResumeDocx','WorkspaceTools','Templates','CompanySources','CompanyJobs','Jobs','JobWorkflow','JobCapture','JobPageText','ResumeAdvisor','ResumeImport','InterviewStudy')
 foreach($name in $shared){
     $text=[IO.File]::ReadAllText((Join-Path $root "backend\src\main\java\com\resumestudio\$name.java"))
     $text=$text.Replace('import java.net.http.*;','').Replace('Map.of(', 'MobileCompat.map(').Replace('Set.of(', 'MobileCompat.set(').Replace('List.of(', 'Arrays.asList(').Replace('.toList()', '.collect(java.util.stream.Collectors.toList())').Replace('.isBlank()', '.trim().isEmpty()').Replace('HexFormat.of().formatHex(', 'MobileCompat.hex(').Replace('Files.readString(', 'MobileCompat.readString(').Replace('Files.writeString(', 'MobileCompat.writeString(').Replace('Path.of(', 'Paths.get(').Replace('remaining.findAny().isEmpty()', '!remaining.findAny().isPresent()')
@@ -53,6 +59,13 @@ $validator=$validator.Replace('Set.of(', 'MobileCompat.set(').Replace('List.of('
 [IO.File]::WriteAllText("$build\generated\com\resumestudio\Server.java",$validator,[Text.UTF8Encoding]::new($false))
 # Carry the exact desktop rendering styles, template catalog and examples into the APK.
 Copy-Item -Path "$source\assets\*" -Destination "$build\assets" -Recurse -Force
+# Always use the tracked desktop verification key; *.pem intentionally excludes local secrets.
+$updateKey=Join-Path $root 'client-winui\Assets\UpdatePublicKey.pem'
+$keyText=[IO.File]::ReadAllText($updateKey)
+$rsa=[Security.Cryptography.RSA]::Create()
+try{$rsa.ImportFromPem($keyText);if($rsa.KeySize -lt 2048){throw 'Update public key is too short'}}finally{$rsa.Dispose()}
+Copy-Item -LiteralPath $updateKey -Destination "$build\assets\UpdatePublicKey.pem" -Force
+
 Copy-Item -Path "$dependency\pdfbox\assets\*" -Destination "$build\assets" -Recurse -Force
 $capture=[IO.File]::ReadAllText((Join-Path $root 'client-winui\MainWindow.PlatformCapture.cs'))
 $captureScript=[regex]::Match($capture,'(?s)PlatformJobsScript="""\s*(.*?)\s*""";').Groups[1].Value
@@ -67,13 +80,18 @@ Copy-Item -LiteralPath "$root\client-winui\Assets\Fonts\MiSans-Regular.ttf" -Des
 Copy-Item -LiteralPath "$root\client-winui\Assets\Fonts\MiSans-License.pdf" -Destination "$build\assets\fonts" -Force
 foreach($notice in @('LICENSE','THIRD_PARTY_NOTICES.md','RUNTIME_NOTICES.md')){Copy-Item -LiteralPath "$root\$notice" -Destination "$build\assets" -Force}
 Copy-Item -LiteralPath "$root\ThirdParty" -Destination "$build\assets" -Recurse -Force
-$javaSources=@(Get-ChildItem "$source\src","$build\generated" -Recurse -Filter '*.java'|ForEach-Object FullName)
-$argsFile="$build\javac.args";[IO.File]::WriteAllLines($argsFile,@('-encoding','UTF-8','--release','17','-classpath',('"'+($platform+';'+$pdfJar).Replace('\','/')+'"'),'-d',('"'+"$build/classes".Replace('\','/')+'"'))+@($javaSources|ForEach-Object {'"'+$_.Replace('\','/')+'"'}),[Text.UTF8Encoding]::new($false))
+$ocr=& (Join-Path $PSScriptRoot 'setup-android-ocr.ps1') -BuildDirectory $build -AssetsDirectory "$build/assets" -ManifestPath $manifestPath -Aapt2 "$tools/aapt2.exe"
+& "$tools/aapt2.exe" compile --dir "$source/res" -o "$build/resources.zip";if($LASTEXITCODE){throw 'Resource compilation failed'}
+$linkArguments=@('link','-o',"$build/unsigned.apk",'-I',$platform,'--manifest',$manifestPath,'-A',"$build/assets",'--java',"$build/r-java",'--auto-add-overlay')
+foreach($resource in @($ocr.resources)+@("$build/resources.zip")){$linkArguments+=@('-R',$resource)}
+& "$tools/aapt2.exe" @linkArguments;if($LASTEXITCODE){throw 'APK resource link failed'}
+$rFile=Join-Path $build 'r-java/com/resumestudio/mobile/R.java';$rSource=[IO.File]::ReadAllText($rFile)
+foreach($package in $ocr.packages){if($package -eq 'com.resumestudio.mobile'){continue};$target=Join-Path $build ('r-java/'+$package.Replace('.','/')+'/R.java');New-Item -ItemType Directory -Path (Split-Path $target -Parent) -Force|Out-Null;[IO.File]::WriteAllText($target,$rSource.Replace('package com.resumestudio.mobile;','package '+$package+';'),[Text.UTF8Encoding]::new($false))}
+$javaSources=@(Get-ChildItem "$source\src","$build\generated","$build\r-java" -Recurse -Filter '*.java'|ForEach-Object FullName)
+$argsFile="$build\javac.args";[IO.File]::WriteAllLines($argsFile,@('-encoding','UTF-8','--release','17','-classpath',('"'+($platform+';'+$pdfJar+';'+($ocr.jars -join ';')).Replace('\','/')+'"'),'-d',('"'+"$build/classes".Replace('\','/')+'"'))+@($javaSources|ForEach-Object {'"'+$_.Replace('\','/')+'"'}),[Text.UTF8Encoding]::new($false))
 & $javac "@$argsFile";if($LASTEXITCODE){throw 'Android Java compile failed'}
 & (Join-Path $jdk 'bin\jar.exe') --create --file "$build\classes.jar" -C "$build\classes" .
-& $java -cp "$tools\lib\d8.jar" com.android.tools.r8.D8 --min-api 26 --lib $platform --output "$build\dex" "$build\classes.jar" $pdfJar;if($LASTEXITCODE){throw 'Android DEX compile failed'}
-& "$tools\aapt2.exe" compile --dir "$source\res" -o "$build\resources.zip";if($LASTEXITCODE){throw 'Resource compilation failed'}
-& "$tools\aapt2.exe" link -o "$build\unsigned.apk" -I $platform --manifest $manifestPath -A "$build\assets" "$build\resources.zip";if($LASTEXITCODE){throw 'APK resource link failed'}
+& $java -cp "$tools\lib\d8.jar" com.android.tools.r8.D8 --min-api 26 --lib $platform --output "$build\dex" "$build\classes.jar" $pdfJar @($ocr.jars);if($LASTEXITCODE){throw 'Android DEX compile failed'}
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 # Windows aapt2 can emit backslashes in nested asset names. Android AssetManager
 # treats those as literal characters; normalize BOTH local headers and central entries.
@@ -87,8 +105,16 @@ try{
         $target=$apk.CreateEntry($name,$level);$inputStream=$entry.Open();$outputStream=$target.Open()
         try{$inputStream.CopyTo($outputStream)}finally{$inputStream.Dispose();$outputStream.Dispose()}
     }
+    foreach($library in $ocr.native){[IO.Compression.ZipFileExtensions]::CreateEntryFromFile($apk,$library.path,$library.name)|Out-Null}
     foreach($dex in Get-ChildItem "$build\dex" -Filter '*.dex'){[IO.Compression.ZipFileExtensions]::CreateEntryFromFile($apk,$dex.FullName,$dex.Name)|Out-Null}
 }finally{$apk.Dispose();$raw.Dispose();$stream.Dispose()}
+$verificationApk=[IO.Compression.ZipFile]::OpenRead("$build\normalized.apk")
+try{
+    $keyEntry=$verificationApk.GetEntry('assets/UpdatePublicKey.pem')
+    if(!$keyEntry){throw 'APK is missing the update verification key'}
+    $reader=[IO.StreamReader]::new($keyEntry.Open())
+    try{if($reader.ReadToEnd() -cne $keyText){throw 'APK update key differs from the canonical desktop key'}}finally{$reader.Dispose()}
+}finally{$verificationApk.Dispose()}
 & "$tools\zipalign.exe" -f 4 "$build\normalized.apk" "$build\aligned.apk";if($LASTEXITCODE){throw 'APK alignment failed'}
 $temporaryStore=$false
 if($env:RESUMESTUDIO_ANDROID_KEYSTORE_B64){$SigningStore=Join-Path $build 'release-signing.p12';[IO.File]::WriteAllBytes($SigningStore,[Convert]::FromBase64String($env:RESUMESTUDIO_ANDROID_KEYSTORE_B64));$temporaryStore=$true}
@@ -98,7 +124,7 @@ if(!$SigningStore){
     if(!$env:RESUMESTUDIO_ANDROID_STORE_PASS){$env:RESUMESTUDIO_ANDROID_STORE_PASS='android'}
 }
 if(!$env:RESUMESTUDIO_ANDROID_STORE_PASS){throw 'Set RESUMESTUDIO_ANDROID_STORE_PASS for the signing store'}
-if(!$Output){$Output=Join-Path $root 'release\ResumeStudio-Android-v0.9.4.apk'}
+if(!$Output){[xml]$androidIdentity=$manifestText;$Output=Join-Path $root ('release/ResumeStudio-Android-v'+$androidIdentity.manifest.versionName+'.apk')}
 New-Item -ItemType Directory -Force (Split-Path $Output)|Out-Null
 try{
     & $java -jar "$tools\lib\apksigner.jar" sign --ks $SigningStore --ks-key-alias $SigningAlias --ks-pass env:RESUMESTUDIO_ANDROID_STORE_PASS --out $Output "$build\aligned.apk";if($LASTEXITCODE){throw 'APK signing failed'}

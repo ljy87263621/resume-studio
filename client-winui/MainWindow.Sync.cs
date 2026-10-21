@@ -69,19 +69,27 @@ public sealed partial class MainWindow
                 shell.IsHitTestVisible=false; status.Text="正在检查本机与云端资料…";
                 using var dav=new SyncWebDav(new Uri(connection.DirectoryUrl),connection.Username,await connection.PasswordAsync());
                 var coordinator=new SyncCoordinator(new SyncBackendStore(api),dav,api.DataDirectory,connection.Target,connection.DeviceId);
-                var plan=await coordinator.InspectAsync(); SyncAction? direction=null;
+                var plan=await coordinator.InspectAsync(); SyncAction? direction=null;SyncAction? completedAction=null;
                 if(dav.UsesContentHash) status.Text="云端缺少强 ETag，正在使用内容校验；请避免多台设备同时同步。";
                 if(closeRequested) return;
                 if(plan.RequiresConfirmation)
                 {
+                    if(plan.Action==SyncAction.Conflict&&plan.RemoteEnvelope is not null){
+                        var modeDialog=new ContentDialog {XamlRoot=shell.XamlRoot,Title="两端资料均有变化",Content=Text("可逐条比较并保留两端不同记录；也可明确选择整套覆盖。",14),PrimaryButtonText="逐条比较",SecondaryButtonText="整套选择",CloseButtonText="取消",DefaultButton=ContentDialogButton.Close};
+                        syncConflictDialog=modeDialog;var mode=await modeDialog.ShowAsync();syncConflictDialog=null;
+                        if(mode==ContentDialogResult.None||closeRequested)return;
+                        if(mode==ContentDialogResult.Primary){var merged=await ReviewSyncRecords(plan);if(merged is null)return;current=null;dirty=false;shownCompanyJobs=null;companySearch=null;await DetachPreviewAsync(true);completedAction=await coordinator.MergeAsync(plan,merged);}
+                    }
+                    if(completedAction is null){
                     var dialog=CreateSyncComparisonDialog(plan,dav.UsesContentHash);
                     syncConflictDialog=dialog;
                     var choice=await dialog.ShowAsync(); syncConflictDialog=null;
                     if(choice==ContentDialogResult.None||closeRequested) {status.Text="同步已取消，资料未改变。";return;}
                     direction=choice==ContentDialogResult.Primary?SyncAction.Push:SyncAction.Pull;
+                    }
                 }
-                var action=await coordinator.ExecuteAsync(plan,direction);
-                if(action==SyncAction.Pull)
+                var action=completedAction??await coordinator.ExecuteAsync(plan,direction);
+                if(action==SyncAction.Pull||completedAction is not null)
                 {
                     current=null;dirty=false;shownCompanyJobs=null;companySearch=null;preferences=AppPreferences.Load(api.DataDirectory);
                     await DetachPreviewAsync(true);BuildShell();await Navigate("settings");
@@ -94,7 +102,7 @@ public sealed partial class MainWindow
             finally {foreach(var (control,enabled) in blockedInputs) control.IsEnabled=enabled;shell.IsHitTestVisible=true;syncBusy=false;syncConflictDialog=null;if(remindersWereRunning&&!closeRequested) reminderTimer.Start();activeSync?.TrySetResult();activeSync=null;}
         },true));
         actions.Children.Add(Button("清除本机同步密码",async ()=> {settings.ProtectedPassword="";await settings.SaveAsync(api.DataDirectory,"");password.Password="";status.Text="已清除本机保存密码。";}));
-        content.Children.Add(actions); content.Children.Add(Text("两端一致时无需同步；只要内容不同，就显示资料大小、相对上次同步的变化和文件修改时间，由你确认保留版本。支持强 ETag 时使用条件写入；缺少强 ETag 时使用内容校验，请同一时间只在一台设备同步。同步包以明文保存于你选择的 WebDAV，包含个人简历信息；请使用个人目录。每次下载替换前保留本机整包备份，备份需自行管理。",12));
+        content.Children.Add(actions);content.Children.Add(Button("备份预览／单条恢复／导出",ShowBackupCatalog));content.Children.Add(Button("导入备份 JSON",ImportBackupFile)); content.Children.Add(Text("手动同步会先比较两端大小、文件修改时间与变化量，由你确认方向；有双端独立修改时仍可逐条合并。支持强 ETag 时使用条件写入；缺少强 ETag 时使用内容校验，请同一时间只在一台设备同步。同步包以明文保存于你选择的 WebDAV，包含个人简历信息；请使用个人目录。每次下载替换前保留本机整包备份，备份需自行管理。",12));
         panel.Children.Add(Card(content));
     }
     private ContentDialog CreateSyncComparisonDialog(SyncPlan plan,bool contentCheck=false)
